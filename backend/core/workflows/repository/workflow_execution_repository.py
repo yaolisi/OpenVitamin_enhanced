@@ -9,7 +9,7 @@ Governance note (AGENTS.md §7):
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
@@ -193,7 +193,7 @@ class WorkflowExecutionRepository:
             row.state = state.value
 
             # 根据状态更新时间戳
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             if state == WorkflowExecutionState.RUNNING and row.started_at is None:
                 row.started_at = now
             if state in {
