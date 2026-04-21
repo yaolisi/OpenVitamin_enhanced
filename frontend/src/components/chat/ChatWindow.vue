@@ -10,6 +10,7 @@ import ChatHeader from './ChatHeader.vue'
 import SessionTitle from './SessionTitle.vue'
 import MessageItem from './MessageItem.vue'
 import ChatInput from './ChatInput.vue'
+import { getFriendlyErrorMessage } from '@/utils/errorHints'
 
 const { t } = useI18n()
 const chat = useChat({
@@ -238,7 +239,7 @@ const handleSendMessageWithFiles = async (content: string, files: File[]) => {
       assistantMsg.content = res.text || ''
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      assistantMsg.content = `Error: ${msg}`
+      assistantMsg.content = `Error: ${getFriendlyErrorMessage(msg)}`
     } finally {
       assistantMsg.loading = false
       chat.loading.value = false

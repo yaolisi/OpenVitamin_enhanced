@@ -11,6 +11,7 @@ import {
   setSessionId
 } from '@/services/api'
 import { useParameters } from './useParameters'
+import { getFriendlyErrorMessage } from '@/utils/errorHints'
 
 export interface ChatMessage {
   id: string
@@ -335,7 +336,7 @@ export function useChat(options: UseChatOptions = {}) {
         }
       }
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Unknown error'
+      error.value = getFriendlyErrorMessage(err instanceof Error ? err.message : String(err))
     } finally {
       loading.value = false
     }

@@ -16,6 +16,7 @@ const props = withDefaults(
 )
 const FLOW_ID = 'workflow-editor-canvas'
 const SNAP_GRID: [number, number] = [16, 16]
+const LARGE_GRAPH_NODE_THRESHOLD = 50
 
 const emit = defineEmits<{
   'update:nodes': [Node<WorkflowNodeData>[]]
@@ -34,6 +35,7 @@ function normalizeNodes(list: Node<WorkflowNodeData>[]): Node<WorkflowNodeData>[
 
 const nodesRef = ref<Node<WorkflowNodeData>[]>(normalizeNodes(props.nodes ?? []))
 const edgesRef = ref<Edge[]>(props.edges ?? [])
+const enableLargeGraphOptimization = ref((props.nodes?.length || 0) > LARGE_GRAPH_NODE_THRESHOLD)
 
 // 若在 onNodesChange 里 emit 后立刻用 props 覆盖 nodesRef，会冲掉 Vue Flow 刚写入的拖动位置；用标志位在“刚 emit”的下一拍用 ref 的 position 做 merge
 let justEmittedNodes = false
@@ -53,6 +55,7 @@ watch(
     } else {
       nodesRef.value = normalizeNodes(next)
     }
+    enableLargeGraphOptimization.value = (next?.length || 0) > LARGE_GRAPH_NODE_THRESHOLD
   },
   { immediate: true, deep: true }
 )
@@ -285,6 +288,7 @@ function onConnect(connection: { source: string; target: string; sourceHandle?: 
       :snap-to-grid="true"
       :snap-grid="SNAP_GRID"
       :connectable="true"
+      :only-render-visible-elements="enableLargeGraphOptimization"
       class="rounded-lg bg-muted/20"
       @drop="onDrop"
       @dragover="onDragOver"

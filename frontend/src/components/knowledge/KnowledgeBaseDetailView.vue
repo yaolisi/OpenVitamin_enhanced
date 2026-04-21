@@ -52,6 +52,8 @@ const activeTab = ref<'documents' | 'chunks' | 'retrieval' | 'settings'>('docume
 
 // Documents
 const documents = ref<any[]>([])
+const documentsPage = ref(1)
+const documentsPageSize = 20
 const uploading = ref(false)
 const dragOver = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -62,6 +64,18 @@ const reindexingDocId = ref<string | null>(null)
 const showDeleteConfirm = ref(false)
 const docToDelete = ref<any>(null)
 let statusPollingTimer: any = null
+
+const enableDocumentsPagination = computed(() => documents.value.length > 50)
+const documentsTotalPages = computed(() =>
+  enableDocumentsPagination.value
+    ? Math.max(1, Math.ceil(documents.value.length / documentsPageSize))
+    : 1
+)
+const pagedDocuments = computed(() => {
+  if (!enableDocumentsPagination.value) return documents.value
+  const start = (documentsPage.value - 1) * documentsPageSize
+  return documents.value.slice(start, start + documentsPageSize)
+})
 
 // Chunks
 const chunks = ref<any[]>([])
@@ -184,6 +198,19 @@ watch(activeTab, (newTab) => {
     loadChunks()
   }
 })
+
+watch(
+  () => documents.value.length,
+  () => {
+    if (!enableDocumentsPagination.value) {
+      documentsPage.value = 1
+      return
+    }
+    if (documentsPage.value > documentsTotalPages.value) {
+      documentsPage.value = documentsTotalPages.value
+    }
+  }
+)
 
 onMounted(() => {
   loadKBInfo()
@@ -525,6 +552,16 @@ const handleReindexKnowledgeBase = async () => {
     reindexingKB.value = false
   }
 }
+
+const goDocumentsPrevPage = () => {
+  if (documentsPage.value <= 1) return
+  documentsPage.value -= 1
+}
+
+const goDocumentsNextPage = () => {
+  if (documentsPage.value >= documentsTotalPages.value) return
+  documentsPage.value += 1
+}
 </script>
 
 <template>
@@ -723,6 +760,20 @@ const handleReindexKnowledgeBase = async () => {
 
             <!-- Documents Table -->
             <div class="bg-background/50 border border-border/50 rounded-lg overflow-hidden">
+              <div
+                v-if="enableDocumentsPagination"
+                class="px-4 py-3 border-b border-border/50 flex items-center justify-between text-xs text-muted-foreground"
+              >
+                <span>共 {{ documents.length }} 条文档，当前第 {{ documentsPage }} / {{ documentsTotalPages }} 页</span>
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" size="sm" :disabled="documentsPage <= 1" @click="goDocumentsPrevPage">
+                    上一页
+                  </Button>
+                  <Button variant="outline" size="sm" :disabled="documentsPage >= documentsTotalPages" @click="goDocumentsNextPage">
+                    下一页
+                  </Button>
+                </div>
+              </div>
               <table class="w-full">
                 <thead>
                   <tr class="border-b border-border/50">
@@ -735,7 +786,7 @@ const handleReindexKnowledgeBase = async () => {
                 </thead>
                 <tbody>
                   <tr
-                    v-for="doc in documents"
+                    v-for="doc in pagedDocuments"
                     :key="doc.id"
                     class="border-b border-border/30 hover:bg-muted/20 transition-colors"
                   >
@@ -921,11 +972,11 @@ const handleReindexKnowledgeBase = async () => {
             <h2 class="text-lg font-semibold mb-6">{{ t('knowledge.detail.indexing_config') }}</h2>
             <div class="space-y-6">
               <div class="p-4 bg-background/50 border border-border/50 rounded-lg">
-                <label class="text-sm font-medium mb-2 block uppercase">{{ t('knowledge.detail.chunk_size_label') }}</label>
+                <p class="text-sm font-medium mb-2 block uppercase">{{ t('knowledge.detail.chunk_size_label') }}</p>
                 <Input v-model.number="chunkSize" type="number" min="128" max="2048" />
               </div>
               <div class="p-4 bg-background/50 border border-border/50 rounded-lg">
-                <label class="text-sm font-medium mb-2 block uppercase">{{ t('knowledge.detail.overlap_label') }}</label>
+                <p class="text-sm font-medium mb-2 block uppercase">{{ t('knowledge.detail.overlap_label') }}</p>
                 <Input v-model.number="chunkOverlap" type="number" min="0" max="50" />
               </div>
               <Button @click="handleReindexKnowledgeBase" :disabled="reindexingKB">
@@ -945,7 +996,7 @@ const handleReindexKnowledgeBase = async () => {
           <div class="space-y-4">
             <div>
               <div class="flex items-center justify-between mb-2">
-                <label class="text-xs font-medium uppercase">{{ t('knowledge.detail.threshold_label') }}</label>
+                <p class="text-xs font-medium uppercase">{{ t('knowledge.detail.threshold_label') }}</p>
                 <span class="text-xs text-muted-foreground">{{ similarityThreshold[0]?.toFixed(2) || '0.82' }}</span>
               </div>
               <div class="flex items-center gap-2 mb-1">
@@ -956,14 +1007,14 @@ const handleReindexKnowledgeBase = async () => {
             </div>
             <div>
               <div class="flex items-center justify-between mb-2">
-                <label class="text-xs font-medium uppercase">{{ t('knowledge.detail.top_k_label') }}</label>
+                <p class="text-xs font-medium uppercase">{{ t('knowledge.detail.top_k_label') }}</p>
                 <span class="text-xs text-muted-foreground">{{ topKResults[0] }}</span>
               </div>
               <Slider v-model="topKResults" :min="1" :max="20" :step="1" />
             </div>
             <div>
               <div class="flex items-center gap-2 mb-2">
-                <label class="text-xs font-medium uppercase">{{ t('knowledge.detail.search_type') }}</label>
+                <p class="text-xs font-medium uppercase">{{ t('knowledge.detail.search_type') }}</p>
                 <div class="group relative">
                   <Info class="w-3 h-3 text-muted-foreground cursor-help" />
                   <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10">
@@ -1004,11 +1055,11 @@ const handleReindexKnowledgeBase = async () => {
           <h3 class="text-sm font-semibold mb-4">{{ t('knowledge.detail.indexing_config') }}</h3>
           <div class="space-y-4">
             <div>
-              <label class="text-xs font-medium mb-2 block uppercase">{{ t('knowledge.detail.chunk_size_label') }}</label>
+              <p class="text-xs font-medium mb-2 block uppercase">{{ t('knowledge.detail.chunk_size_label') }}</p>
               <Input v-model.number="chunkSize" type="number" min="128" max="2048" />
             </div>
             <div>
-              <label class="text-xs font-medium mb-2 block uppercase">{{ t('knowledge.detail.overlap_label') }}</label>
+              <p class="text-xs font-medium mb-2 block uppercase">{{ t('knowledge.detail.overlap_label') }}</p>
               <Input v-model.number="chunkOverlap" type="number" min="0" max="50" />
             </div>
             <Button class="w-full" @click="handleReindexKnowledgeBase" :disabled="reindexingKB">
