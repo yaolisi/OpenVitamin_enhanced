@@ -19,17 +19,21 @@ class PluginContext:
         agent_id: Optional[str] = None,
         user_id: Optional[str] = None,
         message_id: Optional[str] = None,
+        permissions: Optional[dict] = None,
         logger: Optional["Logger"] = None,
         memory: Optional["MemoryStore"] = None,
         registry: Optional["ModelRegistry"] = None,
         knowledge_base_store: Optional["KnowledgeBaseStore"] = None,
         runtime_factory: Optional["RuntimeFactory"] = None,
         plugin_registry: Optional["PluginRegistry"] = None,
+        metadata: Optional[dict] = None,
     ):
         self.session_id = session_id
         self.agent_id = agent_id
         self.user_id = user_id
         self.message_id = message_id
+        self.permissions = permissions or {}
+        self.metadata = metadata or {}
 
         self.logger = logger
         self.memory = memory

@@ -4,7 +4,7 @@ from jsonschema import ValidationError
 from log import logger
 from .registry import PluginRegistry, get_plugin_registry
 from .context import PluginContext
-from .permissions import PluginPermissions
+from core.security.plugin_policy import evaluate_plugin_permissions
 
 class PluginExecutor:
     """
@@ -21,21 +21,29 @@ class PluginExecutor:
         :param context: 运行上下文
         :return: 是否有权限
         
-        注意：当前是简化实现，默认允许所有权限。
-        未来可以根据 context.user_id 或系统配置进行实际权限验证。
+        说明：
+        - 无声明权限：允许执行
+        - 声明了权限：必须由 context.permissions 显式授予
         """
-        if not plugin.permissions:
-            return True  # 无权限要求，允许执行
-        
-        # TODO: 实现基于用户/会话的实际权限检查
-        # 当前简化实现：默认允许所有权限
-        # 实际应该：
-        # 1. 从 context.user_id 获取用户权限
-        # 2. 或从系统配置中获取允许的权限列表
-        # 3. 检查 plugin.permissions 是否都在允许列表中
-        
-        logger.debug(f"[PluginExecutor] Plugin '{plugin.name}' requires permissions: {plugin.permissions} (currently all allowed)")
-        return True
+        decision = evaluate_plugin_permissions(
+            required_permissions=getattr(plugin, "permissions", []) or [],
+            grants=getattr(context, "permissions", {}) or {},
+        )
+        if not decision.allowed:
+            logger.warning(
+                "[PluginExecutor] Permission denied for plugin '%s': missing=%s, user_id=%s, session_id=%s",
+                plugin.name,
+                decision.missing_permissions,
+                context.user_id,
+                context.session_id,
+            )
+        else:
+            logger.debug(
+                "[PluginExecutor] Permission granted for plugin '%s': required=%s",
+                plugin.name,
+                getattr(plugin, "permissions", []) or [],
+            )
+        return decision.allowed
 
     def _validate_schema(self, data: Dict[str, Any], schema: Dict[str, Any], schema_name: str) -> None:
         """
@@ -81,14 +89,13 @@ class PluginExecutor:
 
         # 权限检查
         if not self._check_permissions(plugin, context):
-            raise PermissionError(f"Plugin '{name}' requires permissions that are not granted")
+            required = getattr(plugin, "permissions", []) or []
+            raise PermissionError(
+                f"Plugin '{name}' permission denied: required={required}, granted={list((context.permissions or {}).keys())}"
+            )
 
         # 输入 Schema 校验
-        try:
-            self._validate_schema(input_data, plugin.input_schema, f"input schema of '{name}'")
-        except ValueError as e:
-            # Schema 验证失败是致命错误，应该抛出
-            raise
+        self._validate_schema(input_data, plugin.input_schema, f"input schema of '{name}'")
 
         try:
             logger.debug(f"[PluginExecutor] Executing plugin: {name}")
@@ -98,11 +105,9 @@ class PluginExecutor:
             self._validate_schema(result, plugin.output_schema, f"output schema of '{name}'")
             
             return result
-        except ValueError as e:
-            # Schema 验证错误，直接抛出
+        except ValueError:
             raise
-        except PermissionError as e:
-            # 权限错误，直接抛出
+        except PermissionError:
             raise
         except Exception as e:
             # 其他错误，记录并抛出

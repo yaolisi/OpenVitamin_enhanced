@@ -1,6 +1,7 @@
 import json
 import asyncio
 import re
+import hashlib
 from string import Formatter
 import uuid
 from pathlib import Path
@@ -24,6 +25,8 @@ from core.skills.registry import SkillRegistry
 from core.tools.sandbox import resolve_in_workspace, WorkspacePathError
 from core.security.deps import require_authenticated_platform_admin
 from core.security.skill_policy import get_blocked_skills
+from core.idempotency.service import IdempotencyService
+from core.data.base import SessionLocal
 from config.settings import settings
 
 router = APIRouter(
@@ -66,6 +69,23 @@ _upload_semaphore = asyncio.Semaphore(UPLOAD_CONCURRENCY)
 def _get_user_id(request: Request) -> str:
     uid = (request.headers.get("X-User-Id") or "").strip()
     return uid or "default"
+
+
+def _extract_idempotency_key(request: Request) -> Optional[str]:
+    key = (
+        request.headers.get("Idempotency-Key")
+        or request.headers.get("X-Idempotency-Key")
+        or request.headers.get("X-Request-Id")
+    )
+    if not key:
+        return None
+    key = key.strip()
+    return key[:256] if key else None
+
+
+def _stable_request_hash(payload: Dict[str, Any]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 class CreateAgentRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Agent name (required)")
@@ -558,10 +578,15 @@ async def _save_uploaded_files(session_id: str, files: List[UploadFile]) -> Path
 
 
 @router.post("/{agent_id}/run")
-async def run_agent(agent_id: str, req: RunAgentRequest):
+async def run_agent(agent_id: str, req: RunAgentRequest, request: Request):
     registry = get_agent_registry()
     session_store = get_agent_session_store()
     executor = get_agent_executor()
+    user_id = _get_user_id(request)
+    idem_key = _extract_idempotency_key(request)
+    idem_db = None
+    idem_service = None
+    idem_record = None
     
     agent = registry.get_agent(agent_id)
     if not agent:
@@ -569,6 +594,36 @@ async def run_agent(agent_id: str, req: RunAgentRequest):
     
     # 获取或创建会话
     session_id = req.session_id or f"asess_{uuid.uuid4().hex[:12]}"
+
+    if idem_key:
+        idem_db = SessionLocal()
+        idem_service = IdempotencyService(idem_db)
+        req_hash = _stable_request_hash(
+            {
+                "agent_id": agent_id,
+                "session_id": req.session_id,
+                "messages": [m.model_dump(mode="json") for m in (req.messages or [])],
+            }
+        )
+        claim = idem_service.claim(
+            scope="agent_run",
+            owner_id=user_id,
+            key=idem_key,
+            request_hash=req_hash,
+        )
+        if claim.conflict:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency-Key already used with different request payload",
+            )
+        idem_record = claim.record
+        if not claim.is_new:
+            if claim.record.response_ref:
+                existing_session = session_store.get_session(claim.record.response_ref)
+                if existing_session:
+                    return existing_session
+            raise HTTPException(status_code=409, detail="Idempotent request is still processing; retry later")
+
     session = session_store.get_session(session_id)
     
     if not session:
@@ -595,6 +650,8 @@ async def run_agent(agent_id: str, req: RunAgentRequest):
     try:
         runtime = get_agent_runtime(executor)
         result_session = await runtime.run(agent, session, workspace=workspace)
+        if idem_service and idem_record:
+            idem_service.mark_succeeded(record_id=idem_record.id, response_ref=result_session.session_id)
         return result_session
     except asyncio.CancelledError:
         # Request cancelled/timed out by client/proxy: avoid leaving session in running forever.
@@ -604,6 +661,8 @@ async def run_agent(agent_id: str, req: RunAgentRequest):
         logger.warning(
             f"[Agent API] run cancelled session_id={session_id} agent_id={agent_id}"
         )
+        if idem_service and idem_record:
+            idem_service.mark_failed(record_id=idem_record.id, error_message="Request cancelled or timed out")
         raise
     except Exception as e:
         # 避免会话卡在 idle 且前端无反馈
@@ -611,7 +670,12 @@ async def run_agent(agent_id: str, req: RunAgentRequest):
         session.error_message = str(e)
         session_store.save_session(session)
         logger.exception(f"[Agent API] run failed session_id={session_id} agent_id={agent_id}: {e}")
+        if idem_service and idem_record:
+            idem_service.mark_failed(record_id=idem_record.id, error_message=str(e))
         raise
+    finally:
+        if idem_db is not None:
+            idem_db.close()
 
 
 @router.post("/{agent_id}/run/with-files")

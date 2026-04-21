@@ -1,0 +1,41 @@
+"""
+Plugin permission policy helpers.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List
+
+
+@dataclass(frozen=True)
+class PluginPolicyDecision:
+    allowed: bool
+    missing_permissions: List[str]
+
+
+def _is_permission_granted(grants: Dict[str, Any], permission: str) -> bool:
+    if grants.get("*") is True:
+        return True
+    if grants.get(permission) is True:
+        return True
+    if "." not in permission:
+        return False
+    parts = permission.split(".")
+    for i in range(len(parts) - 1, 0, -1):
+        prefix = ".".join(parts[:i]) + ".*"
+        if grants.get(prefix) is True:
+            return True
+    return False
+
+
+def evaluate_plugin_permissions(
+    required_permissions: Iterable[str] | None,
+    grants: Dict[str, Any] | None,
+) -> PluginPolicyDecision:
+    required = [str(p).strip() for p in (required_permissions or []) if str(p).strip()]
+    if not required:
+        return PluginPolicyDecision(allowed=True, missing_permissions=[])
+
+    granted = grants or {}
+    missing = [perm for perm in required if not _is_permission_granted(granted, perm)]
+    return PluginPolicyDecision(allowed=(len(missing) == 0), missing_permissions=missing)
