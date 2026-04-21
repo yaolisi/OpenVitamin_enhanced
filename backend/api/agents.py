@@ -87,6 +87,85 @@ class CreateAgentRequest(BaseModel):
     response_mode: Optional[str] = Field(default=None, description="Agent response mode: default or direct_tool_result")
     # Model parameters (e.g., intent_rules, skill_param_extractors, use_skill_discovery, etc.)
     model_params: Optional[Dict[str, Any]] = Field(default=None, description="Model parameters: intent_rules, skill_param_extractors, use_skill_discovery (bool, enable semantic skill discovery at runtime), etc.")
+    # V3: Plan → Graph → Kernel（与 model_params.execution_strategy 二选一亦可，显式字段优先由服务端合并逻辑处理）
+    execution_strategy: Optional[str] = Field(
+        default=None,
+        description="plan_based 下执行策略：serial（串行 PlanBasedExecutor）或 parallel_kernel（Agent Graph + Execution Kernel）；null 表示按 use_execution_kernel / 全局开关推导",
+    )
+    max_parallel_nodes: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=64,
+        description="parallel_kernel 时 Scheduler 并发上限；null 表示使用内核默认",
+    )
+
+
+def _validate_execution_strategy_field(value: Optional[str]) -> None:
+    if value is None or value == "":
+        return
+    v = str(value).strip().lower()
+    if v not in {"serial", "parallel_kernel"}:
+        raise HTTPException(
+            status_code=400,
+            detail="execution_strategy must be one of: serial, parallel_kernel, or null",
+        )
+
+
+def _coerce_max_parallel_nodes(val: Any, field_label: str) -> int:
+    """将 JSON 中的 max_parallel_nodes 规范为 1..64 的 int。"""
+    if isinstance(val, bool):
+        raise HTTPException(status_code=400, detail=f"{field_label} must be an integer")
+    if isinstance(val, int):
+        n = val
+    elif isinstance(val, float) and val.is_integer():
+        n = int(val)
+    else:
+        try:
+            n = int(val)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{field_label} must be an integer")
+    if n < 1 or n > 64:
+        raise HTTPException(status_code=400, detail=f"{field_label} must be between 1 and 64")
+    return n
+
+
+def _normalized_execution_strategy(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    s = str(value).strip().lower()
+    return s if s else None
+
+
+def _validate_kernel_opts_consistency(
+    top_execution_strategy: Optional[str],
+    top_max_parallel: Optional[int],
+    model_params: Dict[str, Any],
+) -> None:
+    """
+    与运行时一致：顶字段优先于 model_params；若两处同时给出且不一致则 400。
+    并对 model_params 内的 execution_strategy / max_parallel_nodes 做格式校验。
+    """
+    mp = model_params or {}
+    if "execution_strategy" in mp and mp.get("execution_strategy") not in (None, ""):
+        _validate_execution_strategy_field(str(mp.get("execution_strategy")))
+    if mp.get("max_parallel_nodes") is not None:
+        _coerce_max_parallel_nodes(mp.get("max_parallel_nodes"), "model_params.max_parallel_nodes")
+
+    top_es = _normalized_execution_strategy(top_execution_strategy)
+    mp_es = _normalized_execution_strategy(mp.get("execution_strategy"))
+    if top_es and mp_es and top_es != mp_es:
+        raise HTTPException(
+            status_code=400,
+            detail="execution_strategy conflicts: top-level and model_params disagree; align or remove one.",
+        )
+
+    if top_max_parallel is not None and mp.get("max_parallel_nodes") is not None:
+        mp_n = _coerce_max_parallel_nodes(mp.get("max_parallel_nodes"), "model_params.max_parallel_nodes")
+        if top_max_parallel != mp_n:
+            raise HTTPException(
+                status_code=400,
+                detail="max_parallel_nodes conflicts: top-level and model_params disagree; align or remove one.",
+            )
 
 
 def _apply_response_mode(
@@ -264,12 +343,14 @@ async def create_agent(req: CreateAgentRequest):
     replan_validate_error = _validate_replan_prompt_template(replan_prompt)
     if replan_validate_error:
         raise HTTPException(status_code=400, detail=replan_validate_error)
-    
+
     # Generate agent_id
     agent_id = f"agent_{uuid.uuid4().hex[:8]}"
     
     # Create agent definition (v1.5: store enabled_skills; keep tool_ids for backward compat)
     model_params = _apply_response_mode(req.model_params, req.response_mode, enabled_skills)
+    _validate_execution_strategy_field(req.execution_strategy)
+    _validate_kernel_opts_consistency(req.execution_strategy, req.max_parallel_nodes, model_params)
 
     agent = AgentDefinition(
         agent_id=agent_id,
@@ -285,6 +366,8 @@ async def create_agent(req: CreateAgentRequest):
         slug=req.slug.strip() if req.slug else None,
         execution_mode=req.execution_mode or "legacy",
         use_execution_kernel=req.use_execution_kernel,
+        execution_strategy=req.execution_strategy,
+        max_parallel_nodes=req.max_parallel_nodes,
         max_replan_count=req.max_replan_count if req.max_replan_count is not None else 3,
         on_failure_strategy=failure_strategy,
         replan_prompt=replan_prompt,
@@ -346,7 +429,20 @@ async def update_agent(agent_id: str, req: CreateAgentRequest):
     replan_validate_error = _validate_replan_prompt_template(replan_prompt)
     if replan_validate_error:
         raise HTTPException(status_code=400, detail=replan_validate_error)
-    
+
+    exec_strategy = (
+        req.execution_strategy
+        if req.execution_strategy is not None
+        else getattr(existing_agent, "execution_strategy", None)
+    )
+    max_parallel = (
+        req.max_parallel_nodes
+        if req.max_parallel_nodes is not None
+        else getattr(existing_agent, "max_parallel_nodes", None)
+    )
+    _validate_execution_strategy_field(exec_strategy)
+    _validate_kernel_opts_consistency(exec_strategy, max_parallel, model_params)
+
     agent = AgentDefinition(
         agent_id=agent_id,
         name=req.name,
@@ -360,6 +456,8 @@ async def update_agent(agent_id: str, req: CreateAgentRequest):
         temperature=req.temperature,
         execution_mode=req.execution_mode or "legacy",
         use_execution_kernel=req.use_execution_kernel,
+        execution_strategy=exec_strategy,
+        max_parallel_nodes=max_parallel,
         max_replan_count=req.max_replan_count if req.max_replan_count is not None else 3,
         on_failure_strategy=failure_strategy,
         replan_prompt=replan_prompt,

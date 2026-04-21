@@ -217,6 +217,37 @@ python backend/scripts/security_regression.py \
 JUNIT_XML_PATH=test-reports/tenant-security-regression.xml backend/scripts/test_tenant_security_regression.sh
 ```
 
+### 6.1 Execution Kernel 集成测试（可选）
+
+说明与背景见 **`tutorial.md` → §15.5**（为何 `start_instance` 可能长时间不返回、如何用诊断环境变量）。
+
+快速入口（默认只跑轻量项，秒级结束）：
+
+```bash
+PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_integration.py
+```
+
+重型入口（Scheduler + 独立临时 SQLite）：
+
+```bash
+PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_integration_heavy.py
+```
+
+卡住或超时排障（快照约每 5 秒 + 限制 `start_instance` 等待）：
+
+```bash
+EXEC_KERNEL_RUN_HEAVY_INTEGRATION=1 \
+EXEC_KERNEL_INTEGRATION_DIAG=1 \
+EXEC_KERNEL_START_INSTANCE_TIMEOUT_SEC=90 \
+PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_integration.py
+```
+
+独立 Kernel 回归（与安全鉴权联动时，可按脚本说明配置 `RBAC_TEST_ADMIN_API_KEY`、`RBAC_TEST_TENANT_ID`）：
+
+```bash
+PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_regression.py
+```
+
 ---
 
 ## 7. 文档维护约定（建议）

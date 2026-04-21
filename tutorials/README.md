@@ -23,6 +23,7 @@
 - **429**（请求太频繁或上传并发过高）：`tutorial.md` → §17.4、§17.9（限流与 Agent 上传并发）
 - **400**（`tenant id required for protected path`）：`tutorial.md` → §17.8
 - **本地跑安全回归（JSON/JUnit）**：`tutorial.md` → **§15**；命令示例见 `tutorial-index.md` → **§6**
+- **Execution Kernel 集成测试卡住或超时**：`tutorial.md` → **§15.5**（`EXEC_KERNEL_INTEGRATION_DIAG`、`EXEC_KERNEL_START_INSTANCE_TIMEOUT_SEC`）
 - **发版前 5 分钟**：`tutorial-ops-checklist.md`
 - **线上告警、大量错误**：`tutorial-incident-runbook.md`
 

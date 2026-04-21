@@ -519,6 +519,46 @@ TENANT_SECURITY_SLOW_THRESHOLD_SECONDS=20 backend/scripts/test_tenant_security_r
 
 当超过阈值，摘要会出现 `⚠️` 和 Slow Batches 区块。
 
+### 15.5 Execution Kernel 集成测试（可选 / 重型）
+
+用于本地验证 **Plan 编译**、**节点执行器注册**、`ExecutionKernelAdapter` 初始化等；默认脚本**只跑轻量项**（秒级结束），避免重型 Scheduler + SQLite 组合在你机器上长时间阻塞或触发锁竞争。
+
+**快速入口（日常推荐）：**
+
+```bash
+PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_integration.py
+```
+
+预期：约 **3 项**通过，退出码 `0`。
+
+**重型入口（额外跑 Scheduler + 独立临时库）：**
+
+```bash
+PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_integration_heavy.py
+```
+
+与在主脚本前设置 `EXEC_KERNEL_RUN_HEAVY_INTEGRATION=1` 等价。
+
+**排障：卡住、无输出或迟迟不结束**
+
+要知道：`Scheduler.start_instance()` 会**一直等到整张图跑完**才返回；若调度或数据库侧阻塞，看起来像「挂住」。
+
+可配合：
+
+- `EXEC_KERNEL_INTEGRATION_DIAG=1`：约每 **5 秒**打印一次快照（图实例状态、各节点 pending/running 分布、调度器在跑任务数等）。
+- `EXEC_KERNEL_START_INSTANCE_TIMEOUT_SEC`：限制 `start_instance` 最长等待秒数（默认 **`90`**）；超时后会尝试取消实例并抛出带说明的错误，而不是无限等下去。
+
+示例（重型 + 诊断 + 超时）：
+
+```bash
+EXEC_KERNEL_RUN_HEAVY_INTEGRATION=1 \
+EXEC_KERNEL_INTEGRATION_DIAG=1 \
+EXEC_KERNEL_START_INSTANCE_TIMEOUT_SEC=90 \
+PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_integration.py
+```
+
+此外，Execution Kernel 还有独立回归脚本 `backend/scripts/test_execution_kernel_regression.py`；若启用了敏感路由鉴权，可按脚本内说明配置 `RBAC_TEST_ADMIN_API_KEY`、`RBAC_TEST_TENANT_ID` 等，避免系统 API 冒烟用例被跳过。
+
 ---
 
 ## 16. CI 流水线说明（你当前已接好）
@@ -552,9 +592,18 @@ TENANT_SECURITY_SLOW_THRESHOLD_SECONDS=20 backend/scripts/test_tenant_security_r
 
 当你使用 `plan_based` 智能体时，可以通过 agent 配置开启图执行并行与记忆增强：
 
-- `execution_strategy=parallel_kernel`：启用 Agent Graph + 并行调度
+- `execution_strategy=parallel_kernel`：启用 Agent Graph + Execution Kernel 并行调度
 - `max_parallel_nodes=<N>`：限制单次执行并发节点数（建议先 2~4）
-- `execution_strategy=serial`：回退为串行（灰度/排障模式）
+- `execution_strategy=serial`：强制串行 **PlanBasedExecutor**（灰度、排障或与 Kernel 解耦）
+- 未设置 `execution_strategy` 时：按 `use_execution_kernel`（Agent 级）与全局 `USE_EXECUTION_KERNEL` 推导（与运行时 `_resolve_execution_strategy` 一致）
+- Kernel 执行失败时：运行时会**自动降级**为串行 `PlanBasedExecutor`，单次对话仍尽量完成（错误写入日志与指标）
+
+**HTTP API（创建/更新 Agent）** 已支持同名字段（管理员接口 `PUT/POST /api/agents` 的 JSON body）：
+
+- `execution_strategy`：`"serial"` | `"parallel_kernel"` | `null`（null 表示交给推导逻辑）
+- `max_parallel_nodes`：整数或 `null`（null 表示使用内核默认并发）
+
+也可仅在 `model_params` 里写 `execution_strategy` / `max_parallel_nodes`；**运行时优先读顶字段 `AgentDefinition.execution_strategy`，为空时才读 `model_params`**（见 `v2/runtime.py`）。若在**顶字段与 `model_params` 两处同时写了不同取值**，创建/更新接口会返回 **400**（避免 silent shadow）。
 
 事件驱动编排与调试：
 

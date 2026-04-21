@@ -123,6 +123,11 @@ replan_prompt: str
 plan_contract_enabled: bool
 plan_contract_strict: bool
 plan_contract_sources: List[str]
+
+# V3：Kernel 并行与并发上限（plan_based）
+use_execution_kernel: Optional[bool]   # None = 跟随全局 USE_EXECUTION_KERNEL
+execution_strategy: Optional[str]      # "serial" | "parallel_kernel" | None（推导）
+max_parallel_nodes: Optional[int]       # parallel_kernel 时 Scheduler 并发槽
 ```
 
 ⚠️ AgentDefinition 不包含运行时状态。
@@ -152,6 +157,17 @@ plan_contract_sources: List[str]
   3. **replan_fix_plan**（测试/命令失败时的固定「读→LLM patch→apply_patch→再测」链）
   4. **create_plan**（LLM 重新规划）
 * 权限由 Skill/Tool 声明推导（如 `core.tools.permissions`），不在此模块写死
+
+## 7.3 V3：并行 Kernel、事件流与记忆（plan_based）
+
+* **执行策略**（`AgentDefinition.execution_strategy`，亦可放在 `model_params`）  
+  - `parallel_kernel`：`AgentGraphAdapter` 将 Plan 编译为 `GraphDefinition`，由 **Execution Kernel** `Scheduler` 事件驱动调度；`max_parallel_nodes` 映射为 Scheduler 并发上限。  
+  - `serial`：始终走 **PlanBasedExecutor** 顺序执行（排障/回退路径）。  
+  - 未显式配置时：由 `use_execution_kernel`（Agent 级）与全局 `USE_EXECUTION_KERNEL` 推导默认策略（见 `v2/runtime.py` 中 `_resolve_execution_strategy`）。  
+  - 解析顺序：**顶字段优先**，仅当顶字段为空时才读 `model_params`；REST 创建/更新若两处同时给出且不一致会 **400**（`backend/api/agents.py`）。
+* **失败回退**：Kernel 执行抛错时，`AgentRuntime` 捕获后自动降级为 `PlanBasedExecutor`（见 `_run_plan_based`），不中断单次 Run 的用户可见流程（错误仍记录日志与指标）。
+* **事件流**：Kernel 将节点/图生命周期写入 `execution_event`（`EventStore`）；HTTP 查询 `/api/events/instance/{instance_id}`；按会话聚合 `/api/events/agent-session/{session_id}`（依赖 `GRAPH_STARTED` payload 内 `initial_context.session_id`）。
+* **记忆**：Planner 前 **MemoryInjector** 注入历史消息；Run 成功后 **MemoryExtractor** 异步提取持久化（受 `config.settings` 中 memory_* 开关约束；初始化失败则跳过）。
 
 # 8. LLM 输出协议
 
