@@ -10,6 +10,7 @@
 1. **[tutorial-quickstart.md](tutorial-quickstart.md)** — 约 10 分钟：启动、拿到 CSRF、跑一次健康检查。
 2. **[tutorial.md](tutorial.md)** — 主教程：环境、`.env`、租户/RBAC、`security_regression.py`、排障。
 3. **[tutorial-security-baseline.md](tutorial-security-baseline.md)** — 团队对齐：生产 MUST 项、门禁与变更审批。
+4. `tutorial.md` 的 **§9.5 / §17.10 / §17.11 / §20.16~§20.17** — 自治编排新增能力（幂等、持久化队列、HITL 审批）验证。
 
 有经验的同学可跳过 1，从 `tutorial.md` 第 5 节「配置 `.env`」切入。
 
@@ -21,7 +22,9 @@
 - **403**（写接口被拒、管理员接口失败）：`tutorial.md` → **§17 常见错误** → §17.2 / §17.6（权限、CSRF）；确认 `API_KEY_SCOPES_JSON` 与 RBAC
 - **404**（创建过资源但查不到）：`tutorial.md` → **§10 多租户**、§17.3；多半是 `X-Tenant-Id` 与创建时不一致
 - **429**（请求太频繁或上传并发过高）：`tutorial.md` → §17.4、§17.9（限流与 Agent 上传并发）
+- **409**（幂等冲突 / 重复执行冲突）：`tutorial.md` → §17.10（Idempotency-Key 场景）
 - **400**（`tenant id required for protected path`）：`tutorial.md` → §17.8
+- **Workflow 执行暂停在 `PAUSED`**：`tutorial.md` → §17.11（HITL 审批节点）
 - **本地跑安全回归（JSON/JUnit）**：`tutorial.md` → **§15**；命令示例见 `tutorial-index.md` → **§6**
 - **Execution Kernel 集成测试卡住或超时**：`tutorial.md` → **§15.5**（`EXEC_KERNEL_INTEGRATION_DIAG`、`EXEC_KERNEL_START_INSTANCE_TIMEOUT_SEC`）
 - **发版前 5 分钟**：`tutorial-ops-checklist.md`

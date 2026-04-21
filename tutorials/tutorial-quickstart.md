@@ -155,6 +155,10 @@ scripts/acceptance/run_security_regression.sh
   - 检查 `X-Tenant-Id` 与 namespace、API Key tenant 绑定
 - `429`  
   - 降低压测频率或调整限流配置
+- `409`（Idempotency-Key 冲突）  
+  - 同 key 必须匹配同请求体；请求体变化请更换 key
+- workflow 执行停在 `PAUSED`  
+  - 检查是否命中 `approval` 节点并完成审批
 
 ---
 

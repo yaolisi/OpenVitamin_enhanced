@@ -430,6 +430,26 @@ make help
   - Step Summary + Artifact 报告
   - 慢批次阈值告警（支持手动覆盖）
 
+## 自治编排能力补齐（2026Q2）
+
+围绕“可控、可恢复、可治理”的目标，当前版本已补齐以下能力：
+
+- **插件强约束授权**
+  - 插件执行前进行显式权限判定（支持精确匹配、全局通配、前缀通配）
+  - 权限不足会直接拒绝执行，不再使用隐式放行
+- **Agent Run API 幂等**
+  - `POST /api/v1/agents/{agent_id}/run` 支持幂等键
+  - 同 key 同请求可复用结果，same key different payload 返回 `409`
+- **工作流持久化队列**
+  - 执行队列落库并采用 lease 机制，避免进程重启后任务状态丢失
+  - 启动阶段自动回收过期 lease（`leased -> queued`）
+- **HITL 审批闸门**
+  - Workflow `approval` 节点可触发人工审批任务
+  - 未完成审批时执行进入 `PAUSED`，通过后恢复，拒绝后失败
+- **审批列表兼容演进**
+  - 审批列表接口提供结构化新格式
+  - `legacy=true` 仍可返回旧格式，并附带 `X-API-Deprecated` / `Sunset` 迁移提示头
+
 ## 部署与安全审查提示
 
 本项目默认面向 **本地/内网可信环境**；面向 **公网或多租户共享主机** 前，请先阅读下列归档提示（与 `tutorials/tutorial-security-baseline.md` 中 MUST 基线互补）：

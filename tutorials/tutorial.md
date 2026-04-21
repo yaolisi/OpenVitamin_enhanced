@@ -288,6 +288,15 @@ npm run dev
 - 404：租户不匹配（这是安全策略，不一定是数据不存在）
 - 429：触发限流
 
+### 9.5 自治编排新增能力（本版本）
+
+在已有租户/RBAC/CSRF 基线之外，本版本工作流与 Agent 路径新增四项关键能力：
+
+1. **插件权限强校验**：插件执行前按声明权限判定，权限不足直接拒绝。  
+2. **Agent run 幂等**：`POST /api/v1/agents/{agent_id}/run` 支持 `Idempotency-Key`，避免重试导致重复执行。  
+3. **持久化执行队列**：工作流执行队列持久化到数据库，支持 lease 与重启恢复。  
+4. **HITL 审批闸门**：存在 `approval` 节点时，执行可进入 `PAUSED` 等待人工批准。
+
 ---
 
 ## 10. 多租户与权限（必须理解）
@@ -697,6 +706,32 @@ PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_integration.py
 2. 降低前端并发上传数量
 3. 按需调整服务端阈值（谨慎）
 
+### 17.10 409（Idempotency-Key 冲突）
+
+典型场景：
+
+- 同一个 `Idempotency-Key` 被复用到**不同请求体**；
+- 前一次同 key 请求仍处于 processing，中途再次提交。
+
+处理顺序：
+
+1. 确认同一业务动作是否稳定复用同一个 key；
+2. 若请求体变化，必须更换新的 `Idempotency-Key`；
+3. 若是重试，保持 key 与请求体一致，并等待前一次完成后再查询结果。
+
+### 17.11 Workflow 状态停在 `PAUSED`
+
+典型场景：
+
+- 工作流版本中包含 `approval` 节点；
+- 审批任务尚未通过，执行被门控暂停。
+
+处理顺序：
+
+1. 查询执行对应审批任务列表；
+2. 由有权限的操作者调用 approve/reject；
+3. 确认通过后执行转回 `PENDING`/继续运行，或拒绝后转 `FAILED`。
+
 ---
 
 ## 18. 新手上线前最终检查（建议打印执行）
@@ -950,4 +985,37 @@ JUNIT_XML_PATH=test-reports/tenant-security-regression.xml backend/scripts/test_
 ```bash
 unset BASE_URL ADMIN_KEY OP_KEY TENANT_ID CSRF_TOKEN WORKFLOW_ID VERSION_ID EXECUTION_ID
 rm -f /tmp/wf-create.json /tmp/wf-version.json /tmp/wf-exec.json /tmp/ov_cookie.txt /tmp/ov_health_headers.txt
+```
+
+### 20.16 Agent Run 幂等请求示例
+
+```bash
+export IDEM_KEY="agent-run-$(date +%s)"
+curl -s -X POST "${BASE_URL}/api/v1/agents/YOUR_AGENT_ID/run" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: ${OP_KEY}" \
+  -H "X-Tenant-Id: ${TENANT_ID}" \
+  -H "X-CSRF-Token: ${CSRF_TOKEN}" \
+  -H "Idempotency-Key: ${IDEM_KEY}" \
+  -b /tmp/ov_cookie.txt \
+  -d '{"input":"hello"}' | jq .
+```
+
+说明：
+
+- 重试时保持 `Idempotency-Key` 与请求体一致；
+- 若同 key 改了请求体，预期返回 `409`。
+
+### 20.17 Workflow 审批任务查询（新格式/兼容格式）
+
+```bash
+# 新结构化格式（默认）
+curl -s "${BASE_URL}/api/v1/workflows/${WORKFLOW_ID}/executions/${EXECUTION_ID}/approvals" \
+  -H "X-Api-Key: ${OP_KEY}" \
+  -H "X-Tenant-Id: ${TENANT_ID}" | jq .
+
+# 兼容旧格式（含弃用提示头）
+curl -i -s "${BASE_URL}/api/v1/workflows/${WORKFLOW_ID}/executions/${EXECUTION_ID}/approvals?legacy=true" \
+  -H "X-Api-Key: ${OP_KEY}" \
+  -H "X-Tenant-Id: ${TENANT_ID}"
 ```

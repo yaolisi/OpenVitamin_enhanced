@@ -421,6 +421,26 @@ The current version includes an end-to-end security chain across frontend render
   - Step Summary + artifact reports
   - slow-batch threshold warnings with manual override
 
+## Autonomous Orchestration Upgrades (2026Q2)
+
+This release closes key gaps for a controllable, recoverable orchestration system:
+
+- **Strict plugin authorization**
+  - plugin execution now enforces explicit permission checks (exact, global wildcard, prefix wildcard)
+  - missing permissions fail fast instead of implicit allow
+- **Idempotent Agent Run API**
+  - `POST /api/v1/agents/{agent_id}/run` supports idempotency keys
+  - same key + same payload reuses execution; same key + different payload returns `409`
+- **Durable workflow execution queue**
+  - queue entries are persisted and leased from DB to survive process restarts
+  - expired leases are recovered on startup (`leased -> queued`)
+- **Human-in-the-Loop (HITL) approval gate**
+  - workflow `approval` nodes create approval tasks before continuing
+  - execution pauses on pending approvals, resumes on approval, and fails on rejection
+- **Approval API compatibility path**
+  - approval list supports a new structured response
+  - `legacy=true` keeps the old format with `X-API-Deprecated` and `Sunset` headers
+
 ## Deployment & Security Review Hints
 
 The platform defaults to **local / trusted-network** deployments. Before exposing it to the **internet** or **shared multi-tenant hosts**, read the archived hints (they complement `tutorials/tutorial-security-baseline.md` MUST rules):
