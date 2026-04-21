@@ -222,6 +222,13 @@ flowchart TD
   IMG --> API["Image Generation API"]
 ```
 
+并行编排增强（V3）：
+
+- Agent 支持 `execution_strategy`：`serial` / `parallel_kernel`
+- `parallel_kernel` 下会将 Plan 编译为 Agent Graph，由 Execution Kernel 并发调度
+- 支持 `max_parallel_nodes` 控制并发上限，支持事件流回放与按 session 聚合查询
+- 执行前后接入 Memory（注入/提取），失败时降级不阻断主流程
+
 ### 文生图控制面
 
 ```mermaid

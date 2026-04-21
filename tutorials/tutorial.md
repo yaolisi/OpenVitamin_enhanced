@@ -548,6 +548,32 @@ TENANT_SECURITY_SLOW_THRESHOLD_SECONDS=20 backend/scripts/test_tenant_security_r
 
 ---
 
+## 16.2 Agent 并行编排与记忆（新能力）
+
+当你使用 `plan_based` 智能体时，可以通过 agent 配置开启图执行并行与记忆增强：
+
+- `execution_strategy=parallel_kernel`：启用 Agent Graph + 并行调度
+- `max_parallel_nodes=<N>`：限制单次执行并发节点数（建议先 2~4）
+- `execution_strategy=serial`：回退为串行（灰度/排障模式）
+
+事件驱动编排与调试：
+
+- Kernel 执行会写入事件流（可用 `/api/events/instance/{instance_id}` 回放）
+- 已支持按会话聚合查询：`/api/events/agent-session/{session_id}`
+
+记忆增强行为：
+
+- 执行前自动注入长期记忆（受 memory 配置开关控制）
+- 执行后自动提取并持久化记忆（失败不阻断主链路）
+
+灰度建议：
+
+1. 先给少量 agent 开 `parallel_kernel`
+2. 观察事件流中的失败链路与回退次数
+3. 再逐步提升 `max_parallel_nodes`
+
+---
+
 ## 17. 常见错误与解决方案（新手高频）
 
 ### 17.1 启动失败：Unsafe production security configuration

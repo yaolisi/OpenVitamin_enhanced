@@ -35,6 +35,7 @@ from core.agent_runtime.v2.models import (
     StepType,
     create_replan_step,
 )
+from core.execution.adapters.plan_compiler import PlanCompiler
 from core.agent_runtime.v2.planner import Planner
 from core.types import Message
 
@@ -508,6 +509,31 @@ def test_extract_unified_diff_from_think_wrapped_output():
     patch = PlanBasedExecutor._extract_unified_diff(text)
     assert patch is not None
     assert patch.startswith("--- a/app.py")
+
+
+def test_runtime_resolve_execution_strategy():
+    if AgentRuntime is None:
+        pytest.skip("AgentRuntime optional dependencies are not available in this environment")
+    runtime = AgentRuntime(executor=None)
+    agent_serial = _make_agent(execution_strategy="serial")
+    agent_parallel = _make_agent(execution_strategy="parallel_kernel")
+    assert runtime._resolve_execution_strategy(agent_serial) == "serial"
+    assert runtime._resolve_execution_strategy(agent_parallel) == "parallel_kernel"
+
+
+def test_plan_compiler_parallel_mode_does_not_force_serial_edges():
+    compiler = PlanCompiler()
+    plan = Plan(
+        plan_id="plan_parallel",
+        goal="parallel",
+        context={"agent_graph_parallel": True},
+        steps=[
+            Step(step_id="s1", executor=ExecutorType.SKILL, type=StepType.ATOMIC, inputs={"skill_id": "a"}),
+            Step(step_id="s2", executor=ExecutorType.SKILL, type=StepType.ATOMIC, inputs={"skill_id": "b"}),
+        ],
+    )
+    graph = compiler.compile(plan)
+    assert len(graph.edges) == 0
 
 
 def test_inject_skill_output_failure_includes_exit_code_and_stderr():
