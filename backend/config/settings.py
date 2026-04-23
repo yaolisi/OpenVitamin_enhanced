@@ -347,6 +347,17 @@ class Settings(BaseSettings):
     # 1) API Key scope: JSON 字典，key 为 API Key，value 为 scope 列表
     # 示例: {"k-admin":["admin","audit:read"],"k-ro":["read"]}
     api_key_scopes_json: str = "{}"
+    # API Key 注册表（细粒度权限）：JSON 字典，key 为 API Key
+    # value 示例：
+    # {
+    #   "scopes": ["agent:read","knowledge:read"],
+    #   "expires_at": "2026-12-31T23:59:59Z",
+    #   "revoked": false,
+    #   "resources": {"agent_ids":["agent_a"], "knowledge_base_ids":["kb_a"]}
+    # }
+    api_keys_json: str = "{}"
+    # 静态吊销列表（逗号分隔），用于紧急失效
+    api_key_revoked_list: str = ""
     # 2) 多租户隔离：默认租户与强制开关
     tenant_enforcement_enabled: bool = False
     tenant_default_id: str = "default"

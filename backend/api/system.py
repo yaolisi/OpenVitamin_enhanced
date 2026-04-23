@@ -20,6 +20,7 @@ from core.system.feature_flags import get_feature_flags, set_feature_flags
 from core.system.queue_summary import build_unified_queue_summary
 from core.system.storage_strategy import storage_readiness
 from core.security.deps import require_authenticated_platform_admin, require_platform_admin
+from middleware.api_key_scope import get_revoked_api_keys, revoke_api_key, unrevoke_api_key
 
 router = APIRouter(
     prefix="/api/system",
@@ -86,6 +87,18 @@ class SystemConfigUpdate(BaseModel):
     chaosFailRateWarn: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     chaosP95WarnMs: Optional[int] = Field(default=None, ge=1, le=600000)
     chaosNetErrWarn: Optional[int] = Field(default=None, ge=0, le=10000)
+
+
+class ApiKeyRevokeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: str = Field(..., min_length=1, max_length=512)
+
+
+class ApiKeyRevocationListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revoked_api_keys: list[str]
 
 
 def _validate_system_config_payload(config_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -159,6 +172,32 @@ async def reload_engine(*, _role: Annotated[Any, Depends(require_platform_admin)
     # 这里可以添加实际的重载逻辑，比如重启 Ollama 服务或重置 llama.cpp 实例
     await asyncio.sleep(1.5)
     return {"success": True}
+
+
+@router.get("/security/api-keys/revoked")
+async def list_revoked_api_keys(
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> ApiKeyRevocationListResponse:
+    return ApiKeyRevocationListResponse(revoked_api_keys=get_revoked_api_keys())
+
+
+@router.post("/security/api-keys/revoke")
+async def revoke_api_key_endpoint(
+    body: ApiKeyRevokeBody,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> ApiKeyRevocationListResponse:
+    return ApiKeyRevocationListResponse(revoked_api_keys=revoke_api_key(body.api_key))
+
+
+@router.post("/security/api-keys/unrevoke")
+async def unrevoke_api_key_endpoint(
+    body: ApiKeyRevokeBody,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> ApiKeyRevocationListResponse:
+    return ApiKeyRevocationListResponse(revoked_api_keys=unrevoke_api_key(body.api_key))
 
 @router.get("/browse-directory")
 async def browse_directory() -> Dict[str, Optional[str]]:
