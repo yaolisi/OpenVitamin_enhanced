@@ -55,6 +55,10 @@ def get_platform_db_path() -> Path:
 
 def get_default_database_url() -> str:
     """获取默认数据库 URL（使用统一的 platform.db）"""
+    db_url = (os.getenv("DATABASE_URL") or "").strip()
+    if db_url:
+        # 复用主服务 DATABASE_URL；异步引擎优先 asyncpg
+        return db_url.replace("+psycopg2", "+asyncpg")
     db_path = get_platform_db_path()
     return f"sqlite+aiosqlite:///{db_path}"
 
@@ -88,6 +92,10 @@ class Database:
                 echo=False,
                 future=True,
                 connect_args=connect_args,
+                pool_pre_ping=True,
+                pool_recycle=max(60, int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))),
+                max_overflow=max(0, int(os.getenv("DB_MAX_OVERFLOW", "20"))),
+                pool_size=max(1, int(os.getenv("DB_POOL_SIZE", "10"))),
             )
             self._configure_sqlite_pragmas(self._async_engine.sync_engine)
         return self._async_engine
@@ -106,6 +114,10 @@ class Database:
                 echo=False,
                 future=True,
                 connect_args=connect_args,
+                pool_pre_ping=True,
+                pool_recycle=max(60, int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))),
+                max_overflow=max(0, int(os.getenv("DB_MAX_OVERFLOW", "20"))),
+                pool_size=max(1, int(os.getenv("DB_POOL_SIZE", "10"))),
             )
             self._configure_sqlite_pragmas(self._sync_engine)
         return self._sync_engine

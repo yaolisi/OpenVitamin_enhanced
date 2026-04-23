@@ -30,38 +30,71 @@ def get_db_path() -> Path:
     return root / "backend" / "data" / "platform.db"
 
 
-def create_engine_instance() -> Engine:
-    """创建数据库引擎（优化并发配置）"""
+def get_database_url() -> str:
+    """获取数据库 URL：优先使用 database_url（可切 PostgreSQL），否则回落 SQLite 文件。"""
+    raw = (getattr(settings, "database_url", "") or "").strip()
+    if raw:
+        return raw
     db_path = get_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    db_url = f"sqlite:///{db_path}"
-    
-    # SQLite 并发优化配置
-    engine = create_engine(
-        db_url,
-        connect_args={
-            "check_same_thread": False,  # 允许多线程访问
-            "timeout": 30.0,  # 锁等待超时（秒）
-        },
-        echo=False,
-        pool_pre_ping=True,  # 连接前健康检查
-        pool_recycle=3600,  # 1 小时回收连接
-        max_overflow=10,  # 允许额外连接数
-        pool_size=5,  # 基础连接池大小
-    )
-    
-    # 启用 WAL 模式以提升并发性能
+    return f"sqlite:///{db_path}"
+
+
+def _is_sqlite_url(db_url: str) -> bool:
+    return db_url.startswith("sqlite:")
+
+
+def _ensure_common_indexes(engine: Engine) -> None:
+    """为高频查询补齐索引（兼容存量库）。"""
+    statements = [
+        "CREATE INDEX IF NOT EXISTS idx_agent_sessions_user_created ON agent_sessions (user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow_created ON workflow_executions (workflow_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_workflow_executions_state_created ON workflow_executions (state, created_at)",
+    ]
     try:
         with engine.connect() as conn:
-            conn.execute(text("PRAGMA journal_mode=WAL"))
-            conn.execute(text("PRAGMA synchronous=NORMAL"))
-            conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 秒忙等待
-            conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB 缓存
+            for stmt in statements:
+                conn.execute(text(stmt))
             conn.commit()
-        logger.info("[Data] SQLite concurrency optimizations enabled (WAL mode)")
     except Exception as e:
-        logger.warning(f"[Data] Failed to enable WAL mode: {e}")
-    
+        logger.warning(f"[Data] Failed to ensure common indexes: {e}")
+
+
+def create_engine_instance() -> Engine:
+    """创建数据库引擎（优化并发配置）"""
+    db_url = get_database_url()
+    connect_args = {}
+    if _is_sqlite_url(db_url):
+        db_path = get_db_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        connect_args = {
+            "check_same_thread": False,  # 允许多线程访问
+            "timeout": 30.0,  # 锁等待超时（秒）
+        }
+
+    engine = create_engine(
+        db_url,
+        connect_args=connect_args,
+        echo=False,
+        pool_pre_ping=True,  # 连接前健康检查
+        pool_recycle=max(60, int(getattr(settings, "db_pool_recycle_seconds", 1800))),
+        max_overflow=max(0, int(getattr(settings, "db_max_overflow", 20))),
+        pool_size=max(1, int(getattr(settings, "db_pool_size", 10))),
+    )
+
+    if _is_sqlite_url(db_url):
+        # 启用 WAL 模式以提升并发性能
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA journal_mode=WAL"))
+                conn.execute(text("PRAGMA synchronous=NORMAL"))
+                conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 秒忙等待
+                conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB 缓存
+                conn.commit()
+            logger.info("[Data] SQLite concurrency optimizations enabled (WAL mode)")
+        except Exception as e:
+            logger.warning(f"[Data] Failed to enable WAL mode: {e}")
+
+    _ensure_common_indexes(engine)
     return engine
 
 

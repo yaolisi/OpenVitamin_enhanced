@@ -6,7 +6,7 @@ Governance note (AGENTS.md §7):
 - Avoid raw SQL in business modules; repositories should use these ORM models.
 """
 
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON
+from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Index
 from sqlalchemy.sql import func
 
 from core.data.base import Base
@@ -97,6 +97,11 @@ class WorkflowExecutionORM(Base):
     queue_position = Column(Integer, nullable=True)
     queued_at = Column(DateTime, nullable=True)
     wait_duration_ms = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("idx_workflow_executions_workflow_created", "workflow_id", "created_at"),
+        Index("idx_workflow_executions_state_created", "state", "created_at"),
+    )
 
 
 class WorkflowGovernanceAuditORM(Base):

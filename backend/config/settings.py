@@ -143,6 +143,12 @@ class Settings(BaseSettings):
 
     # 数据库配置 (统一合并管理)
     db_path: str = ""  # 为空则使用默认 backend/data/platform.db
+    # 生产环境可通过 DATABASE_URL 切换 PostgreSQL（示例：postgresql+psycopg2://user:pass@host:5432/dbname）
+    database_url: str = ""
+    # 连接池参数（适配 10+ 并发）
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_recycle_seconds: int = 1800
 
     # 文件读取工具：允许的绝对路径根目录（逗号分隔）。在此列表下的绝对路径可被 file.read 读取。
     # 例如："/" 表示允许本机任意目录；"/Users/tony,/data" 表示仅允许这两棵目录。

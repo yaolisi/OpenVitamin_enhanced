@@ -30,10 +30,12 @@ class AgentSession(Base):
         # 单列索引
         Index('idx_agent_sessions_user_id', 'user_id'),
         Index('idx_agent_sessions_agent_id', 'agent_id'),
+        Index('idx_agent_sessions_created_at', 'created_at'),
         Index('idx_agent_sessions_updated_at', 'updated_at'),
         
         # 复合索引（覆盖常用查询模式）
         Index('idx_agent_sessions_user_agent', 'user_id', 'agent_id'),
+        Index('idx_agent_sessions_user_created', 'user_id', 'created_at'),
         Index('idx_agent_sessions_user_updated', 'user_id', 'updated_at'),
         Index('idx_agent_sessions_user_agent_updated', 'user_id', 'agent_id', 'updated_at'),
     )
