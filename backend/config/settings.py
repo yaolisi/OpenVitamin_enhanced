@@ -222,6 +222,11 @@ class Settings(BaseSettings):
     inference_cache_ttl_seconds: int = 300
     # Embedding 缓存 24 小时
     embedding_cache_ttl_seconds: int = 86400
+    # 知识库向量索引 Redis 快照（用于重启后快速恢复向量表）
+    kb_vector_snapshot_redis_enabled: bool = True
+    kb_vector_snapshot_redis_prefix: str = "openvitamin:kbvec"
+    # 文档类型分块大小覆盖（JSON），例如 {"pdf":256,"md":512}
+    kb_chunk_size_overrides_json: str = "{\"pdf\":256,\"md\":512,\"txt\":256,\"docx\":384}"
     # 空闲回收阈值（秒）
     runtime_release_idle_ttl_seconds: int = 300
     # 自动回收最小触发间隔（秒），用于抑制并发尖峰抖动

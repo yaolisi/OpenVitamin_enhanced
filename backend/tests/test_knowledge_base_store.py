@@ -22,6 +22,7 @@ from core.knowledge.knowledge_base_store import (
     KnowledgeBaseStore,
 )
 from core.knowledge.status import KnowledgeBaseStatus, DocumentStatus
+from core.utils.user_context import ResourceNotFoundError
 
 
 def _create_embedding_chunks_table(store: KnowledgeBaseStore) -> None:
@@ -47,7 +48,7 @@ def _create_embedding_chunks_table(store: KnowledgeBaseStore) -> None:
 
 @pytest.fixture
 def db_path() -> Path:
-    fd, path = tempfile.mkstemp(suffix=".db")
+    _fd, path = tempfile.mkstemp(suffix=".db")
     Path(path).unlink(missing_ok=True)
     return Path(path)
 
@@ -73,6 +74,9 @@ class TestKnowledgeBaseCRUD:
             name="Test KB",
             description="Desc",
             embedding_model_id="embedding:test",
+            chunk_size=512,
+            chunk_overlap=40,
+            chunk_size_overrides_json='{"pdf":256,"md":512}',
         )
         assert kb_id.startswith("kb_")
         kb = store.get_knowledge_base(kb_id)
@@ -81,6 +85,9 @@ class TestKnowledgeBaseCRUD:
         assert kb["description"] == "Desc"
         assert kb["embedding_model_id"] == "embedding:test"
         assert kb["status"] == KnowledgeBaseStatus.EMPTY
+        assert kb["chunk_size"] == 512
+        assert kb["chunk_overlap"] == 40
+        assert kb["chunk_size_overrides_json"] == '{"pdf":256,"md":512}'
 
     def test_list_knowledge_bases(self, store: KnowledgeBaseStore) -> None:
         assert store.list_knowledge_bases() == []
@@ -93,12 +100,23 @@ class TestKnowledgeBaseCRUD:
 
     def test_update_and_delete_knowledge_base(self, store: KnowledgeBaseStore) -> None:
         kb_id = store.create_knowledge_base("Original", None, "emb:1")
-        store.update_knowledge_base(kb_id, name="Updated", description="New desc")
+        store.update_knowledge_base(
+            kb_id,
+            name="Updated",
+            description="New desc",
+            chunk_size=640,
+            chunk_overlap=32,
+            chunk_size_overrides_json='{"pdf":320}',
+        )
         kb = store.get_knowledge_base(kb_id)
         assert kb["name"] == "Updated"
         assert kb["description"] == "New desc"
+        assert kb["chunk_size"] == 640
+        assert kb["chunk_overlap"] == 32
+        assert kb["chunk_size_overrides_json"] == '{"pdf":320}'
         assert store.delete_knowledge_base(kb_id) is True
-        assert store.get_knowledge_base(kb_id) is None
+        with pytest.raises(ResourceNotFoundError):
+            store.get_knowledge_base(kb_id)
 
     def test_create_and_list_documents(self, store: KnowledgeBaseStore) -> None:
         kb_id = store.create_knowledge_base("KB", None, "emb:1")

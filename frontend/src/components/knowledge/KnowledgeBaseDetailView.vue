@@ -52,8 +52,7 @@ const activeTab = ref<'documents' | 'chunks' | 'retrieval' | 'settings'>('docume
 
 // Documents
 const documents = ref<any[]>([])
-const documentsPage = ref(1)
-const documentsPageSize = 20
+const documentsRowHeight = 56
 const uploading = ref(false)
 const dragOver = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -65,17 +64,7 @@ const showDeleteConfirm = ref(false)
 const docToDelete = ref<any>(null)
 let statusPollingTimer: any = null
 
-const enableDocumentsPagination = computed(() => documents.value.length > 50)
-const documentsTotalPages = computed(() =>
-  enableDocumentsPagination.value
-    ? Math.max(1, Math.ceil(documents.value.length / documentsPageSize))
-    : 1
-)
-const pagedDocuments = computed(() => {
-  if (!enableDocumentsPagination.value) return documents.value
-  const start = (documentsPage.value - 1) * documentsPageSize
-  return documents.value.slice(start, start + documentsPageSize)
-})
+const enableDocumentsVirtualScroll = computed(() => documents.value.length > 50)
 
 // Chunks
 const chunks = ref<any[]>([])
@@ -92,6 +81,18 @@ const searching = ref(false)
 // Indexing Settings
 const chunkSize = ref(512)
 const chunkOverlap = ref(15)
+const chunkSizeOverrides = ref<Record<string, number>>({
+  pdf: 256,
+  md: 512,
+  txt: 256,
+  docx: 384,
+})
+const savingChunkSettings = ref(false)
+
+const safeChunkSize = (value: number) => {
+  const n = Number.isFinite(value) ? Math.round(value) : 256
+  return Math.min(2048, Math.max(128, n))
+}
 
 // Load knowledge base info
 const loadKBInfo = async () => {
@@ -99,6 +100,22 @@ const loadKBInfo = async () => {
     loading.value = true
     const info = await getKnowledgeBase(kbId.value)
     kbInfo.value = info
+    chunkSize.value = safeChunkSize(Number(info.chunk_size || 512))
+    chunkOverlap.value = Math.min(200, Math.max(0, Number(info.chunk_overlap || 50)))
+    try {
+      const raw = info.chunk_size_overrides_json
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, number>
+        chunkSizeOverrides.value = {
+          ...chunkSizeOverrides.value,
+          ...Object.fromEntries(
+            Object.entries(parsed).map(([k, v]) => [k, safeChunkSize(Number(v))])
+          ),
+        }
+      }
+    } catch {
+      // ignore invalid override payload from legacy data
+    }
     
     // Use new stats API
     try {
@@ -198,19 +215,6 @@ watch(activeTab, (newTab) => {
     loadChunks()
   }
 })
-
-watch(
-  () => documents.value.length,
-  () => {
-    if (!enableDocumentsPagination.value) {
-      documentsPage.value = 1
-      return
-    }
-    if (documentsPage.value > documentsTotalPages.value) {
-      documentsPage.value = documentsTotalPages.value
-    }
-  }
-)
 
 onMounted(() => {
   loadKBInfo()
@@ -487,6 +491,33 @@ const handleSearch = async () => {
 
 // Re-index entire knowledge base
 const reindexingKB = ref(false)
+const saveChunkingSettings = async () => {
+  if (!kbInfo.value) return
+  savingChunkSettings.value = true
+  try {
+    const normalizedOverrides = Object.fromEntries(
+      Object.entries(chunkSizeOverrides.value).map(([k, v]) => [k, safeChunkSize(Number(v))])
+    )
+    const updated = await updateKnowledgeBase(kbId.value, {
+      chunk_size: safeChunkSize(chunkSize.value),
+      chunk_overlap: Math.min(200, Math.max(0, Number(chunkOverlap.value))),
+      chunk_size_overrides: normalizedOverrides,
+    })
+    kbInfo.value = updated
+    uploadSuccess.value = t('knowledge.detail.messages.update_success') || 'Chunk settings saved'
+    setTimeout(() => {
+      uploadSuccess.value = null
+    }, 2500)
+  } catch (err) {
+    uploadError.value = err instanceof Error ? err.message : 'Failed to save chunk settings'
+    setTimeout(() => {
+      uploadError.value = null
+    }, 5000)
+  } finally {
+    savingChunkSettings.value = false
+  }
+}
+
 const handleReindexKnowledgeBase = async () => {
   if (!kbInfo.value) return
   
@@ -553,15 +584,6 @@ const handleReindexKnowledgeBase = async () => {
   }
 }
 
-const goDocumentsPrevPage = () => {
-  if (documentsPage.value <= 1) return
-  documentsPage.value -= 1
-}
-
-const goDocumentsNextPage = () => {
-  if (documentsPage.value >= documentsTotalPages.value) return
-  documentsPage.value += 1
-}
 </script>
 
 <template>
@@ -760,105 +782,89 @@ const goDocumentsNextPage = () => {
 
             <!-- Documents Table -->
             <div class="bg-background/50 border border-border/50 rounded-lg overflow-hidden">
-              <div
-                v-if="enableDocumentsPagination"
-                class="px-4 py-3 border-b border-border/50 flex items-center justify-between text-xs text-muted-foreground"
-              >
-                <span>共 {{ documents.length }} 条文档，当前第 {{ documentsPage }} / {{ documentsTotalPages }} 页</span>
-                <div class="flex items-center gap-2">
-                  <Button variant="outline" size="sm" :disabled="documentsPage <= 1" @click="goDocumentsPrevPage">
-                    上一页
-                  </Button>
-                  <Button variant="outline" size="sm" :disabled="documentsPage >= documentsTotalPages" @click="goDocumentsNextPage">
-                    下一页
-                  </Button>
-                </div>
+              <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_110px_150px_140px] border-b border-border/50">
+                <div class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.name') }}</div>
+                <div class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.status') }}</div>
+                <div class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.chunks') }}</div>
+                <div class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.date') }}</div>
+                <div class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.actions') }}</div>
               </div>
-              <table class="w-full">
-                <thead>
-                  <tr class="border-b border-border/50">
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.name') }}</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.status') }}</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.chunks') }}</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.date') }}</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">{{ t('knowledge.detail.table.actions') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="doc in pagedDocuments"
-                    :key="doc.id"
-                    class="border-b border-border/30 hover:bg-muted/20 transition-colors"
-                  >
-                    <td class="px-4 py-3">
+
+              <RecycleScroller
+                v-if="enableDocumentsVirtualScroll && documents.length > 0"
+                :items="documents"
+                :item-size="documentsRowHeight"
+                key-field="id"
+                class="h-[420px]"
+              >
+                <template #default="{ item: doc }">
+                  <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_110px_150px_140px] border-b border-border/30 hover:bg-muted/20 transition-colors">
+                    <div class="px-4 py-3">
                       <div class="flex items-center gap-2">
                         <FileText class="w-4 h-4 text-muted-foreground" />
-                        <span class="text-sm font-medium">{{ doc.source }}</span>
+                        <span class="text-sm font-medium truncate">{{ doc.source }}</span>
                       </div>
-                    </td>
-                    <td class="px-4 py-3">
-                      <Badge
-                        variant="outline"
-                        class="text-xs"
-                        :class="getStatusBadge(doc.status || 'INDEXED').color"
-                      >
-                        <component
-                          :is="getStatusBadge(doc.status || 'INDEXED').icon"
-                          class="w-3 h-3 mr-1"
-                          :class="getStatusBadge(doc.status || 'INDEXED').spinning ? 'animate-spin' : ''"
-                        />
+                    </div>
+                    <div class="px-4 py-3">
+                      <Badge variant="outline" class="text-xs" :class="getStatusBadge(doc.status || 'INDEXED').color">
+                        <component :is="getStatusBadge(doc.status || 'INDEXED').icon" class="w-3 h-3 mr-1" :class="getStatusBadge(doc.status || 'INDEXED').spinning ? 'animate-spin' : ''" />
                         {{ t(`common.status.${(doc.status || 'INDEXED').toLowerCase()}`) || doc.status || 'INDEXED' }}
                       </Badge>
-                    </td>
-                    <td class="px-4 py-3 text-sm">{{ doc.chunks_count || doc.chunks || 0 }}</td>
-                    <td class="px-4 py-3 text-sm text-muted-foreground">{{ formatDate(doc.created_at) }}</td>
-                    <td class="px-4 py-3">
+                    </div>
+                    <div class="px-4 py-3 text-sm">{{ doc.chunks_count || doc.chunks || 0 }}</div>
+                    <div class="px-4 py-3 text-sm text-muted-foreground">{{ formatDate(doc.created_at) }}</div>
+                    <div class="px-4 py-3">
                       <div class="flex items-center gap-1">
-                        <!-- Re-index Button (for INDEXED or FAILED documents) -->
-                        <Button
-                          v-if="['INDEXED', 'FAILED_PARSE', 'FAILED_EMBED'].includes(doc.status)"
-                          variant="ghost"
-                          size="icon"
-                          class="h-8 w-8"
-                          @click.stop="handleReindex(doc.id)"
-                          :disabled="reindexingDocId === doc.id"
-                          :title="t('knowledge.detail.reindex_doc')"
-                        >
-                          <RefreshCw
-                            :class="[
-                              'w-4 h-4 text-muted-foreground hover:text-blue-400 transition-colors',
-                              reindexingDocId === doc.id ? 'animate-spin' : ''
-                            ]"
-                          />
+                        <Button v-if="['INDEXED', 'FAILED_PARSE', 'FAILED_EMBED'].includes(doc.status)" variant="ghost" size="icon" class="h-8 w-8" @click.stop="handleReindex(doc.id)" :disabled="reindexingDocId === doc.id" :title="t('knowledge.detail.reindex_doc')">
+                          <RefreshCw :class="['w-4 h-4 text-muted-foreground hover:text-blue-400 transition-colors', reindexingDocId === doc.id ? 'animate-spin' : '']" />
                         </Button>
-                        <!-- Delete Button -->
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          class="h-8 w-8"
-                          @click.stop="confirmDelete(doc)"
-                          :disabled="deletingDocId === doc.id"
-                          :title="t('knowledge.detail.delete_doc')"
-                        >
-                          <Trash2 
-                            v-if="deletingDocId === doc.id"
-                            class="w-4 h-4 animate-spin text-red-400" 
-                          />
-                          <Trash2 
-                            v-else
-                            class="w-4 h-4 text-muted-foreground hover:text-red-400 transition-colors" 
-                          />
+                        <Button variant="ghost" size="icon" class="h-8 w-8" @click.stop="confirmDelete(doc)" :disabled="deletingDocId === doc.id" :title="t('knowledge.detail.delete_doc')">
+                          <Trash2 v-if="deletingDocId === doc.id" class="w-4 h-4 animate-spin text-red-400" />
+                          <Trash2 v-else class="w-4 h-4 text-muted-foreground hover:text-red-400 transition-colors" />
                         </Button>
                       </div>
-                    </td>
-                  </tr>
-                  <tr v-if="documents.length === 0">
-                    <td colspan="5" class="px-4 py-8 text-center text-sm text-muted-foreground">
-                      {{ t('knowledge.detail.no_docs') }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    </div>
+                  </div>
+                </template>
+              </RecycleScroller>
+
+              <div v-else>
+                <div
+                  v-for="doc in documents"
+                  :key="doc.id"
+                  class="grid grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_110px_150px_140px] border-b border-border/30 hover:bg-muted/20 transition-colors"
+                >
+                  <div class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <FileText class="w-4 h-4 text-muted-foreground" />
+                      <span class="text-sm font-medium">{{ doc.source }}</span>
+                    </div>
+                  </div>
+                  <div class="px-4 py-3">
+                    <Badge variant="outline" class="text-xs" :class="getStatusBadge(doc.status || 'INDEXED').color">
+                      <component :is="getStatusBadge(doc.status || 'INDEXED').icon" class="w-3 h-3 mr-1" :class="getStatusBadge(doc.status || 'INDEXED').spinning ? 'animate-spin' : ''" />
+                      {{ t(`common.status.${(doc.status || 'INDEXED').toLowerCase()}`) || doc.status || 'INDEXED' }}
+                    </Badge>
+                  </div>
+                  <div class="px-4 py-3 text-sm">{{ doc.chunks_count || doc.chunks || 0 }}</div>
+                  <div class="px-4 py-3 text-sm text-muted-foreground">{{ formatDate(doc.created_at) }}</div>
+                  <div class="px-4 py-3">
+                    <div class="flex items-center gap-1">
+                      <Button v-if="['INDEXED', 'FAILED_PARSE', 'FAILED_EMBED'].includes(doc.status)" variant="ghost" size="icon" class="h-8 w-8" @click.stop="handleReindex(doc.id)" :disabled="reindexingDocId === doc.id" :title="t('knowledge.detail.reindex_doc')">
+                        <RefreshCw :class="['w-4 h-4 text-muted-foreground hover:text-blue-400 transition-colors', reindexingDocId === doc.id ? 'animate-spin' : '']" />
+                      </Button>
+                      <Button variant="ghost" size="icon" class="h-8 w-8" @click.stop="confirmDelete(doc)" :disabled="deletingDocId === doc.id" :title="t('knowledge.detail.delete_doc')">
+                        <Trash2 v-if="deletingDocId === doc.id" class="w-4 h-4 animate-spin text-red-400" />
+                        <Trash2 v-else class="w-4 h-4 text-muted-foreground hover:text-red-400 transition-colors" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="documents.length === 0" class="px-4 py-8 text-center text-sm text-muted-foreground">
+                {{ t('knowledge.detail.no_docs') }}
+              </div>
             </div>
           </div>
 
@@ -979,6 +985,19 @@ const goDocumentsNextPage = () => {
                 <p class="text-sm font-medium mb-2 block uppercase">{{ t('knowledge.detail.overlap_label') }}</p>
                 <Input v-model.number="chunkOverlap" type="number" min="0" max="50" />
               </div>
+              <div class="p-4 bg-background/50 border border-border/50 rounded-lg">
+                <p class="text-sm font-medium mb-3 block uppercase">按文档类型分块大小（Token）</p>
+                <div class="grid grid-cols-2 gap-3">
+                  <div v-for="docType in ['pdf', 'md', 'txt', 'docx']" :key="docType">
+                    <p class="text-xs text-muted-foreground mb-1">{{ docType.toUpperCase() }}</p>
+                    <Input v-model.number="chunkSizeOverrides[docType]" type="number" min="128" max="2048" />
+                  </div>
+                </div>
+              </div>
+              <Button variant="outline" @click="saveChunkingSettings" :disabled="savingChunkSettings">
+                <Save :class="['w-4 h-4 mr-2', savingChunkSettings ? 'animate-pulse' : '']" />
+                {{ savingChunkSettings ? '保存中...' : '保存分块配置' }}
+              </Button>
               <Button @click="handleReindexKnowledgeBase" :disabled="reindexingKB">
                 <RefreshCw :class="['w-4 h-4 mr-2', reindexingKB ? 'animate-spin' : '']" />
                 {{ reindexingKB ? t('knowledge.detail.reindexing') : t('knowledge.detail.reindex_kb') }}

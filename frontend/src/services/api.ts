@@ -1991,6 +1991,7 @@ export interface CreateKnowledgeBaseRequest {
   embedding_model_id: string
   chunk_size?: number
   chunk_overlap?: number
+  chunk_size_overrides?: Record<string, number>
 }
 
 export interface KnowledgeBaseDiskSize {
@@ -2005,6 +2006,9 @@ export interface KnowledgeBase {
   name: string
   description?: string
   embedding_model_id: string
+  chunk_size?: number
+  chunk_overlap?: number
+  chunk_size_overrides_json?: string
   status?: string
   created_at: string
   disk_size?: KnowledgeBaseDiskSize
@@ -2050,6 +2054,9 @@ export async function getKnowledgeBase(kbId: string): Promise<KnowledgeBase> {
 export interface UpdateKnowledgeBaseRequest {
   name?: string
   description?: string
+  chunk_size?: number
+  chunk_overlap?: number
+  chunk_size_overrides?: Record<string, number>
 }
 
 export async function updateKnowledgeBase(

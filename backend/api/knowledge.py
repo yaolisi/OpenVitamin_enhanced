@@ -2,11 +2,12 @@
 Knowledge Base API 端点
 """
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Annotated, Any, Dict, List, Optional, cast
 from pathlib import Path
 import uuid
 import shutil
+import json
 from log import logger
 from api.errors import APIException, raise_api_error
 from config.settings import settings
@@ -45,6 +46,7 @@ class CreateKnowledgeBaseRequest(BaseModel):
     embedding_model_id: str
     chunk_size: int = 512
     chunk_overlap: int = 50
+    chunk_size_overrides: Dict[str, int] = Field(default_factory=dict)
 
 
 class SearchRequest(BaseModel):
@@ -64,12 +66,18 @@ async def create_knowledge_base(req: CreateKnowledgeBaseRequest, request: Reques
             description=req.description,
             embedding_model_id=req.embedding_model_id,
             user_id=user_id,
+            chunk_size=req.chunk_size,
+            chunk_overlap=req.chunk_overlap,
+            chunk_size_overrides_json=json.dumps(req.chunk_size_overrides or {}, ensure_ascii=False),
         )
         return {
             "id": kb_id,
             "name": req.name,
             "description": req.description,
             "embedding_model_id": req.embedding_model_id,
+            "chunk_size": req.chunk_size,
+            "chunk_overlap": req.chunk_overlap,
+            "chunk_size_overrides": req.chunk_size_overrides or {},
         }
     except Exception as e:
         logger.error(f"Failed to create knowledge base: {e}", exc_info=True)
@@ -121,6 +129,9 @@ async def get_knowledge_base(kb_id: str, request: Request) -> JSONDict:
 class UpdateKnowledgeBaseRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    chunk_size: Optional[int] = None
+    chunk_overlap: Optional[int] = None
+    chunk_size_overrides: Optional[Dict[str, int]] = None
 
 
 @router.patch("/knowledge-bases/{kb_id}")
@@ -149,6 +160,13 @@ async def update_knowledge_base(
             kb_id=kb_id,
             name=req.name,
             description=req.description,
+            chunk_size=req.chunk_size,
+            chunk_overlap=req.chunk_overlap,
+            chunk_size_overrides_json=(
+                json.dumps(req.chunk_size_overrides, ensure_ascii=False)
+                if req.chunk_size_overrides is not None
+                else None
+            ),
         )
         
         if not success:
@@ -395,7 +413,20 @@ def index_document_background(
             # Ensure vec0 table dimension matches (may recreate table)
             _kb_store._ensure_vec_table_dimension(kb_id, actual_embedding_dim)
         
-        indexer = KnowledgeBaseIndexer(_kb_store)
+        kb_chunk_size = int(kb_info.get("chunk_size") or 500)
+        kb_chunk_overlap = int(kb_info.get("chunk_overlap") or 50)
+        kb_overrides_raw = kb_info.get("chunk_size_overrides_json") or "{}"
+        try:
+            kb_overrides = json.loads(kb_overrides_raw)
+        except Exception:
+            kb_overrides = {}
+        effective_chunk_size = kb_chunk_size
+        doc_type_key = (doc_type or "").lower()
+        if isinstance(kb_overrides, dict) and doc_type_key:
+            override_size = kb_overrides.get(doc_type_key)
+            if isinstance(override_size, (int, float)):
+                effective_chunk_size = int(override_size)
+        indexer = KnowledgeBaseIndexer(_kb_store, chunk_size=effective_chunk_size, chunk_overlap=kb_chunk_overlap)
         result = indexer.index_document(
             kb_id=kb_id,
             doc_id=doc_id,

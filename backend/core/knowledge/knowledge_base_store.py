@@ -17,6 +17,7 @@ from config.settings import settings
 from core.knowledge.status import KnowledgeBaseStatus, DocumentStatus
 from core.data.vector_search import get_vector_provider
 from core.utils.user_context import UserAccessDeniedError, ResourceNotFoundError
+from core.knowledge.vector_index_snapshot import get_kb_vector_snapshot_store
 
 # 统一单表：业务表与向量表名（阶段 4.3）
 UNIFIED_CHUNKS_TABLE = "embedding_chunks"
@@ -43,6 +44,7 @@ class KnowledgeBaseStore:
     def __init__(self, config: KnowledgeBaseConfig):
         self.config = config
         self._vec_available = False
+        self._snapshot_store = get_kb_vector_snapshot_store()
         self._ensure_db()
 
     @staticmethod
@@ -89,6 +91,9 @@ class KnowledgeBaseStore:
                         description TEXT,
                         embedding_model_id TEXT NOT NULL,
                         status TEXT DEFAULT 'READY',
+                        chunk_size INTEGER DEFAULT 500,
+                        chunk_overlap INTEGER DEFAULT 50,
+                        chunk_size_overrides_json TEXT DEFAULT '{}',
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         user_id TEXT DEFAULT 'default'
                     );
@@ -103,6 +108,18 @@ class KnowledgeBaseStore:
                 try:
                     conn.execute("ALTER TABLE knowledge_base ADD COLUMN user_id TEXT DEFAULT 'default'")
                     conn.execute("UPDATE knowledge_base SET user_id = 'default' WHERE user_id IS NULL")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE knowledge_base ADD COLUMN chunk_size INTEGER DEFAULT 500")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE knowledge_base ADD COLUMN chunk_overlap INTEGER DEFAULT 50")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE knowledge_base ADD COLUMN chunk_size_overrides_json TEXT DEFAULT '{}'")
                 except sqlite3.OperationalError:
                     pass
 
@@ -216,6 +233,34 @@ class KnowledgeBaseStore:
             logger.warning(f"[KnowledgeBaseStore] Failed to ensure unified vec table: {e}")
             raise
 
+    def _restore_unified_vectors_from_snapshot_if_needed(self, kb_id: str) -> None:
+        """
+        若统一向量表不存在，尝试从 Redis 快照恢复该 KB 的向量条目。
+        """
+        try:
+            provider = get_vector_provider()
+            if provider.table_exists(UNIFIED_VEC_TABLE):
+                return
+            embedding_dim = int(self.config.embedding_dim or 512)
+            provider.create_table(UNIFIED_VEC_TABLE, dimension=embedding_dim)
+            cached = self._snapshot_store.load_embeddings(kb_id)
+            if not cached:
+                return
+            for rowid, embedding in cached.items():
+                try:
+                    provider.upsert_vector(
+                        table_name=UNIFIED_VEC_TABLE,
+                        vector_id=rowid,
+                        embedding=embedding,
+                    )
+                except Exception:
+                    continue
+            logger.info(
+                f"[KnowledgeBaseStore] Restored {len(cached)} vectors from Redis snapshot for KB {kb_id}"
+            )
+        except Exception as e:
+            logger.warning(f"[KnowledgeBaseStore] Redis snapshot restore skipped for KB {kb_id}: {e}")
+
     def _ensure_kb_vec_table(self, kb_id: str, embedding_dim: int) -> None:
         """
         确保知识库的向量表存在且维度正确
@@ -281,6 +326,9 @@ class KnowledgeBaseStore:
         embedding_model_id: str,
         kb_id: Optional[str] = None,
         user_id: str = "default",
+        chunk_size: int = 500,
+        chunk_overlap: int = 50,
+        chunk_size_overrides_json: Optional[str] = None,
     ) -> str:
         """
         创建知识库
@@ -300,9 +348,19 @@ class KnowledgeBaseStore:
 
         with self._connect() as conn:
             conn.execute("""
-                INSERT INTO knowledge_base (id, name, description, embedding_model_id, status, user_id)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (kb_id, name, description, embedding_model_id, KnowledgeBaseStatus.EMPTY, user_id))
+                INSERT INTO knowledge_base (id, name, description, embedding_model_id, status, user_id, chunk_size, chunk_overlap, chunk_size_overrides_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                kb_id,
+                name,
+                description,
+                embedding_model_id,
+                KnowledgeBaseStatus.EMPTY,
+                user_id,
+                int(chunk_size),
+                int(chunk_overlap),
+                chunk_size_overrides_json or getattr(settings, "kb_chunk_size_overrides_json", "{}"),
+            ))
             conn.commit()
 
         logger.info(f"[KnowledgeBaseStore] Created knowledge base: {kb_id} for user: {user_id}")
@@ -358,6 +416,9 @@ class KnowledgeBaseStore:
         kb_id: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        chunk_size_overrides_json: Optional[str] = None,
     ) -> bool:
         """
         更新知识库信息
@@ -384,6 +445,15 @@ class KnowledgeBaseStore:
         if description is not None:
             updates.append("description = ?")
             params.append(description)
+        if chunk_size is not None:
+            updates.append("chunk_size = ?")
+            params.append(int(chunk_size))
+        if chunk_overlap is not None:
+            updates.append("chunk_overlap = ?")
+            params.append(int(chunk_overlap))
+        if chunk_size_overrides_json is not None:
+            updates.append("chunk_size_overrides_json = ?")
+            params.append(chunk_size_overrides_json)
         
         if not updates:
             return True  # 没有需要更新的字段
@@ -459,6 +529,8 @@ class KnowledgeBaseStore:
                 (kb_id, user_id),
             )
             conn.commit()
+            if cursor.rowcount > 0:
+                self._snapshot_store.clear_kb(kb_id)
             return cursor.rowcount > 0
 
     # =========================
@@ -681,6 +753,7 @@ class KnowledgeBaseStore:
                 provider = get_vector_provider()
                 if provider.is_available():
                     provider.delete_vectors(table_name=UNIFIED_VEC_TABLE, vector_ids=rowids)
+                self._snapshot_store.delete_embeddings(kb_id, [int(x) for x in rowids])
                 logger.info(f"[KnowledgeBaseStore] Deleted {len(rowids)} chunks for document {doc_id} from {UNIFIED_CHUNKS_TABLE}")
                 return len(rowids)
             except Exception as e:
@@ -767,6 +840,7 @@ class KnowledgeBaseStore:
                     vector_id=rowid,
                     embedding=embedding,
                 )
+                self._snapshot_store.save_embedding(knowledge_base_id, int(rowid), embedding)
                 logger.debug(f"[KnowledgeBaseStore] Inserted chunk {chunk_id} into {UNIFIED_CHUNKS_TABLE}")
                 return
             except Exception as e:
@@ -801,6 +875,7 @@ class KnowledgeBaseStore:
         """
         if self._use_unified_chunks_table():
             try:
+                self._restore_unified_vectors_from_snapshot_if_needed(knowledge_base_id)
                 provider = get_vector_provider()
                 if provider.is_available():
                     results = provider.search(
