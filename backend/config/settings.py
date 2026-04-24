@@ -218,8 +218,18 @@ class Settings(BaseSettings):
     inference_cache_enabled: bool = True
     inference_cache_redis_url: str = "redis://127.0.0.1:6379/0"
     inference_cache_prefix: str = "openvitamin:inference"
+    # L1: 内存缓存（优先读）+ Redis（次级回源）
+    inference_cache_memory_enabled: bool = True
+    inference_cache_memory_max_entries: int = 2048
     # 相同模型+相同请求缓存 5 分钟
     inference_cache_ttl_seconds: int = 300
+    # 按模型类型覆盖 TTL（JSON），例如 {"llm":900,"vlm":300}
+    inference_cache_ttl_by_model_type_json: str = "{\"llm\":900,\"vlm\":300,\"embedding\":86400}"
+    # 全量清理挑战码有效期（秒）
+    inference_cache_clear_challenge_ttl_seconds: int = 120
+    # 挑战码申请限流窗口与阈值
+    inference_cache_clear_challenge_rate_window_seconds: int = 60
+    inference_cache_clear_challenge_rate_max_per_window: int = 5
     # Embedding 缓存 24 小时
     embedding_cache_ttl_seconds: int = 86400
     # 知识库向量索引 Redis 快照（用于重启后快速恢复向量表）

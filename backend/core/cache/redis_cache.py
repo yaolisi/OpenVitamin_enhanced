@@ -69,6 +69,65 @@ class RedisCacheClient:
         except Exception as exc:
             logger.debug("[RedisCache] set failed key=%s err=%s", key, exc)
 
+    async def clear_prefix(self, prefix: str, batch_size: int = 200) -> int:
+        client = self._get_client()
+        if client is None:
+            return 0
+        deleted = 0
+        pattern = f"{prefix}*"
+        try:
+            keys: list[str] = []
+            async for key in client.scan_iter(match=pattern, count=max(10, int(batch_size))):
+                keys.append(key)
+                if len(keys) >= batch_size:
+                    deleted += int(await client.delete(*keys) or 0)
+                    keys = []
+            if keys:
+                deleted += int(await client.delete(*keys) or 0)
+        except Exception as exc:
+            logger.debug("[RedisCache] clear_prefix failed prefix=%s err=%s", prefix, exc)
+        return deleted
+
+    async def incr_with_expire(self, key: str, ttl_seconds: int) -> Optional[int]:
+        """
+        Atomically increment key and ensure TTL is set on first hit.
+        Returns current count, or None when unavailable/failure.
+        """
+        client = self._get_client()
+        if client is None:
+            return None
+        ttl = max(1, int(ttl_seconds))
+        try:
+            count = await client.incr(key)
+            if int(count) == 1:
+                await client.expire(key, ttl)
+            return int(count)
+        except Exception as exc:
+            logger.debug("[RedisCache] incr_with_expire failed key=%s err=%s", key, exc)
+            return None
+
+    async def ttl(self, key: str) -> Optional[int]:
+        client = self._get_client()
+        if client is None:
+            return None
+        try:
+            value = int(await client.ttl(key))
+            return value
+        except Exception as exc:
+            logger.debug("[RedisCache] ttl failed key=%s err=%s", key, exc)
+            return None
+
+    async def delete(self, key: str) -> bool:
+        client = self._get_client()
+        if client is None:
+            return False
+        try:
+            deleted = int(await client.delete(key) or 0)
+            return deleted > 0
+        except Exception as exc:
+            logger.debug("[RedisCache] delete failed key=%s err=%s", key, exc)
+            return False
+
 
 _redis_cache_client: Optional[RedisCacheClient] = None
 _redis_cache_lock = threading.Lock()

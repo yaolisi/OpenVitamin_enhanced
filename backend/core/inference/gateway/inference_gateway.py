@@ -7,10 +7,12 @@ Coordinates ModelRouter and ProviderRuntimeAdapter.
 from typing import Any, AsyncIterator, Optional
 import hashlib
 import json
+import time
 
 from log import logger
 from config.settings import settings
-from core.cache import get_redis_cache_client
+from core.cache import get_memory_cache_client, get_redis_cache_client
+from core.models.registry import get_model_registry
 
 from core.inference.router.model_router import ModelRouter, RoutingResult
 from core.inference.providers.provider_runtime_adapter import ProviderRuntimeAdapter
@@ -20,6 +22,11 @@ from core.inference.models.embedding_request import EmbeddingRequest
 from core.inference.models.embedding_response import EmbeddingResponse
 from core.inference.models.asr_request import ASRRequest
 from core.inference.models.asr_response import ASRResponse
+from core.inference.stats import (
+    get_inference_stats,
+    record_inference_cache_hit,
+    record_inference_cache_miss,
+)
 
 
 class InferenceGateway:
@@ -43,7 +50,9 @@ class InferenceGateway:
     def __init__(self) -> None:
         self.router = ModelRouter()
         self.adapter = ProviderRuntimeAdapter()
+        self.memory_cache = get_memory_cache_client()
         self.cache = get_redis_cache_client()
+        self.model_registry = get_model_registry()
 
     @staticmethod
     def _hash_payload(payload: dict[str, Any]) -> str:
@@ -54,11 +63,43 @@ class InferenceGateway:
     def _cache_prefix() -> str:
         return str(getattr(settings, "inference_cache_prefix", "openvitamin:inference") or "openvitamin:inference").strip()
 
+    @staticmethod
+    def _safe_key_segment(value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return "na"
+        if len(raw) > 64:
+            return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+        lowered = raw.lower().replace(":", "_").replace(" ", "_")
+        return lowered
+
+    def _cache_scope_prefix(
+        self,
+        cache_kind: str,
+        *,
+        user_id: Optional[str] = None,
+        model_type: Optional[str] = None,
+        resolved_model: Optional[str] = None,
+    ) -> str:
+        parts = [self._cache_prefix(), cache_kind]
+        if user_id:
+            parts.append(f"u:{self._safe_key_segment(user_id)}")
+        if model_type:
+            parts.append(f"mt:{self._safe_key_segment(model_type)}")
+        if resolved_model:
+            parts.append(f"rm:{self._safe_key_segment(resolved_model)}")
+        return ":".join(parts)
+
     def _build_generate_cache_key(self, routing: RoutingResult, request: InferenceRequest) -> str:
+        meta = getattr(request, "metadata", {}) or {}
+        user_id = str(meta.get("user_id") or meta.get("x_user_id") or "anonymous")
+        model_signature = self._model_cache_signature(routing.model_id)
         payload: dict[str, Any] = {
             "model_alias": request.model_alias,
             "resolved_model": routing.model_id,
             "provider": routing.provider,
+            "model_signature": model_signature,
+            "user_id": user_id,
             "messages": [m.model_dump() for m in (request.messages or [])],
             "prompt": request.prompt,
             "system_prompt": request.system_prompt,
@@ -66,17 +107,120 @@ class InferenceGateway:
             "max_tokens": request.max_tokens,
             "stop": request.stop or [],
         }
-        return f"{self._cache_prefix()}:generate:{self._hash_payload(payload)}"
+        payload_hash = self._hash_payload(payload)
+        model_type = model_signature.get("type", "unknown")
+        scope_prefix = self._cache_scope_prefix(
+            "generate",
+            user_id=user_id,
+            model_type=model_type,
+            resolved_model=routing.model_id,
+        )
+        return f"{scope_prefix}:h:{payload_hash}"
 
     def _build_embedding_cache_key(self, routing: RoutingResult, request: EmbeddingRequest) -> str:
+        meta = getattr(request, "metadata", {}) or {}
+        user_id = str(meta.get("user_id") or meta.get("x_user_id") or "anonymous")
+        model_signature = self._model_cache_signature(routing.model_id)
         embedding_input = request.input if isinstance(request.input, str) else list(request.input)
         payload: dict[str, Any] = {
             "model_alias": request.model_alias,
             "resolved_model": routing.model_id,
             "provider": routing.provider,
+            "model_signature": model_signature,
+            "user_id": user_id,
             "input": embedding_input,
         }
-        return f"{self._cache_prefix()}:embedding:{self._hash_payload(payload)}"
+        payload_hash = self._hash_payload(payload)
+        model_type = model_signature.get("type", "unknown")
+        scope_prefix = self._cache_scope_prefix(
+            "embedding",
+            user_id=user_id,
+            model_type=model_type,
+            resolved_model=routing.model_id,
+        )
+        return f"{scope_prefix}:h:{payload_hash}"
+
+    @staticmethod
+    def _parse_ttl_overrides(raw_json: str) -> dict[str, int]:
+        try:
+            parsed = json.loads(raw_json or "{}")
+        except Exception:
+            return {}
+        if not isinstance(parsed, dict):
+            return {}
+        out: dict[str, int] = {}
+        for key, value in parsed.items():
+            if not isinstance(key, str):
+                continue
+            try:
+                ttl = int(value)
+            except Exception:
+                continue
+            if ttl > 0:
+                out[key.strip().lower()] = ttl
+        return out
+
+    def _model_cache_signature(self, model_id: str) -> dict[str, str]:
+        descriptor = self.model_registry.get_model(model_id)
+        if descriptor is None:
+            return {
+                "id": model_id,
+                "type": "unknown",
+                "provider": "unknown",
+                "version": "unknown",
+            }
+        version = (descriptor.version or "").strip() or "unknown"
+        return {
+            "id": descriptor.id,
+            "type": descriptor.model_type,
+            "provider": descriptor.provider,
+            "version": version,
+        }
+
+    def _resolve_generate_cache_ttl(self, routing: RoutingResult) -> int:
+        base_ttl = max(1, int(getattr(settings, "inference_cache_ttl_seconds", 300)))
+        signature = self._model_cache_signature(routing.model_id)
+        model_type = signature.get("type", "unknown").lower()
+        overrides = self._parse_ttl_overrides(
+            str(getattr(settings, "inference_cache_ttl_by_model_type_json", "") or "")
+        )
+        return max(1, int(overrides.get(model_type, base_ttl)))
+
+    async def clear_cache(
+        self,
+        *,
+        cache_kind: str = "generate",
+        user_id: Optional[str] = None,
+        model_type: Optional[str] = None,
+        resolved_model: Optional[str] = None,
+        model_alias: Optional[str] = None,
+    ) -> dict[str, Any]:
+        target_resolved_model = resolved_model
+        if not target_resolved_model and model_alias:
+            try:
+                target_resolved_model = self.router.resolve(model_alias).model_id
+            except Exception:
+                target_resolved_model = model_alias
+        scoped_prefix = self._cache_scope_prefix(
+            cache_kind,
+            user_id=user_id,
+            model_type=model_type,
+            resolved_model=target_resolved_model,
+        )
+        memory_deleted = self.memory_cache.clear_prefix(scoped_prefix)
+        redis_deleted = await self.cache.clear_prefix(scoped_prefix)
+        return {
+            "cache_kind": cache_kind,
+            "prefix": scoped_prefix,
+            "model_alias": model_alias,
+            "resolved_model": target_resolved_model,
+            "memory_deleted": memory_deleted,
+            "redis_deleted": redis_deleted,
+            "total_deleted": memory_deleted + redis_deleted,
+        }
+
+    def get_cache_stats(self) -> dict[str, Any]:
+        return get_inference_stats().get_stats()
 
     @staticmethod
     def _validate_messages(request: InferenceRequest) -> None:
@@ -157,15 +301,28 @@ class InferenceGateway:
         )
         
         cache_key = self._build_generate_cache_key(routing, request)
-        cache_ttl = max(1, int(getattr(settings, "inference_cache_ttl_seconds", 300)))
-        cached = await self.cache.get_json(cache_key)
+        cache_ttl = self._resolve_generate_cache_ttl(routing)
+        generate_started_at = time.time()
+        cached = self.memory_cache.get_json(cache_key)
+        if not cached:
+            cached = await self.cache.get_json(cache_key)
+            if cached:
+                self.memory_cache.set_json(cache_key, cached, cache_ttl)
         if cached:
             try:
                 response = InferenceResponse(**cached)
-                response.metadata = {**(response.metadata or {}), "cache_hit": True}
+                saved_latency_ms = max(0.0, (time.time() - generate_started_at) * 1000.0)
+                record_inference_cache_hit(saved_latency_ms=saved_latency_ms)
+                response.metadata = {
+                    **(response.metadata or {}),
+                    "cache_hit": True,
+                    "cache_layer": "memory_or_redis",
+                    "cache_saved_latency_ms": round(saved_latency_ms, 2),
+                }
                 return response
             except Exception:
                 pass
+        record_inference_cache_miss()
 
         # 2. Execute via adapter
         if routing.resolved_via == "direct":
@@ -183,6 +340,7 @@ class InferenceGateway:
             )
 
         response.metadata = {**(response.metadata or {}), "cache_hit": False}
+        self.memory_cache.set_json(cache_key, response.model_dump(), cache_ttl)
         await self.cache.set_json(cache_key, response.model_dump(), cache_ttl)
         return response
 
@@ -201,20 +359,27 @@ class InferenceGateway:
         )
         cache_key = self._build_embedding_cache_key(routing, request)
         cache_ttl = max(1, int(getattr(settings, "embedding_cache_ttl_seconds", 86400)))
-        cached = await self.cache.get_json(cache_key)
+        cached = self.memory_cache.get_json(cache_key)
+        if not cached:
+            cached = await self.cache.get_json(cache_key)
+            if cached:
+                self.memory_cache.set_json(cache_key, cached, cache_ttl)
         if cached:
             try:
                 response = EmbeddingResponse(**cached)
-                response.metadata = {**(response.metadata or {}), "cache_hit": True}
+                record_inference_cache_hit()
+                response.metadata = {**(response.metadata or {}), "cache_hit": True, "cache_layer": "memory_or_redis"}
                 return response
             except Exception:
                 pass
+        record_inference_cache_miss()
 
         if routing.resolved_via == "direct":
             response = await self.adapter.embed("auto", request.model_alias, request)
         else:
             response = await self.adapter.embed(routing.provider, routing.model_id, request)
         response.metadata = {**(response.metadata or {}), "cache_hit": False}
+        self.memory_cache.set_json(cache_key, response.model_dump(), cache_ttl)
         await self.cache.set_json(cache_key, response.model_dump(), cache_ttl)
         return response
 

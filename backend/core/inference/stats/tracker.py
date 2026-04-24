@@ -59,6 +59,9 @@ class InferenceStatsTracker:
         self._last_timestamp: Optional[float] = None
         self._total_tokens: int = 0
         self._total_inferences: int = 0
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
+        self._cache_saved_latency_ms: float = 0.0
     
     def record(
         self,
@@ -137,9 +140,25 @@ class InferenceStatsTracker:
                 "average_speed": avg_tps,  # Moving average t/s
                 "total_tokens": self._total_tokens,
                 "total_inferences": self._total_inferences,
+                "cache_hits": self._cache_hits,
+                "cache_misses": self._cache_misses,
+                "cache_hit_rate": (
+                    self._cache_hits / (self._cache_hits + self._cache_misses)
+                    if (self._cache_hits + self._cache_misses) > 0 else 0.0
+                ),
+                "cache_saved_latency_ms": round(self._cache_saved_latency_ms, 2),
                 "last_timestamp": self._last_timestamp,
                 "window_size": self._window_size,
             }
+
+    def record_cache_hit(self, *, saved_latency_ms: float = 0.0) -> None:
+        with self._lock:
+            self._cache_hits += 1
+            self._cache_saved_latency_ms += max(0.0, float(saved_latency_ms))
+
+    def record_cache_miss(self) -> None:
+        with self._lock:
+            self._cache_misses += 1
     
     def reset(self) -> None:
         """Reset all stats"""
@@ -149,6 +168,9 @@ class InferenceStatsTracker:
             self._last_timestamp = None
             self._total_tokens = 0
             self._total_inferences = 0
+            self._cache_hits = 0
+            self._cache_misses = 0
+            self._cache_saved_latency_ms = 0.0
 
 
 # Singleton instance
@@ -181,6 +203,14 @@ def record_inference(
         provider: Provider identifier
     """
     get_inference_stats().record(tokens, latency_ms, model, provider)
+
+
+def record_inference_cache_hit(saved_latency_ms: float = 0.0) -> None:
+    get_inference_stats().record_cache_hit(saved_latency_ms=saved_latency_ms)
+
+
+def record_inference_cache_miss() -> None:
+    get_inference_stats().record_cache_miss()
 
 
 def estimate_tokens(text: str) -> int:

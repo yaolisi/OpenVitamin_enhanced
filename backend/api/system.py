@@ -5,6 +5,7 @@ import psutil  # type: ignore[import-untyped]
 import time
 import os
 import json
+import secrets
 import aiofiles  # type: ignore[import-untyped]
 from pathlib import Path
 from log import logger, log_structured
@@ -19,6 +20,8 @@ from core.system.settings_store import get_system_settings_store
 from core.system.feature_flags import get_feature_flags, set_feature_flags
 from core.system.queue_summary import build_unified_queue_summary
 from core.system.storage_strategy import storage_readiness
+from core.inference.gateway import get_inference_gateway
+from core.cache import get_redis_cache_client
 from core.security.deps import require_authenticated_platform_admin, require_platform_admin
 from middleware.api_key_scope import get_revoked_api_keys, revoke_api_key, unrevoke_api_key
 
@@ -28,6 +31,17 @@ router = APIRouter(
     dependencies=[Depends(require_authenticated_platform_admin)],
 )
 KERNEL_ADAPTER_NOT_INITIALIZED = "Kernel adapter not initialized"
+_INFERENCE_CACHE_CLEAR_CHALLENGES: dict[str, tuple[str, float, Optional[str]]] = {}
+_INFERENCE_CACHE_CLEAR_CHALLENGE_RATE: dict[str, list[float]] = {}
+_INFERENCE_CACHE_CHALLENGE_METRICS: dict[str, int] = {
+    "issued_total": 0,
+    "validate_success_total": 0,
+    "validate_failed_total": 0,
+    "validate_failed_missing_total": 0,
+    "validate_failed_actor_mismatch_total": 0,
+    "validate_failed_code_mismatch_total": 0,
+    "rate_limited_total": 0,
+}
 
 ALLOWED_SYSTEM_CONFIG_KEYS = {
     "offlineMode",
@@ -101,6 +115,19 @@ class ApiKeyRevocationListResponse(BaseModel):
     revoked_api_keys: list[str]
 
 
+class InferenceCacheClearBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cache_kind: Literal["generate", "embedding"] = "generate"
+    user_id: Optional[str] = Field(default=None, max_length=256)
+    model_type: Optional[str] = Field(default=None, max_length=64)
+    model_alias: Optional[str] = Field(default=None, max_length=256)
+    resolved_model: Optional[str] = Field(default=None, max_length=256)
+    force_all: bool = False
+    confirm_text: Optional[str] = Field(default=None, max_length=32)
+    challenge_id: Optional[str] = Field(default=None, max_length=64)
+
+
 def _validate_system_config_payload(config_data: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(config_data, dict):
         raise_api_error(
@@ -134,6 +161,133 @@ def _validate_system_config_payload(config_data: Dict[str, Any]) -> Dict[str, An
         raise_api_error(status_code=400, code="system_config_invalid", message=str(e))
 
     return cast(Dict[str, Any], validated.model_dump(exclude_none=True))
+
+def _challenge_redis_key(challenge_id: str) -> str:
+    return f"{settings.inference_cache_prefix}:challenge:{challenge_id}"
+
+
+async def _issue_cache_clear_challenge(actor: Optional[str]) -> tuple[str, str]:
+    challenge_id = secrets.token_hex(8)
+    challenge_code = f"CLEAR-{secrets.token_hex(3).upper()}"
+    ttl_seconds = max(30, int(getattr(settings, "inference_cache_clear_challenge_ttl_seconds", 120)))
+    expires_at = time.time() + ttl_seconds
+    _INFERENCE_CACHE_CLEAR_CHALLENGES[challenge_id] = (challenge_code, expires_at, actor)
+    redis_cache = get_redis_cache_client()
+    await redis_cache.set_json(
+        _challenge_redis_key(challenge_id),
+        {"code": challenge_code, "actor": actor or ""},
+        ttl_seconds,
+    )
+    # Cleanup expired entries opportunistically.
+    now = time.time()
+    expired_ids = [cid for cid, (_, exp, _) in _INFERENCE_CACHE_CLEAR_CHALLENGES.items() if exp <= now]
+    for cid in expired_ids:
+        _INFERENCE_CACHE_CLEAR_CHALLENGES.pop(cid, None)
+    return challenge_id, challenge_code
+
+
+def _rate_limit_config() -> tuple[int, int]:
+    window_seconds = max(10, int(getattr(settings, "inference_cache_clear_challenge_rate_window_seconds", 60)))
+    max_per_window = max(1, int(getattr(settings, "inference_cache_clear_challenge_rate_max_per_window", 5)))
+    return window_seconds, max_per_window
+
+
+def _memory_rate_limit_fallback(actor: Optional[str], window_seconds: int, max_per_window: int) -> tuple[bool, int]:
+    key = (actor or "anonymous").strip() or "anonymous"
+    now = time.time()
+    window_start = now - window_seconds
+    hits = _INFERENCE_CACHE_CLEAR_CHALLENGE_RATE.get(key, [])
+    hits = [t for t in hits if t >= window_start]
+    if len(hits) >= max_per_window:
+        _INFERENCE_CACHE_CLEAR_CHALLENGE_RATE[key] = hits
+        retry_after = max(1, int(window_seconds - (now - hits[0])))
+        _INFERENCE_CACHE_CHALLENGE_METRICS["rate_limited_total"] += 1
+        return False, retry_after
+    hits.append(now)
+    _INFERENCE_CACHE_CLEAR_CHALLENGE_RATE[key] = hits
+    return True, 0
+
+
+async def _consume_cache_clear_challenge_rate(actor: Optional[str]) -> tuple[bool, int]:
+    window_seconds, max_per_window = _rate_limit_config()
+    actor_key = (actor or "anonymous").strip() or "anonymous"
+    redis_key = f"{settings.inference_cache_prefix}:challenge_rate:{actor_key}"
+    redis_cache = get_redis_cache_client()
+    count = await redis_cache.incr_with_expire(redis_key, window_seconds)
+    if count is not None:
+        if count > max_per_window:
+            ttl = await redis_cache.ttl(redis_key)
+            retry_after = max(1, int(ttl if isinstance(ttl, int) and ttl > 0 else window_seconds))
+            _INFERENCE_CACHE_CHALLENGE_METRICS["rate_limited_total"] += 1
+            return False, retry_after
+        return True, 0
+    return _memory_rate_limit_fallback(actor, window_seconds, max_per_window)
+
+
+async def _validate_cache_clear_challenge(
+    challenge_id: Optional[str],
+    confirm_text: Optional[str],
+    actor: Optional[str],
+) -> bool:
+    cid = (challenge_id or "").strip()
+    code = (confirm_text or "").strip()
+    if not cid or not code:
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_total"] += 1
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_missing_total"] += 1
+        return False
+
+    redis_ok = await _validate_cache_clear_challenge_from_redis(cid, code, actor)
+    if redis_ok is not None:
+        if redis_ok:
+            _INFERENCE_CACHE_CHALLENGE_METRICS["validate_success_total"] += 1
+        else:
+            _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_total"] += 1
+        return redis_ok
+
+    stored = _INFERENCE_CACHE_CLEAR_CHALLENGES.get(cid)
+    if not stored:
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_total"] += 1
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_missing_total"] += 1
+        return False
+    expected, expires_at, stored_actor = stored
+    if expires_at <= time.time():
+        _INFERENCE_CACHE_CLEAR_CHALLENGES.pop(cid, None)
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_total"] += 1
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_missing_total"] += 1
+        return False
+    if (stored_actor or "") != (actor or ""):
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_total"] += 1
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_actor_mismatch_total"] += 1
+        return False
+    ok = code.upper() == expected.upper()
+    if ok:
+        _INFERENCE_CACHE_CLEAR_CHALLENGES.pop(cid, None)
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_success_total"] += 1
+    else:
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_total"] += 1
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_code_mismatch_total"] += 1
+    return ok
+
+
+async def _validate_cache_clear_challenge_from_redis(
+    challenge_id: str,
+    confirm_text: str,
+    actor: Optional[str],
+) -> Optional[bool]:
+    redis_cache = get_redis_cache_client()
+    redis_payload = await redis_cache.get_json(_challenge_redis_key(challenge_id))
+    if not isinstance(redis_payload, dict):
+        return None
+    expected = str(redis_payload.get("code") or "").strip()
+    stored_actor = str(redis_payload.get("actor") or "")
+    if expected and confirm_text.upper() == expected.upper() and (stored_actor or "") == (actor or ""):
+        await redis_cache.delete(_challenge_redis_key(challenge_id))
+        return True
+    if (stored_actor or "") != (actor or ""):
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_actor_mismatch_total"] += 1
+    else:
+        _INFERENCE_CACHE_CHALLENGE_METRICS["validate_failed_code_mismatch_total"] += 1
+    return False
 
 @router.get("/config")
 async def get_config() -> Dict[str, Any]:
@@ -198,6 +352,105 @@ async def unrevoke_api_key_endpoint(
     _role: Annotated[Any, Depends(require_platform_admin)],
 ) -> ApiKeyRevocationListResponse:
     return ApiKeyRevocationListResponse(revoked_api_keys=unrevoke_api_key(body.api_key))
+
+
+@router.get("/inference/cache/stats")
+async def get_inference_cache_stats(
+    request: Request,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> Dict[str, Any]:
+    gateway = get_inference_gateway()
+    stats = gateway.get_cache_stats()
+    stats = {
+        **stats,
+        "challenge_metrics": dict(_INFERENCE_CACHE_CHALLENGE_METRICS),
+    }
+    actor = getattr(request.state, "user_id", None)
+    log_structured(
+        "System",
+        "inference_cache_stats_read",
+        actor=actor,
+        cache_hits=stats.get("cache_hits"),
+        cache_misses=stats.get("cache_misses"),
+        cache_hit_rate=stats.get("cache_hit_rate"),
+    )
+    return stats
+
+
+@router.post("/inference/cache/clear/challenge")
+async def create_inference_cache_clear_challenge(
+    request: Request,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> Dict[str, Any]:
+    actor = getattr(request.state, "user_id", None)
+    allowed, retry_after = await _consume_cache_clear_challenge_rate(actor)
+    if not allowed:
+        raise_api_error(
+            status_code=429,
+            code="inference_cache_clear_challenge_rate_limited",
+            message="Too many challenge requests. Please retry later.",
+            details={"retry_after_seconds": retry_after},
+        )
+    challenge_id, challenge_code = await _issue_cache_clear_challenge(actor)
+    _INFERENCE_CACHE_CHALLENGE_METRICS["issued_total"] += 1
+    log_structured("System", "inference_cache_clear_challenge_issued", actor=actor, challenge_id=challenge_id)
+    ttl_seconds = max(30, int(getattr(settings, "inference_cache_clear_challenge_ttl_seconds", 120)))
+    return {
+        "challenge_id": challenge_id,
+        "challenge_code": challenge_code,
+        "expires_in_seconds": ttl_seconds,
+    }
+
+
+@router.post("/inference/cache/clear")
+async def clear_inference_cache(
+    body: InferenceCacheClearBody,
+    request: Request,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> Dict[str, Any]:
+    actor = getattr(request.state, "user_id", None)
+    has_scope = bool(
+        (body.user_id and body.user_id.strip())
+        or (body.model_type and body.model_type.strip())
+        or (body.model_alias and body.model_alias.strip())
+        or (body.resolved_model and body.resolved_model.strip())
+    )
+    if not has_scope and not body.force_all:
+        raise_api_error(
+            status_code=400,
+            code="inference_cache_clear_scope_required",
+            message="At least one filter is required, or set force_all=true to clear all cache.",
+        )
+    if body.force_all:
+        if not await _validate_cache_clear_challenge(body.challenge_id, body.confirm_text, actor):
+            raise_api_error(
+                status_code=400,
+                code="inference_cache_clear_confirmation_required",
+                message="force_all=true requires a valid challenge_id and matching confirm_text.",
+            )
+    gateway = get_inference_gateway()
+    result = await gateway.clear_cache(
+        cache_kind=body.cache_kind,
+        user_id=(body.user_id or None),
+        model_type=(body.model_type or None),
+        model_alias=(body.model_alias or None),
+        resolved_model=(body.resolved_model or None),
+    )
+    log_structured(
+        "System",
+        "inference_cache_cleared",
+        actor=actor,
+        cache_kind=body.cache_kind,
+        user_id=body.user_id,
+        model_type=body.model_type,
+        model_alias=body.model_alias,
+        resolved_model=result.get("resolved_model"),
+        total_deleted=result.get("total_deleted"),
+    )
+    return {"success": True, **result}
 
 @router.get("/browse-directory")
 async def browse_directory() -> Dict[str, Optional[str]]:

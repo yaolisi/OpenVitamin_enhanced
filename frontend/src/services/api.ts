@@ -1746,6 +1746,104 @@ export async function browseDirectory(): Promise<{ path: string | null }> {
   return response.json()
 }
 
+export interface InferenceCacheStats {
+  inference_speed?: number | null
+  average_speed?: number | null
+  total_tokens?: number
+  total_inferences?: number
+  cache_hits: number
+  cache_misses: number
+  cache_hit_rate: number
+  cache_saved_latency_ms: number
+  last_timestamp?: number | null
+  window_size?: number
+  challenge_metrics?: {
+    issued_total: number
+    validate_success_total: number
+    validate_failed_total: number
+    validate_failed_missing_total: number
+    validate_failed_actor_mismatch_total: number
+    validate_failed_code_mismatch_total: number
+    rate_limited_total: number
+  }
+}
+
+export interface InferenceCacheClearRequest {
+  cache_kind?: 'generate' | 'embedding'
+  user_id?: string
+  model_type?: string
+  model_alias?: string
+  resolved_model?: string
+  force_all?: boolean
+  confirm_text?: string
+  challenge_id?: string
+}
+
+export interface InferenceCacheClearResponse {
+  success: boolean
+  cache_kind: string
+  prefix: string
+  model_alias?: string | null
+  resolved_model?: string | null
+  memory_deleted: number
+  redis_deleted: number
+  total_deleted: number
+}
+
+export interface InferenceCacheClearChallenge {
+  challenge_id: string
+  challenge_code: string
+  expires_in_seconds: number
+}
+
+export async function getInferenceCacheStats(): Promise<InferenceCacheStats> {
+  const response = await apiFetch(`${API_BASE_URL}/api/system/inference/cache/stats`, { method: 'GET' })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function clearInferenceCache(
+  body: InferenceCacheClearRequest,
+): Promise<InferenceCacheClearResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/system/inference/cache/clear`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }))
+    const message =
+      typeof err?.detail === 'string'
+        ? err.detail
+        : typeof err?.error?.message === 'string'
+          ? err.error.message
+          : `API error: ${response.statusText}`
+    throw new Error(message)
+  }
+  return response.json()
+}
+
+export async function createInferenceCacheClearChallenge(): Promise<InferenceCacheClearChallenge> {
+  const response = await apiFetch(`${API_BASE_URL}/api/system/inference/cache/clear/challenge`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }))
+    const retryAfter = err?.error?.details?.retry_after_seconds
+    const base =
+      typeof err?.detail === 'string'
+        ? err.detail
+        : typeof err?.error?.message === 'string'
+          ? err.error.message
+          : `API error: ${response.statusText}`
+    const message =
+      typeof retryAfter === 'number' && retryAfter > 0
+        ? `${base} (retry after ${retryAfter}s)`
+        : base
+    throw new Error(message)
+  }
+  return response.json()
+}
+
 /**
  * Backup API
  */

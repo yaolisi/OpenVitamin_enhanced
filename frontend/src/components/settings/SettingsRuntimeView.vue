@@ -18,7 +18,14 @@ import {
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
-import { getSystemConfig, updateSystemConfig, type SystemConfig } from '@/services/api'
+import {
+  CacheMonitorToolbar,
+  ChallengeSecurityMetrics,
+  CacheClearPanel,
+} from '@/components/settings/cache-monitor'
+import { metricDelta, metricDeltaClass, metricDeltaText } from '@/utils/metricsDelta'
+import { useCacheMonitor } from '@/composables/useCacheMonitor'
+import { useRuntimeSettings } from '@/composables/useRuntimeSettings'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -27,77 +34,56 @@ const settingsSection = computed(() => route.name as string)
 const navCollapsed = ref(false)
 const advancedOpen = ref(false)
 
-const autoUnloadLocalModelOnSwitch = ref(false)
-const runtimeAutoReleaseEnabled = ref(true)
-const runtimeMaxCachedLocalRuntimes = ref(1)
-const runtimeMaxCachedLocalLlmRuntimes = ref(1)
-const runtimeMaxCachedLocalVlmRuntimes = ref(1)
-const runtimeMaxCachedLocalImageGenerationRuntimes = ref(1)
-const runtimeReleaseIdleTtlSeconds = ref(300)
-const runtimeReleaseMinIntervalSeconds = ref(5)
-
-const config = ref<SystemConfig | null>(null)
-const isSaving = ref(false)
-const saveSuccess = ref(false)
-const saveError = ref('')
-
-function parseBool(value: unknown, defaultVal: boolean): boolean {
-  if (value === undefined || value === null) return defaultVal
-  if (value === true || value === 1 || value === 'true') return true
-  if (value === false || value === 0 || value === 'false') return false
-  return defaultVal
-}
-
-const loadConfig = async () => {
-  try {
-    const c = await getSystemConfig()
-    config.value = c
-    const s = c.settings ?? {}
-    autoUnloadLocalModelOnSwitch.value = parseBool(s.autoUnloadLocalModelOnSwitch, false)
-    runtimeAutoReleaseEnabled.value = parseBool(s.runtimeAutoReleaseEnabled, true)
-    runtimeMaxCachedLocalRuntimes.value = Math.min(16, Math.max(1, Number(s.runtimeMaxCachedLocalRuntimes) || 1))
-    runtimeMaxCachedLocalLlmRuntimes.value = Math.min(16, Math.max(1, Number(s.runtimeMaxCachedLocalLlmRuntimes) || runtimeMaxCachedLocalRuntimes.value || 1))
-    runtimeMaxCachedLocalVlmRuntimes.value = Math.min(16, Math.max(1, Number(s.runtimeMaxCachedLocalVlmRuntimes) || runtimeMaxCachedLocalRuntimes.value || 1))
-    runtimeMaxCachedLocalImageGenerationRuntimes.value = Math.min(16, Math.max(1, Number(s.runtimeMaxCachedLocalImageGenerationRuntimes) || runtimeMaxCachedLocalRuntimes.value || 1))
-    runtimeReleaseIdleTtlSeconds.value = Math.min(86400, Math.max(30, Number(s.runtimeReleaseIdleTtlSeconds) || 300))
-    runtimeReleaseMinIntervalSeconds.value = Math.min(3600, Math.max(1, Number(s.runtimeReleaseMinIntervalSeconds) || 5))
-  } catch (e) {
-    console.error('Failed to load system config:', e)
-  }
-}
+const {
+  autoUnloadLocalModelOnSwitch,
+  runtimeAutoReleaseEnabled,
+  runtimeMaxCachedLocalRuntimes,
+  runtimeMaxCachedLocalLlmRuntimes,
+  runtimeMaxCachedLocalVlmRuntimes,
+  runtimeMaxCachedLocalImageGenerationRuntimes,
+  runtimeReleaseIdleTtlSeconds,
+  runtimeReleaseMinIntervalSeconds,
+  isSaving,
+  saveSuccess,
+  saveError,
+  isEditing,
+  loadConfig,
+  handleSave,
+} = useRuntimeSettings()
+const {
+  cacheStats,
+  prevCacheStats,
+  cacheStatsLoading,
+  clearCacheLoading,
+  clearCacheMessage,
+  clearCacheError,
+  cacheClearModelAlias,
+  cacheClearUserId,
+  cacheAutoRefreshEnabled,
+  cacheAutoRefreshIntervalMs,
+  challengeMetrics,
+  challengeSuccessRateText,
+  challengeActorMismatchRateText,
+  cacheLastRefreshedText,
+  loadCacheStats,
+  toggleCacheAutoRefresh,
+  setCacheAutoRefreshInterval,
+  resetCacheMonitorPrefs,
+  handleClearInferenceCache,
+} = useCacheMonitor()
 
 onMounted(() => {
-  loadConfig()
+  void loadConfig()
 })
 
 onActivated(() => {
-  loadConfig()
+  void loadConfig()
 })
 
-const handleSave = async () => {
-  isSaving.value = true
-  saveError.value = ''
-  try {
-    await updateSystemConfig({
-      autoUnloadLocalModelOnSwitch: Boolean(autoUnloadLocalModelOnSwitch.value),
-      runtimeAutoReleaseEnabled: Boolean(runtimeAutoReleaseEnabled.value),
-      runtimeMaxCachedLocalRuntimes: runtimeMaxCachedLocalRuntimes.value,
-      runtimeMaxCachedLocalLlmRuntimes: runtimeMaxCachedLocalLlmRuntimes.value,
-      runtimeMaxCachedLocalVlmRuntimes: runtimeMaxCachedLocalVlmRuntimes.value,
-      runtimeMaxCachedLocalImageGenerationRuntimes: runtimeMaxCachedLocalImageGenerationRuntimes.value,
-      runtimeReleaseIdleTtlSeconds: runtimeReleaseIdleTtlSeconds.value,
-      runtimeReleaseMinIntervalSeconds: runtimeReleaseMinIntervalSeconds.value,
-    })
-    await loadConfig()
-    saveSuccess.value = true
-    setTimeout(() => { saveSuccess.value = false }, 3000)
-  } catch (e) {
-    console.error('Failed to save runtime settings:', e)
-    saveError.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    isSaving.value = false
-  }
+const handleSaveWithCacheRefresh = async () => {
+  await handleSave(loadCacheStats)
 }
+
 </script>
 
 <template>
@@ -111,7 +97,7 @@ const handleSave = async () => {
         <Button
           class="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-11 px-6 gap-2 rounded-xl"
           :disabled="isSaving"
-          @click="handleSave"
+          @click="handleSaveWithCacheRefresh"
         >
           <component :is="saveSuccess ? Check : Save" class="w-4 h-4" />
           {{ isSaving ? t('settings.saving') : (saveSuccess ? t('settings.saved') : t('settings.save')) }}
@@ -232,7 +218,7 @@ const handleSave = async () => {
               </div>
               <div class="flex items-center justify-between gap-4">
                 <div class="space-y-1">
-                  <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.auto_release_enabled') }}</label>
+                  <p class="text-sm font-medium text-foreground">{{ t('settings.runtime.auto_release_enabled') }}</p>
                   <p class="text-xs text-muted-foreground">{{ t('settings.runtime.auto_release_enabled_desc') }}</p>
                 </div>
                 <Switch :checked="runtimeAutoReleaseEnabled" @update:checked="(v: boolean) => { runtimeAutoReleaseEnabled = v; isEditing = true }" />
@@ -242,8 +228,9 @@ const handleSave = async () => {
                 <p class="text-xs text-muted-foreground">{{ t('settings.runtime.per_type_limits_desc') }}</p>
                 <div class="grid gap-4 md:grid-cols-3">
                   <div class="space-y-3">
-                    <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached_llm') }}</label>
+                    <label for="runtime-max-cached-llm" class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached_llm') }}</label>
                     <Input
+                      id="runtime-max-cached-llm"
                       v-model.number="runtimeMaxCachedLocalLlmRuntimes"
                       type="number"
                       min="1"
@@ -254,8 +241,9 @@ const handleSave = async () => {
                     <p class="text-xs text-muted-foreground">{{ t('settings.runtime.max_cached_llm_desc') }}</p>
                   </div>
                   <div class="space-y-3">
-                    <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached_vlm') }}</label>
+                    <label for="runtime-max-cached-vlm" class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached_vlm') }}</label>
                     <Input
+                      id="runtime-max-cached-vlm"
                       v-model.number="runtimeMaxCachedLocalVlmRuntimes"
                       type="number"
                       min="1"
@@ -266,8 +254,9 @@ const handleSave = async () => {
                     <p class="text-xs text-muted-foreground">{{ t('settings.runtime.max_cached_vlm_desc') }}</p>
                   </div>
                   <div class="space-y-3">
-                    <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached_image_generation') }}</label>
+                    <label for="runtime-max-cached-image" class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached_image_generation') }}</label>
                     <Input
+                      id="runtime-max-cached-image"
                       v-model.number="runtimeMaxCachedLocalImageGenerationRuntimes"
                       type="number"
                       min="1"
@@ -280,8 +269,9 @@ const handleSave = async () => {
                 </div>
               </div>
               <div class="space-y-3">
-                <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.idle_ttl') }}</label>
+                <label for="runtime-idle-ttl" class="text-sm font-medium text-foreground">{{ t('settings.runtime.idle_ttl') }}</label>
                 <Input
+                  id="runtime-idle-ttl"
                   v-model.number="runtimeReleaseIdleTtlSeconds"
                   type="number"
                   min="30"
@@ -292,8 +282,9 @@ const handleSave = async () => {
                 <p class="text-xs text-muted-foreground">{{ t('settings.runtime.idle_ttl_desc') }}</p>
               </div>
               <div class="space-y-3">
-                <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.min_interval') }}</label>
+                <label for="runtime-min-interval" class="text-sm font-medium text-foreground">{{ t('settings.runtime.min_interval') }}</label>
                 <Input
+                  id="runtime-min-interval"
                   v-model.number="runtimeReleaseMinIntervalSeconds"
                   type="number"
                   min="1"
@@ -309,6 +300,60 @@ const handleSave = async () => {
                 </p>
               </div>
               <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-4">
+                <CacheMonitorToolbar
+                  :cache-stats-loading="cacheStatsLoading"
+                  :auto-refresh-enabled="cacheAutoRefreshEnabled"
+                  :auto-refresh-interval-ms="cacheAutoRefreshIntervalMs"
+                  :last-refreshed-text="cacheLastRefreshedText"
+                  @refresh="loadCacheStats"
+                  @toggle-auto-refresh="toggleCacheAutoRefresh"
+                  @set-interval="setCacheAutoRefreshInterval"
+                  @reset-prefs="resetCacheMonitorPrefs"
+                />
+                <div class="grid gap-3 md:grid-cols-4">
+                  <div class="rounded-xl border border-border/60 bg-background/60 p-3">
+                    <div class="text-xs text-muted-foreground">命中次数</div>
+                    <div class="mt-1 text-lg font-semibold">{{ cacheStats?.cache_hits ?? 0 }}</div>
+                  </div>
+                  <div class="rounded-xl border border-border/60 bg-background/60 p-3">
+                    <div class="text-xs text-muted-foreground">未命中次数</div>
+                    <div class="mt-1 text-lg font-semibold">{{ cacheStats?.cache_misses ?? 0 }}</div>
+                  </div>
+                  <div class="rounded-xl border border-border/60 bg-background/60 p-3">
+                    <div class="text-xs text-muted-foreground">命中率</div>
+                    <div class="mt-1 text-lg font-semibold">{{ ((cacheStats?.cache_hit_rate ?? 0) * 100).toFixed(1) }}%</div>
+                  </div>
+                  <div class="rounded-xl border border-border/60 bg-background/60 p-3">
+                    <div class="text-xs text-muted-foreground">累计节省时延</div>
+                    <div class="mt-1 text-lg font-semibold">{{ cacheStats?.cache_saved_latency_ms ?? 0 }} ms</div>
+                  </div>
+                </div>
+                <ChallengeSecurityMetrics
+                  :issued-total="challengeMetrics?.issued_total ?? 0"
+                  :success-rate-text="challengeSuccessRateText"
+                  :actor-mismatch-rate-text="challengeActorMismatchRateText"
+                  :rate-limited-total="challengeMetrics?.rate_limited_total ?? 0"
+                  :issued-delta-text="metricDeltaText(challengeMetrics?.issued_total ?? 0, prevCacheStats?.challenge_metrics?.issued_total ?? 0)"
+                  :issued-delta-class="metricDeltaClass(metricDelta(challengeMetrics?.issued_total ?? 0, prevCacheStats?.challenge_metrics?.issued_total ?? 0), true)"
+                  :success-delta-text="metricDeltaText(challengeMetrics?.validate_success_total ?? 0, prevCacheStats?.challenge_metrics?.validate_success_total ?? 0)"
+                  :success-delta-class="metricDeltaClass(metricDelta(challengeMetrics?.validate_success_total ?? 0, prevCacheStats?.challenge_metrics?.validate_success_total ?? 0), false)"
+                  :mismatch-delta-text="metricDeltaText(challengeMetrics?.validate_failed_actor_mismatch_total ?? 0, prevCacheStats?.challenge_metrics?.validate_failed_actor_mismatch_total ?? 0)"
+                  :mismatch-delta-class="metricDeltaClass(metricDelta(challengeMetrics?.validate_failed_actor_mismatch_total ?? 0, prevCacheStats?.challenge_metrics?.validate_failed_actor_mismatch_total ?? 0), true)"
+                  :rate-limited-delta-text="metricDeltaText(challengeMetrics?.rate_limited_total ?? 0, prevCacheStats?.challenge_metrics?.rate_limited_total ?? 0)"
+                  :rate-limited-delta-class="metricDeltaClass(metricDelta(challengeMetrics?.rate_limited_total ?? 0, prevCacheStats?.challenge_metrics?.rate_limited_total ?? 0), true)"
+                />
+                <CacheClearPanel
+                  :clear-cache-loading="clearCacheLoading"
+                  :clear-cache-message="clearCacheMessage"
+                  :clear-cache-error="clearCacheError"
+                  :cache-clear-user-id="cacheClearUserId"
+                  :cache-clear-model-alias="cacheClearModelAlias"
+                  @update:cache-clear-user-id="(v) => { cacheClearUserId = v }"
+                  @update:cache-clear-model-alias="(v) => { cacheClearModelAlias = v }"
+                  @clear-cache="handleClearInferenceCache"
+                />
+              </div>
+              <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-4">
                 <button
                   class="w-full flex items-center justify-between text-left"
                   @click="advancedOpen = !advancedOpen"
@@ -322,14 +367,15 @@ const handleSave = async () => {
                 <div v-if="advancedOpen" class="space-y-6 pt-2">
                   <div class="flex items-center justify-between gap-4">
                     <div class="space-y-1">
-                      <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.auto_unload') }}</label>
+                      <p class="text-sm font-medium text-foreground">{{ t('settings.runtime.auto_unload') }}</p>
                       <p class="text-xs text-muted-foreground">{{ t('settings.runtime.auto_unload_desc') }}</p>
                     </div>
                     <Switch :checked="autoUnloadLocalModelOnSwitch" @update:checked="(v: boolean) => { autoUnloadLocalModelOnSwitch = v; isEditing = true }" />
                   </div>
                   <div class="space-y-3">
-                    <label class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached') }}</label>
+                    <label for="runtime-max-cached-global" class="text-sm font-medium text-foreground">{{ t('settings.runtime.max_cached') }}</label>
                     <Input
+                      id="runtime-max-cached-global"
                       v-model.number="runtimeMaxCachedLocalRuntimes"
                       type="number"
                       min="1"
