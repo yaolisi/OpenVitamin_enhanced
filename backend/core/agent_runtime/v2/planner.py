@@ -671,9 +671,14 @@ class Planner:
         try:
             # 构建候选列表描述
             skill_descriptions = []
+            candidate_ids: set = set()
             for skill in candidates[:10]:  # 最多取前10个
                 desc = getattr(skill, 'description', '') or ''
                 skill_descriptions.append(f"- {skill.id}: {desc[:100]}")
+                sid = getattr(skill, "id", None)
+                if isinstance(sid, str) and sid:
+                    candidate_ids.add(sid)
+                    candidate_ids.add(sid.lower())
 
             image_generation_hint = ""
             

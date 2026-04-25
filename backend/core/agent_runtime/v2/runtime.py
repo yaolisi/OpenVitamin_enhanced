@@ -27,6 +27,51 @@ from core.types import Message
 USE_EXECUTION_KERNEL = False
 
 
+def _apply_agent_plan_execution_defaults(plan: Plan, agent: AgentDefinition) -> None:
+    """
+    将 agent.model_params["plan_execution"] 中的键合并到 Plan（仅填充 Plan 上仍为 None 的字段）。
+
+    示例 JSON：{"plan_execution": {"max_parallel_in_group": 4, "default_timeout_seconds": 30.0,
+    "default_max_retries": 2, "default_retry_interval_seconds": 1.0, "default_on_timeout_strategy": "continue"}}
+    前端与类型说明见 `frontend/src/utils/planExecutionConfig.ts`。
+    """
+    pe = (agent.model_params or {}).get("plan_execution")
+    if not isinstance(pe, dict):
+        return
+    if plan.max_parallel_in_group is None and pe.get("max_parallel_in_group") is not None:
+        try:
+            n = int(pe["max_parallel_in_group"])
+            if 1 <= n <= 64:
+                plan.max_parallel_in_group = n
+        except (TypeError, ValueError):
+            pass
+    if plan.default_timeout_seconds is None and pe.get("default_timeout_seconds") is not None:
+        try:
+            v = float(pe["default_timeout_seconds"])
+            if v > 0:
+                plan.default_timeout_seconds = v
+        except (TypeError, ValueError):
+            pass
+    if plan.default_max_retries is None and pe.get("default_max_retries") is not None:
+        try:
+            n = int(pe["default_max_retries"])
+            if n >= 0:
+                plan.default_max_retries = n
+        except (TypeError, ValueError):
+            pass
+    if plan.default_retry_interval_seconds is None and pe.get("default_retry_interval_seconds") is not None:
+        try:
+            v = float(pe["default_retry_interval_seconds"])
+            if v >= 0:
+                plan.default_retry_interval_seconds = v
+        except (TypeError, ValueError):
+            pass
+    if plan.default_on_timeout_strategy is None and pe.get("default_on_timeout_strategy") is not None:
+        s = str(pe.get("default_on_timeout_strategy", "")).strip().lower()
+        if s in {"stop", "continue", "replan"}:
+            plan.default_on_timeout_strategy = s
+
+
 class AgentRuntime:
     """
     统一的 Agent 运行时入口
@@ -270,6 +315,7 @@ class AgentRuntime:
             messages=planner_messages,
             context=plan_context,
         )
+        _apply_agent_plan_execution_defaults(plan, agent)
         metrics.plan_creation_ms = round((time.perf_counter() - plan_creation_start) * 1000, 2)
         log_structured("Runtime", "plan_created", plan_id=plan.plan_id, step_count=len(plan.steps), duration_ms=metrics.plan_creation_ms)
         

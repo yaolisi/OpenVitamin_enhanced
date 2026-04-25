@@ -71,6 +71,10 @@ ALLOWED_SYSTEM_CONFIG_KEYS = {
     "skillDiscoveryTagMatchWeight",
     "skillDiscoveryMinSemanticSimilarity",
     "skillDiscoveryMinHybridScore",
+    "agentPlanMaxParallelSteps",
+    "agentStepDefaultTimeoutSeconds",
+    "agentStepDefaultMaxRetries",
+    "agentStepDefaultRetryIntervalSeconds",
     "chaosFailRateWarn",
     "chaosP95WarnMs",
     "chaosNetErrWarn",
@@ -109,6 +113,10 @@ class SystemConfigUpdate(BaseModel):
     skillDiscoveryTagMatchWeight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     skillDiscoveryMinSemanticSimilarity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     skillDiscoveryMinHybridScore: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    agentPlanMaxParallelSteps: Optional[int] = Field(default=None, ge=1, le=32)
+    agentStepDefaultTimeoutSeconds: Optional[float] = Field(default=None, ge=0.0, le=3600.0)
+    agentStepDefaultMaxRetries: Optional[int] = Field(default=None, ge=0, le=20)
+    agentStepDefaultRetryIntervalSeconds: Optional[float] = Field(default=None, ge=0.0, le=60.0)
     chaosFailRateWarn: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     chaosP95WarnMs: Optional[int] = Field(default=None, ge=1, le=600000)
     chaosNetErrWarn: Optional[int] = Field(default=None, ge=0, le=10000)

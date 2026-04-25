@@ -77,6 +77,12 @@ export function useRuntimeSettings() {
   const skillDiscoveryMinSemanticSimilarity = ref(0)
   /** 混合分下限，0 表示不筛 */
   const skillDiscoveryMinHybridScore = ref(0)
+  /** PlanBasedExecutor / parallel_group 批内与 parallel_calls 的全局并发上限 */
+  const agentPlanMaxParallelSteps = ref(4)
+  /** 0 或空：未在控制台覆盖，用后端 .env；>0 为单步默认超时（秒） */
+  const agentStepDefaultTimeoutSeconds = ref(0)
+  const agentStepDefaultMaxRetries = ref(0)
+  const agentStepDefaultRetryIntervalSeconds = ref(1)
   const DEFAULT_SMART_ROUTING_POLICIES_TEMPLATE = `{
   "reasoning-model": {
     "strategy": "blue_green",
@@ -142,6 +148,43 @@ export function useRuntimeSettings() {
         0,
       )
       skillDiscoveryMinHybridScore.value = parseFloat01(s.skillDiscoveryMinHybridScore, 0)
+      {
+        const fbP = 4
+        const pp = s.agentPlanMaxParallelSteps
+        if (pp !== undefined && pp !== null && String(pp) !== '') {
+          const n = Math.min(32, Math.max(1, Math.floor(Number(pp))))
+          agentPlanMaxParallelSteps.value = Number.isNaN(n) ? fbP : n
+        } else {
+          agentPlanMaxParallelSteps.value = fbP
+        }
+      }
+      {
+        const ts = s.agentStepDefaultTimeoutSeconds
+        if (ts !== undefined && ts !== null && String(ts) !== '') {
+          const f = parseFloat(String(ts))
+          agentStepDefaultTimeoutSeconds.value = Number.isNaN(f) ? 0 : Math.min(3600, Math.max(0, f))
+        } else {
+          agentStepDefaultTimeoutSeconds.value = 0
+        }
+      }
+      {
+        const mr = s.agentStepDefaultMaxRetries
+        if (mr !== undefined && mr !== null && String(mr) !== '') {
+          const n = Math.min(20, Math.max(0, Math.floor(Number(mr))))
+          agentStepDefaultMaxRetries.value = Number.isNaN(n) ? 0 : n
+        } else {
+          agentStepDefaultMaxRetries.value = 0
+        }
+      }
+      {
+        const ri = s.agentStepDefaultRetryIntervalSeconds
+        if (ri !== undefined && ri !== null && String(ri) !== '') {
+          const f = parseFloat(String(ri))
+          agentStepDefaultRetryIntervalSeconds.value = Number.isNaN(f) ? 1 : Math.min(60, Math.max(0, f))
+        } else {
+          agentStepDefaultRetryIntervalSeconds.value = 1
+        }
+      }
       smartRoutingJsonError.value = ''
       refreshSmartRoutingPreview()
       isEditing.value = false
@@ -181,6 +224,13 @@ export function useRuntimeSettings() {
           0,
         ),
         skillDiscoveryMinHybridScore: parseFloat01(skillDiscoveryMinHybridScore.value, 0),
+        agentPlanMaxParallelSteps: Math.min(32, Math.max(1, Math.floor(Number(agentPlanMaxParallelSteps.value) || 4))),
+        agentStepDefaultTimeoutSeconds: Math.min(3600, Math.max(0, Number(agentStepDefaultTimeoutSeconds.value) || 0)),
+        agentStepDefaultMaxRetries: Math.min(20, Math.max(0, Math.floor(Number(agentStepDefaultMaxRetries.value) || 0))),
+        agentStepDefaultRetryIntervalSeconds: Math.min(
+          60,
+          Math.max(0, parseFloat(String(agentStepDefaultRetryIntervalSeconds.value)) || 1),
+        ),
       })
       await loadConfig()
       if (policyText) {
@@ -671,6 +721,10 @@ export function useRuntimeSettings() {
     skillDiscoveryTagMatchWeight,
     skillDiscoveryMinSemanticSimilarity,
     skillDiscoveryMinHybridScore,
+    agentPlanMaxParallelSteps,
+    agentStepDefaultTimeoutSeconds,
+    agentStepDefaultMaxRetries,
+    agentStepDefaultRetryIntervalSeconds,
     fillSmartRoutingTemplate,
     clearSmartRoutingPolicies,
     config,

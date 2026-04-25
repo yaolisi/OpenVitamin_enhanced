@@ -1417,6 +1417,12 @@ export async function setWorkflowGovernance(
 // Agents API
 // ----------------------------
 
+export type {
+  PlanExecutionConfig,
+  OnTimeoutStrategy,
+  PlanExecutionFormState,
+} from '@/utils/planExecutionConfig'
+
 export interface AgentDefinition {
   agent_id: string
   name: string
@@ -1472,7 +1478,9 @@ export interface CreateAgentRequest {
   plan_contract_strict?: boolean
   /** V2.3: Contract source keys in priority order */
   plan_contract_sources?: string[]
-  /** Model parameters (e.g., intent_rules, skill_param_extractors, etc.) */
+  /**
+   * model_params 中的 plan_execution 结构见 `PlanExecutionConfig`（`@/utils/planExecutionConfig` 与后端合并逻辑一致）。
+   */
   model_params?: Record<string, any>
 }
 

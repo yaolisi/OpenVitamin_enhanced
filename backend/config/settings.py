@@ -246,8 +246,13 @@ class Settings(BaseSettings):
     runtime_release_idle_ttl_seconds: int = 300
     # 自动回收最小触发间隔（秒），用于抑制并发尖峰抖动
     runtime_release_min_interval_seconds: int = 5
-    # Agent Plan 并行工具调用上限（仅对显式 parallel_calls 生效）
+    # Agent Plan 并行工具调用上限（parallel_calls 与 parallel_group 批内并发共用上限）
     agent_plan_max_parallel_steps: int = 4
+    # 步骤默认不超时；>0 时作为 PlanBasedExecutor 的全局单步超时时长（秒）
+    agent_step_default_timeout_seconds: Optional[float] = None
+    # 无 Step/Plan 配置时的默认重试次数与间隔
+    agent_step_default_max_retries: int = 0
+    agent_step_default_retry_interval_seconds: float = 1.0
     # V2.9 按 runtime 类型的并发上限覆盖（JSON 对象，如 {"llama.cpp": 1, "ollama": 4}）。为空则使用代码默认 MODEL_RUNTIME_CONFIG。
     runtime_max_concurrency_overrides: str = ""
 

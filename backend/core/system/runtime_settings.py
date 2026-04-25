@@ -2,6 +2,8 @@
 运行时相关配置：优先从 SystemSettingsStore（前端可配）读取，否则回退到 config.settings。
 key 与前端约定为 camelCase。
 """
+from typing import Optional
+
 from config.settings import settings
 from core.system.settings_store import get_system_settings_store
 
@@ -122,3 +124,61 @@ def get_skill_discovery_min_hybrid_score() -> float:
         0.0,
         1.0,
     )
+
+
+def get_agent_plan_max_parallel_steps() -> int:
+    """Plan 同批并行步（parallel_group / parallel_calls）全局并发上限；系统设置可覆盖 .env。"""
+    fb = int(getattr(settings, "agent_plan_max_parallel_steps", 4) or 4)
+    v = get_system_settings_store().get_setting("agentPlanMaxParallelSteps")
+    if v is None or v == "":
+        return max(1, min(32, fb))
+    try:
+        n = int(v)
+        return max(1, min(32, n))
+    except (TypeError, ValueError):
+        return max(1, min(32, fb))
+
+
+def get_agent_step_default_timeout_seconds() -> Optional[float]:
+    """单步默认超时时长（秒）；未配置时回退到 config.settings；0/空 表示不覆盖 .env（不限制）。"""
+    v = get_system_settings_store().get_setting("agentStepDefaultTimeoutSeconds")
+    if v is not None and v != "" and v is not False:
+        try:
+            f = float(v)
+            if f > 0:
+                return f
+            # 0 显式选择：按 .env 默认
+        except (TypeError, ValueError):
+            pass
+    g = getattr(settings, "agent_step_default_timeout_seconds", None)
+    if g is not None:
+        try:
+            f = float(g)
+            return f if f > 0 else None
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def get_agent_step_default_max_retries() -> int:
+    fb = int(getattr(settings, "agent_step_default_max_retries", 0) or 0)
+    v = get_system_settings_store().get_setting("agentStepDefaultMaxRetries")
+    if v is None or v == "":
+        return max(0, min(20, fb))
+    try:
+        n = int(v)
+        return max(0, min(20, n))
+    except (TypeError, ValueError):
+        return max(0, min(20, fb))
+
+
+def get_agent_step_default_retry_interval_seconds() -> float:
+    fb = float(getattr(settings, "agent_step_default_retry_interval_seconds", 1.0) or 1.0)
+    v = get_system_settings_store().get_setting("agentStepDefaultRetryIntervalSeconds")
+    if v is None or v == "":
+        return max(0.0, min(60.0, fb))
+    try:
+        f = float(v)
+        return max(0.0, min(60.0, f))
+    except (TypeError, ValueError):
+        return max(0.0, min(60.0, fb))

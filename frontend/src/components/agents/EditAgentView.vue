@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
@@ -34,6 +34,11 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { updateAgent, getAgent, listModels, listKnowledgeBases, listSkills, type CreateAgentRequest, type SkillRecord } from '@/services/api'
+import {
+  buildPlanExecutionPayload,
+  defaultPlanExecutionFormState,
+  loadPlanExecutionFormFromModelParams,
+} from '@/utils/planExecutionConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -60,6 +65,7 @@ const onFailureStrategy = ref('stop')
 const replanPrompt = ref('')
 const planContractEnabled = ref(false)
 const planContractStrict = ref(false)
+const planExecutionForm = reactive(defaultPlanExecutionFormState())
 
 // Intent Rules (通用配置：关键词/正则匹配 → Skill)
 const intentRules = ref<{keywords: string[], skills: string[], regex?: string}[]>([])
@@ -349,6 +355,12 @@ const fetchAgentData = async () => {
     responseMode.value = modelParams.response_mode === 'direct_tool_result' || hasDirectResponseSkills
       ? 'direct_tool_result'
       : 'default'
+    Object.assign(
+      planExecutionForm,
+      loadPlanExecutionFormFromModelParams(
+        (agent as { model_params?: Record<string, unknown> | null })?.model_params,
+      ),
+    )
   } catch (error) {
     console.error('Failed to fetch agent:', error)
     submitError.value = error instanceof Error ? error.message : 'Failed to load agent'
@@ -443,7 +455,7 @@ const handleUpdateAgent = async () => {
       model_params: (() => {
         const next: Record<string, unknown> = { ...(currentAgent.value?.model_params || {}) }
         next.intent_rules = normalizeIntentRules(intentRules.value).filter(
-          r => ((r.keywords?.length || 0) > 0 || !!r.regex) && (r.skills?.length || 0) > 0,
+          (r) => ((r.keywords?.length || 0) > 0 || !!r.regex) && (r.skills?.length || 0) > 0,
         )
         if (executionMode.value === 'plan_based') {
           next.use_skill_discovery = useSkillDiscovery.value
@@ -456,9 +468,16 @@ const handleUpdateAgent = async () => {
           } else {
             delete next.skill_discovery
           }
+          const pe = buildPlanExecutionPayload(planExecutionForm)
+          if (pe) {
+            next.plan_execution = pe
+          } else {
+            delete next.plan_execution
+          }
         } else {
           delete next.use_skill_discovery
           delete next.skill_discovery
+          delete next.plan_execution
         }
         return next
       })(),
@@ -910,6 +929,69 @@ onMounted(async () => {
                   class="w-full px-3 py-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                 ></textarea>
                 <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.replan_prompt_desc') }}</p>
+              </div>
+              <div class="pt-2 border-t border-purple-500/20 space-y-3">
+                <div class="text-xs font-medium text-foreground/90">{{ t('agents.create.plan_execution_title') }}</div>
+                <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.plan_execution_desc') }}</p>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_max_parallel') }}</label>
+                    <input
+                      v-model.number="planExecutionForm.maxParallelInGroup"
+                      type="number"
+                      min="0"
+                      max="64"
+                      class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                    />
+                    <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_max_parallel_desc') }}</p>
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_default_timeout') }}</label>
+                    <input
+                      v-model.number="planExecutionForm.defaultTimeoutSeconds"
+                      type="number"
+                      min="0"
+                      max="3600"
+                      class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                    />
+                    <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_default_timeout_desc') }}</p>
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_default_max_retries') }}</label>
+                    <input
+                      v-model.number="planExecutionForm.defaultMaxRetries"
+                      type="number"
+                      min="0"
+                      max="20"
+                      class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                    />
+                    <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_default_max_retries_desc') }}</p>
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_retry_interval') }}</label>
+                    <input
+                      v-model.number="planExecutionForm.retryIntervalSeconds"
+                      type="number"
+                      min="0"
+                      max="60"
+                      step="0.1"
+                      class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                    />
+                    <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_retry_interval_desc') }}</p>
+                  </div>
+                  <div class="sm:col-span-2">
+                    <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_on_timeout') }}</label>
+                    <select
+                      v-model="planExecutionForm.onTimeoutStrategy"
+                      class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                    >
+                      <option value="">{{ t('agents.create.pe_on_timeout_inherit') }}</option>
+                      <option value="stop">{{ t('agents.create.failure_strategy_stop') }}</option>
+                      <option value="continue">{{ t('agents.create.failure_strategy_continue') }}</option>
+                      <option value="replan">{{ t('agents.create.failure_strategy_replan') }}</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
 

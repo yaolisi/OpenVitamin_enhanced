@@ -2,12 +2,14 @@
 Agent V2 PlanBasedExecutor
 基于计划的执行器，支持递归执行 sub_plan
 """
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+import asyncio
 import json
 import re
 import time
 from pathlib import Path
 from config.settings import settings
+from core.system import runtime_settings as rs_runtime
 
 from log import logger, log_structured
 from core.agent_runtime.session import AgentSession
@@ -110,6 +112,380 @@ class PlanBasedExecutor:
                                 break
             return None
 
+    @staticmethod
+    def _step_parallel_key(step: Step) -> Optional[str]:
+        g = getattr(step, "parallel_group", None)
+        if isinstance(g, str) and g.strip():
+            return g.strip()
+        if isinstance(step.inputs, dict):
+            raw = step.inputs.get("_parallel_group")
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+        return None
+
+    @staticmethod
+    def _group_step_indices(steps: List[Step]) -> List[List[int]]:
+        if not steps:
+            return []
+        batches: List[List[int]] = []
+        i = 0
+        n = len(steps)
+        while i < n:
+            g = PlanBasedExecutor._step_parallel_key(steps[i])
+            if not g:
+                batches.append([i])
+                i += 1
+            else:
+                b = [i]
+                j = i + 1
+                while j < n and PlanBasedExecutor._step_parallel_key(steps[j]) == g:
+                    b.append(j)
+                    j += 1
+                batches.append(b)
+                i = j
+        return batches
+
+    def _resolve_step_timeout(self, plan: Plan, step: Step) -> Optional[float]:
+        ts = step.timeout_seconds
+        if ts is not None and ts > 0:
+            return float(ts)
+        p = plan.default_timeout_seconds
+        if p is not None and p > 0:
+            return float(p)
+        r = rs_runtime.get_agent_step_default_timeout_seconds()
+        if r is not None and r > 0:
+            return float(r)
+        g = getattr(settings, "agent_step_default_timeout_seconds", None)
+        if g is not None and g > 0:
+            return float(g)
+        return None
+
+    def _resolve_max_retries(self, plan: Plan, step: Step) -> int:
+        if step.max_retries is not None:
+            return max(0, int(step.max_retries))
+        if plan.default_max_retries is not None:
+            return max(0, int(plan.default_max_retries))
+        return rs_runtime.get_agent_step_default_max_retries()
+
+    def _resolve_retry_interval(self, plan: Plan, step: Step) -> float:
+        if step.retry_interval_seconds is not None:
+            return max(0.0, float(step.retry_interval_seconds))
+        if plan.default_retry_interval_seconds is not None:
+            return max(0.0, float(plan.default_retry_interval_seconds))
+        return rs_runtime.get_agent_step_default_retry_interval_seconds()
+
+    def _apply_incoming_injections(
+        self,
+        i: int,
+        step: Step,
+        last_skill_output: Any,
+        last_llm_response: Any,
+        plan: Plan,
+    ) -> None:
+        _ = plan
+        if i > 0 and step.executor == ExecutorType.LLM:
+            template_context = step.inputs.get("_template_context")
+            inject_skill = step.inputs.get("_inject_skill_output")
+            if (template_context == "skill_output" or inject_skill) and last_skill_output:
+                step.inputs = self._inject_skill_output(step.inputs, last_skill_output)
+        if step.executor == ExecutorType.SKILL and last_llm_response is not None:
+            extract_patch = False
+            if hasattr(step, "input_data") and isinstance(step.input_data, dict):
+                extract_patch = step.input_data.get("_extract_patch", False)
+            if not extract_patch and isinstance(step.inputs, dict):
+                extract_patch = step.inputs.get("_extract_patch", False)
+            if extract_patch:
+                temp_inputs = dict(step.inputs) if isinstance(step.inputs, dict) else {}
+                temp_inputs["_extract_patch"] = True
+                step.inputs = self._resolve_from_previous_step(temp_inputs, last_llm_response)
+            else:
+                step.inputs = self._resolve_from_previous_step(step.inputs, last_llm_response)
+
+    def _update_last_stream_outputs(
+        self,
+        step: Step,
+        last_skill_output: Any,
+        last_llm_response: Any,
+    ) -> Tuple[Any, Any]:
+        if step.executor == ExecutorType.SKILL:
+            last_skill_output = step.outputs
+        elif step.executor == ExecutorType.LLM and step.outputs:
+            last_llm_response = step.outputs.get("response") if isinstance(step.outputs, dict) else None
+        return last_skill_output, last_llm_response
+
+    def _merge_batch_stream_outputs(
+        self,
+        plan: Plan,
+        batch: List[int],
+        last_skill_output: Any,
+        last_llm_response: Any,
+    ) -> Tuple[Any, Any]:
+        ls, ll = last_skill_output, last_llm_response
+        for i in batch:
+            ls, ll = self._update_last_stream_outputs(plan.steps[i], ls, ll)
+        sk_out = [plan.steps[i] for i in batch if plan.steps[i].executor == ExecutorType.SKILL]
+        if len(sk_out) > 1:
+            by_step = {s.step_id: s.outputs for s in sk_out}
+            ls = {"result": {"parallel_group": True, "by_step": by_step}}
+        return ls, ll
+
+    def _post_process_llm_validations(self, step: Step) -> None:
+        if step.executor != ExecutorType.LLM or not step.outputs:
+            return
+        last_llm_response = step.outputs.get("response") if isinstance(step.outputs, dict) else None
+        if step.status == StepStatus.COMPLETED and isinstance(step.inputs, dict) and step.inputs.get(
+            "_expect_unified_diff"
+        ):
+            extracted = self._extract_unified_diff(last_llm_response or "")
+            if not extracted:
+                step.status = StepStatus.FAILED
+                step.error = "LLM did not produce a valid unified diff patch"
+                step.outputs = {"error": step.error, "response": last_llm_response}
+            else:
+                if isinstance(step.outputs, dict):
+                    step.outputs["response"] = extracted
+                last_llm_response = extracted
+        if step.status == StepStatus.COMPLETED and isinstance(step.inputs, dict) and step.inputs.get(
+            "_expect_alignment_check"
+        ):
+            payload = self._extract_json_object(last_llm_response or "")
+            aligned = False
+            reason = "alignment check returned invalid JSON"
+            if isinstance(payload, dict):
+                if isinstance(payload.get("aligned"), bool):
+                    aligned = payload.get("aligned")
+                elif isinstance(payload.get("status"), str):
+                    aligned = payload.get("status", "").strip().lower() in {
+                        "pass", "ok", "aligned", "success",
+                    }
+                reason_val = payload.get("reason")
+                if isinstance(reason_val, str) and reason_val.strip():
+                    reason = reason_val.strip()
+            if not aligned:
+                step.status = StepStatus.FAILED
+                step.error = f"Requirement alignment check failed: {reason}"
+                step.outputs = {"error": step.error, "response": last_llm_response}
+
+    def _base_failure_strategy(
+        self,
+        plan: Plan,
+        agent: AgentDefinition,
+        step: Step,
+        context: Dict[str, Any],
+    ) -> str:
+        if context.get("_last_failure_kind") == "timeout":
+            ts = (getattr(step, "on_timeout_strategy", None) or "").strip()
+            if ts in {"stop", "continue", "replan"}:
+                return ts
+            pts = (plan.default_on_timeout_strategy or "").strip()
+            if pts in {"stop", "continue", "replan"}:
+                return pts
+        if plan.failure_strategy:
+            return str(plan.failure_strategy)
+        agent_failure = getattr(agent, "on_failure_strategy", None)
+        if agent_failure:
+            return str(agent_failure)
+        return "stop" if step.executor == ExecutorType.SKILL else "continue"
+
+    async def _run_step_with_resilience(
+        self,
+        plan: Plan,
+        step: Step,
+        state: AgentState,
+        context: Dict[str, Any],
+        trace: ExecutionTrace,
+        parent_step_id: Optional[str],
+        depth: int,
+        _agent: AgentDefinition,
+        _metrics: Optional[Any],
+    ) -> Step:
+        max_r = self._resolve_max_retries(plan, step)
+        interval = self._resolve_retry_interval(plan, step)
+        timeout = self._resolve_step_timeout(plan, step)
+        cur: Step = step
+        for attempt in range(max_r + 1):
+            context.pop("_last_failure_kind", None)
+            if attempt > 0 and interval > 0:
+                await asyncio.sleep(interval)
+            try:
+                if timeout and timeout > 0:
+                    cur = await asyncio.wait_for(
+                        self._execute_step(
+                            cur, state, context, trace, parent_step_id, depth
+                        ),
+                        timeout=timeout,
+                    )
+                else:
+                    cur = await self._execute_step(
+                        cur, state, context, trace, parent_step_id, depth
+                    )
+            except asyncio.CancelledError:
+                raise
+            except asyncio.TimeoutError:
+                context["_last_failure_kind"] = "timeout"
+                cur.status = StepStatus.FAILED
+                cur.error = f"Step timed out after {timeout} seconds" if timeout else "Step timed out"
+                o = cur.outputs if isinstance(cur.outputs, dict) else {}
+                cur.outputs = {**o, "error": cur.error, "timeout_seconds": timeout}
+            if cur.status == StepStatus.COMPLETED:
+                if attempt > 0 and isinstance(cur.outputs, dict):
+                    cur.outputs = {**cur.outputs, "retry": {"attempts": attempt + 1, "max_retries": max_r + 1}}
+                return cur
+            if attempt >= max_r:
+                return cur
+            log_structured(
+                "PlanBasedExecutor", "step_retry",
+                step_id=cur.step_id, attempt=attempt + 1, max_retries=max_r, next_attempt=attempt + 2,
+            )
+            cur.status = StepStatus.PENDING
+            cur.error = None
+            cur.outputs = {}
+        return cur
+
+    async def _run_parallel_step_batch(
+        self,
+        plan: Plan,
+        batch: List[int],
+        state: AgentState,
+        context: Dict[str, Any],
+        trace: ExecutionTrace,
+        parent_step_id: Optional[str],
+        depth: int,
+        agent: AgentDefinition,
+        metrics: Optional[Any],
+    ) -> None:
+        cap = int(context.get("max_parallel_steps", 4) or 4)
+        mpig = getattr(plan, "max_parallel_in_group", None)
+        if mpig is not None:
+            try:
+                cap = min(cap, int(mpig))
+            except (TypeError, ValueError):
+                pass
+        cap = max(1, cap)
+        # 并发度由 Semaphore 限制；I/O 型任务与固定 worker 池在语义上同为「同时最多 N 个」
+        log_structured("PlanBasedExecutor", "parallel_batch_start", indices=batch, cap=cap)
+        sem = asyncio.Semaphore(cap)
+
+        async def run_idx(idx: int) -> Step:
+            s = plan.steps[idx]
+            async with sem:
+                return await self._run_step_with_resilience(
+                    plan, s, state, context, trace, parent_step_id, depth, agent, metrics
+                )
+
+        results = await asyncio.gather(*[run_idx(i) for i in batch], return_exceptions=True)
+        for idx, r in zip(batch, results):
+            if isinstance(r, Exception):
+                st = plan.steps[idx]
+                st.status = StepStatus.FAILED
+                st.error = f"{r.__class__.__name__}: {r}"
+                o = st.outputs if isinstance(st.outputs, dict) else {}
+                st.outputs = {**o, "error": st.error}
+            else:
+                plan.steps[idx] = r
+        log_structured("PlanBasedExecutor", "parallel_batch_done", indices=batch)
+
+    async def _react_to_step_failure(
+        self,
+        plan: Plan,
+        step: Step,
+        state: AgentState,
+        context: Dict[str, Any],
+        trace: ExecutionTrace,
+        depth: int,
+        agent: AgentDefinition,
+        metrics: Optional[Any],
+    ) -> str:
+        from .models import create_replan_step
+
+        context["last_failed_step"] = step
+        context["last_error"] = step.error
+        context["last_step_outputs"] = step.outputs
+        try:
+            fix_attempt_count = state.get("fix_attempt_count", 0) + 1
+            max_fix_attempts = state.get("max_fix_attempts", 5)
+            if fix_attempt_count > max_fix_attempts:
+                logger.warning(
+                    f"[PlanBasedExecutor] Max fix attempts ({max_fix_attempts}) exceeded, stopping execution"
+                )
+                step.error = f"Maximum fix attempts ({max_fix_attempts}) exceeded. Please review the issue manually."
+                return "break"
+            state.set_runtime("fix_attempt_count", fix_attempt_count)
+            logger.info(f"[PlanBasedExecutor] Fix attempt {fix_attempt_count}/{max_fix_attempts}")
+
+            on_failure = step.on_failure_replan
+            if on_failure:
+                if metrics:
+                    metrics.replan_count = getattr(metrics, "replan_count", 0) + 1
+                log_structured("PlanBasedExecutor", "replan_triggered", step_id=step.step_id, reason="on_failure_replan")
+                replan_instruction = self._format_replan_prompt(
+                    replan_prompt=on_failure, failed_step=step, agent=agent, state=state
+                )
+                replan_step = create_replan_step(
+                    replan_instruction=replan_instruction,
+                    executor=ExecutorType.LLM,
+                )
+                replan_step.inputs["_on_failure"] = True
+                replan_step = await self._execute_step(
+                    replan_step, state, context, trace,
+                    parent_step_id=step.step_id, depth=depth,
+                )
+                if replan_step.status == StepStatus.FAILED:
+                    logger.warning("[PlanBasedExecutor] REPLAN step failed, stopping execution")
+                    return "break"
+                followup_plan_id = replan_step.outputs.get("followup_plan_id")
+                step.status = StepStatus.COMPLETED
+                step.error = None
+                step.outputs = {
+                    **(step.outputs or {}),
+                    "recovered_by_replan": True,
+                    "replan_followup_plan_id": followup_plan_id,
+                }
+                return "continue"
+
+            failure_strategy = self._base_failure_strategy(plan, agent, step, context)
+            if failure_strategy == "stop":
+                logger.warning(f"[PlanBasedExecutor] Step {step.step_id} failed, stopping execution")
+                return "break"
+            if failure_strategy == "replan":
+                replan_prompt_raw = (
+                    (getattr(agent, "replan_prompt", None) or "").strip()
+                    or "上一步失败。请根据错误原因重规划并重试，必要时改用其他可用技能。"
+                )
+                replan_instruction = self._format_replan_prompt(
+                    replan_prompt=replan_prompt_raw,
+                    failed_step=step,
+                    agent=agent,
+                    state=state,
+                )
+                if metrics:
+                    metrics.replan_count = getattr(metrics, "replan_count", 0) + 1
+                log_structured("PlanBasedExecutor", "replan_triggered", step_id=step.step_id, reason="agent_replan")
+                replan_step = create_replan_step(
+                    replan_instruction=replan_instruction, executor=ExecutorType.LLM
+                )
+                replan_step.inputs["_on_failure"] = True
+                replan_step = await self._execute_step(
+                    replan_step, state, context, trace,
+                    parent_step_id=step.step_id, depth=depth,
+                )
+                if replan_step.status == StepStatus.FAILED:
+                    logger.warning("[PlanBasedExecutor] REPLAN step failed, stopping execution")
+                    return "break"
+                followup_plan_id = replan_step.outputs.get("followup_plan_id")
+                step.status = StepStatus.COMPLETED
+                step.error = None
+                step.outputs = {
+                    **(step.outputs or {}),
+                    "recovered_by_replan": True,
+                    "replan_followup_plan_id": followup_plan_id,
+                }
+                return "continue"
+            logger.info(f"[PlanBasedExecutor] Step {step.step_id} failed, continuing to next step")
+            return "continue"
+        finally:
+            context.pop("_last_failure_kind", None)
+
     async def execute_plan(
         self,
         plan: Plan,
@@ -172,200 +548,61 @@ class PlanBasedExecutor:
             "current_plan": plan,  # V2.2: 追踪当前执行的 Plan
             "planner": get_planner(),  # V2.2: Planner 引用，供 REPLAN 使用
             "metrics": metrics,  # 可观测性：性能指标收集
-            "max_parallel_steps": int(getattr(settings, "agent_plan_max_parallel_steps", 4)),
+            "max_parallel_steps": rs_runtime.get_agent_plan_max_parallel_steps(),
         }
         
         last_skill_output = None  # 保存上一个 skill 的输出
         last_llm_response = None  # 保存上一步 LLM 的 response，供后续 skill 步骤 __from_previous_step 使用
-        
-        # 执行所有步骤
-        for i, step in enumerate(plan.steps):
-            # 检查是否需要将上一个 skill 的输出注入到当前 LLM 步骤
-            if i > 0 and step.executor == ExecutorType.LLM:
-                # 检查两种标记：_template_context 或 _inject_skill_output
-                template_context = step.inputs.get("_template_context")
-                inject_skill = step.inputs.get("_inject_skill_output")
-                if (template_context == "skill_output" or inject_skill) and last_skill_output:
-                    # 将 skill 输出注入到 messages 中
-                    step.inputs = self._inject_skill_output(step.inputs, last_skill_output)
-            
-            # 若当前为 skill 步骤且 inputs 中含 __from_previous_step，用上一步 LLM 的 response 替换
-            if step.executor == ExecutorType.SKILL and last_llm_response is not None:
-                # _extract_patch 标记可能在 step.inputs 内部或 step.input_data 中
-                # 需要同时检查两种位置
-                extract_patch = False
-                
-                # 优先检查 step.input_data（Planner 直接创建的 LLM steps）
-                if hasattr(step, 'input_data') and isinstance(step.input_data, dict):
-                    extract_patch = step.input_data.get("_extract_patch", False)
-                
-                # 其次检查 step.inputs（某些情况下可能在这里）
-                if not extract_patch and isinstance(step.inputs, dict):
-                    extract_patch = step.inputs.get("_extract_patch", False)
-                
-                # 如果需要提取 patch，将标记传递给 _resolve_from_previous_step
-                if extract_patch:
-                    # 创建一个临时的 inputs 副本，添加 _extract_patch 标记
-                    temp_inputs = dict(step.inputs) if isinstance(step.inputs, dict) else {}
-                    temp_inputs["_extract_patch"] = True
-                    step.inputs = self._resolve_from_previous_step(temp_inputs, last_llm_response)
-                else:
-                    step.inputs = self._resolve_from_previous_step(step.inputs, last_llm_response)
-            
-            step = await self._execute_step(step, state, context, trace, parent_step_id=parent_step_id, depth=depth)
-            
-            # 保存当前步骤的输出（供下一步注入或 __from_previous_step）
-            if step.executor == ExecutorType.SKILL:
-                last_skill_output = step.outputs
-            elif step.executor == ExecutorType.LLM and step.outputs:
-                last_llm_response = step.outputs.get("response") if isinstance(step.outputs, dict) else None
-                # 若该 LLM 步要求输出 unified diff，则在本步做强校验
-                if step.status == StepStatus.COMPLETED and isinstance(step.inputs, dict) and step.inputs.get("_expect_unified_diff"):
-                    extracted = self._extract_unified_diff(last_llm_response or "")
-                    if not extracted:
-                        step.status = StepStatus.FAILED
-                        step.error = "LLM did not produce a valid unified diff patch"
-                        step.outputs = {"error": step.error, "response": last_llm_response}
-                    else:
-                        # 将标准化后的 patch 回写，供后续 __from_previous_step 直接使用
-                        if isinstance(step.outputs, dict):
-                            step.outputs["response"] = extracted
-                        last_llm_response = extracted
-                # 若该 LLM 步要求需求对齐校验，则强制解析结构化结果
-                if step.status == StepStatus.COMPLETED and isinstance(step.inputs, dict) and step.inputs.get("_expect_alignment_check"):
-                    payload = self._extract_json_object(last_llm_response or "")
-                    aligned = False
-                    reason = "alignment check returned invalid JSON"
-                    if isinstance(payload, dict):
-                        if isinstance(payload.get("aligned"), bool):
-                            aligned = payload.get("aligned")
-                        elif isinstance(payload.get("status"), str):
-                            aligned = payload.get("status", "").strip().lower() in {"pass", "ok", "aligned", "success"}
-                        reason_val = payload.get("reason")
-                        if isinstance(reason_val, str) and reason_val.strip():
-                            reason = reason_val.strip()
-                    if not aligned:
-                        step.status = StepStatus.FAILED
-                        step.error = f"Requirement alignment check failed: {reason}"
-                        step.outputs = {"error": step.error, "response": last_llm_response}
-            
-            # V2.2: 检查失败后是否需要重规划
-            if step.status == StepStatus.FAILED:
-                # 记录失败信息供后续重规划使用
-                context["last_failed_step"] = step
-                context["last_error"] = step.error
-                context["last_step_outputs"] = step.outputs
-                
-                # V2.3: 检查并增加修复次数
-                fix_attempt_count = state.get("fix_attempt_count", 0) + 1
-                max_fix_attempts = state.get("max_fix_attempts", 5)
-                
-                if fix_attempt_count > max_fix_attempts:
-                    logger.warning(f"[PlanBasedExecutor] Max fix attempts ({max_fix_attempts}) exceeded, stopping execution")
-                    step.error = f"Maximum fix attempts ({max_fix_attempts}) exceeded. Please review the issue manually."
-                    break
-                
-                state.set_runtime("fix_attempt_count", fix_attempt_count)
-                logger.info(f"[PlanBasedExecutor] Fix attempt {fix_attempt_count}/{max_fix_attempts}")
-                
-                # 检查是否配置了 on_failure_replan
-                on_failure = step.on_failure_replan
-                if on_failure:
-                    if metrics:
-                        metrics.replan_count = getattr(metrics, "replan_count", 0) + 1
-                    log_structured("PlanBasedExecutor", "replan_triggered", step_id=step.step_id, reason="on_failure_replan")
-                    logger.info(f"[PlanBasedExecutor] Step {step.step_id} failed, triggering on_failure_replan")
-                    # 替换占位符
-                    replan_instruction = self._format_replan_prompt(
-                        replan_prompt=on_failure,
-                        failed_step=step,
-                        agent=agent,
-                        state=state
+
+        for batch in self._group_step_indices(plan.steps):
+            if len(batch) == 1:
+                i = batch[0]
+                step = plan.steps[i]
+                self._apply_incoming_injections(
+                    i, step, last_skill_output, last_llm_response, plan
+                )
+                plan.steps[i] = await self._run_step_with_resilience(
+                    plan, step, state, context, trace, parent_step_id, depth, agent, metrics
+                )
+                step = plan.steps[i]
+                self._post_process_llm_validations(step)
+                last_skill_output, last_llm_response = self._update_last_stream_outputs(
+                    step, last_skill_output, last_llm_response
+                )
+                if step.status == StepStatus.FAILED:
+                    nxt = await self._react_to_step_failure(
+                        plan, step, state, context, trace, depth, agent, metrics
                     )
-                    # 创建 REPLAN 步骤并执行
-                    from .models import create_replan_step
-                    replan_step = create_replan_step(
-                        replan_instruction=replan_instruction,
-                        executor=ExecutorType.LLM,
-                    )
-                    replan_step.inputs["_on_failure"] = True
-                    # 执行 REPLAN 步骤
-                    replan_step = await self._execute_step(
-                        replan_step, state, context, trace, 
-                        parent_step_id=step.step_id, depth=depth
-                    )
-                    # REPLAN 步骤也失败，停止执行
-                    if replan_step.status == StepStatus.FAILED:
-                        logger.warning(f"[PlanBasedExecutor] REPLAN step failed, stopping execution")
+                    if nxt == "break":
                         break
-                    # REPLAN 成功：将原失败步骤标记为已恢复，避免最终状态被误判为 failed
-                    followup_plan_id = replan_step.outputs.get("followup_plan_id")
-                    step.status = StepStatus.COMPLETED
-                    step.error = None
-                    step.outputs = {
-                        **(step.outputs or {}),
-                        "recovered_by_replan": True,
-                        "replan_followup_plan_id": followup_plan_id,
-                    }
-                    # REPLAN 成功，继续执行
-                    continue
-                
-                # 默认策略：
-                # - 对 skill 步骤：默认 stop（fail-fast），避免在错误结果上继续生成错误结论
-                # - 其他步骤：保持原行为 continue
-                # V2.2: 失败策略（优先使用 agent 配置）
-                failure_strategy = plan.failure_strategy
-                if not failure_strategy:
-                    # 从 agent 获取 on_failure_strategy 配置
-                    agent_failure = getattr(agent, "on_failure_strategy", None)
-                    if agent_failure:
-                        failure_strategy = agent_failure
-                    else:
-                        failure_strategy = "stop" if step.executor == ExecutorType.SKILL else "continue"
-                
-                if failure_strategy == "stop":
-                    logger.warning(f"[PlanBasedExecutor] Step {step.step_id} failed, stopping execution")
-                    break
-                elif failure_strategy == "replan":
-                    # 使用 agent 级别的 replan_prompt 创建并执行 REPLAN 步骤（与前端配置一致）
-                    from .models import create_replan_step
-                    replan_prompt_raw = (
-                        (getattr(agent, "replan_prompt", None) or "").strip()
-                        or "上一步失败。请根据错误原因重规划并重试，必要时改用其他可用技能。"
+                continue
+
+            for i in batch:
+                s = plan.steps[i]
+                self._apply_incoming_injections(
+                    i, s, last_skill_output, last_llm_response, plan
+                )
+            await self._run_parallel_step_batch(
+                plan, batch, state, context, trace, parent_step_id, depth, agent, metrics
+            )
+            for i in batch:
+                st = plan.steps[i]
+                self._post_process_llm_validations(st)
+            last_skill_output, last_llm_response = self._merge_batch_stream_outputs(
+                plan, batch, last_skill_output, last_llm_response
+            )
+            for i in batch:
+                st = plan.steps[i]
+                if st.status == StepStatus.FAILED:
+                    nxt = await self._react_to_step_failure(
+                        plan, st, state, context, trace, depth, agent, metrics
                     )
-                    # 替换占位符
-                    replan_instruction = self._format_replan_prompt(
-                        replan_prompt=replan_prompt_raw,
-                        failed_step=step,
-                        agent=agent,
-                        state=state
-                    )
-                    if metrics:
-                        metrics.replan_count = getattr(metrics, "replan_count", 0) + 1
-                    log_structured("PlanBasedExecutor", "replan_triggered", step_id=step.step_id, reason="agent_replan")
-                    logger.info(f"[PlanBasedExecutor] Step {step.step_id} failed, triggering agent-level replan")
-                    replan_step = create_replan_step(replan_instruction=replan_instruction, executor=ExecutorType.LLM)
-                    replan_step.inputs["_on_failure"] = True
-                    replan_step = await self._execute_step(
-                        replan_step, state, context, trace,
-                        parent_step_id=step.step_id, depth=depth
-                    )
-                    if replan_step.status == StepStatus.FAILED:
-                        logger.warning(f"[PlanBasedExecutor] REPLAN step failed, stopping execution")
+                    if nxt == "break":
                         break
-                    # REPLAN 成功：将原失败步骤标记为已恢复，避免最终状态被误判为 failed
-                    followup_plan_id = replan_step.outputs.get("followup_plan_id")
-                    step.status = StepStatus.COMPLETED
-                    step.error = None
-                    step.outputs = {
-                        **(step.outputs or {}),
-                        "recovered_by_replan": True,
-                        "replan_followup_plan_id": followup_plan_id,
-                    }
-                    continue
-                # continue
-                logger.info(f"[PlanBasedExecutor] Step {step.step_id} failed, continuing to next step")
-        
+            else:
+                continue
+            break
+
         # 确定最终状态（仅顶层调用修改 trace.final_status，递归调用不修改）
         if not is_recursive:
             all_completed = all(s.status == StepStatus.COMPLETED for s in plan.steps)
@@ -445,7 +682,16 @@ class PlanBasedExecutor:
             if not result and "output" in skill_output:
                 result = skill_output
             
-            if isinstance(result, dict):
+            if isinstance(result, dict) and result.get("parallel_group") and isinstance(
+                result.get("by_step"), dict
+            ):
+                parts = []
+                for sid, out in result["by_step"].items():
+                    parts.append(
+                        f"### {sid}\n{json.dumps(_filter_output(out), ensure_ascii=False, indent=2)}"
+                    )
+                skill_text = "\n\n".join(parts) if parts else "无输出"
+            elif isinstance(result, dict):
                 # 检查是否有错误
                 error = result.get("error")
                 output_data = result.get("output")

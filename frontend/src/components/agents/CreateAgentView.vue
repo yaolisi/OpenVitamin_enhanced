@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
@@ -34,6 +34,10 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { createAgent, listModels, listKnowledgeBases, listSkills, getSystemConfig, type CreateAgentRequest, type SkillRecord, type SystemConfig } from '@/services/api'
+import {
+  buildPlanExecutionPayload,
+  defaultPlanExecutionFormState,
+} from '@/utils/planExecutionConfig'
 import { useSystemMetrics } from '@/composables/useSystemMetrics'
 
 // Form State
@@ -57,6 +61,8 @@ const onFailureStrategy = ref('stop')
 const replanPrompt = ref('')
 const planContractEnabled = ref(false)
 const planContractStrict = ref(false)
+// model_params.plan_execution（仅 plan_based，单处构建见 @/utils/planExecutionConfig）
+const planExecutionForm = reactive(defaultPlanExecutionFormState())
 
 // Intent Rules (通用配置：关键词/正则匹配 → Skill)
 const intentRules = ref<{keywords: string[], skills: string[], regex?: string}[]>([])
@@ -360,20 +366,41 @@ const handleCreateAgent = async () => {
       plan_contract_sources: executionMode.value === 'plan_based'
         ? ['replan_contract_plan', 'plan_contract', 'followup_plan_contract']
         : undefined,
-      // Intent Rules + 语义发现（仅 plan_based 时传 use_skill_discovery）：创建时仅设置 intent_rules 与 use_skill_discovery
-      model_params: (intentRules.value.length > 0 || (executionMode.value === 'plan_based' && useSkillDiscovery.value)) ? {
-        intent_rules: intentRules.value.filter(r => (r.keywords.length > 0 || r.regex) && r.skills.length > 0),
-        ...(executionMode.value === 'plan_based' ? { use_skill_discovery: useSkillDiscovery.value } : {}),
-        ...(executionMode.value === 'plan_based' && useSkillDiscovery.value && skillDiscoveryOverride.value
-          ? {
-              skill_discovery: {
-                tag_match_weight: Math.min(1, Math.max(0, Number(sdTagWeight.value) || 0.3)),
-                min_semantic_similarity: Math.min(1, Math.max(0, Number(sdMinSemantic.value) || 0)),
-                min_hybrid_score: Math.min(1, Math.max(0, Number(sdMinHybrid.value) || 0)),
-              },
-            }
-          : {}),
-      } : undefined
+      model_params: (() => {
+        const hasIntent = intentRules.value.some(
+          (r) => (r.keywords.length > 0 || r.regex) && r.skills.length > 0,
+        )
+        const useSd = executionMode.value === 'plan_based' && useSkillDiscovery.value
+        const pe: Record<string, string | number> = {}
+        if (executionMode.value === 'plan_based') {
+          const built = buildPlanExecutionPayload(planExecutionForm)
+          if (built) {
+            Object.assign(pe, built)
+          }
+        }
+        const hasPe = Object.keys(pe).length > 0
+        if (!hasIntent && !useSd && !hasPe) return undefined
+        return {
+          ...(hasIntent
+            ? {
+                intent_rules: intentRules.value.filter(
+                  (r) => (r.keywords.length > 0 || r.regex) && r.skills.length > 0,
+                ),
+              }
+            : {}),
+          ...(executionMode.value === 'plan_based' && useSd ? { use_skill_discovery: useSkillDiscovery.value } : {}),
+          ...(executionMode.value === 'plan_based' && useSd && skillDiscoveryOverride.value
+            ? {
+                skill_discovery: {
+                  tag_match_weight: Math.min(1, Math.max(0, Number(sdTagWeight.value) || 0.3)),
+                  min_semantic_similarity: Math.min(1, Math.max(0, Number(sdMinSemantic.value) || 0)),
+                  min_hybrid_score: Math.min(1, Math.max(0, Number(sdMinHybrid.value) || 0)),
+                },
+              }
+            : {}),
+          ...(hasPe ? { plan_execution: pe } : {}),
+        }
+      })(),
     }
 
     const result = await createAgent(payload)
@@ -864,6 +891,70 @@ onMounted(() => {
                       class="w-full px-3 py-2 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                     ></textarea>
                     <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.replan_prompt_desc') }}</p>
+                  </div>
+
+                  <div class="pt-2 border-t border-purple-500/20 space-y-3">
+                    <div class="text-xs font-medium text-foreground/90">{{ t('agents.create.plan_execution_title') }}</div>
+                    <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.plan_execution_desc') }}</p>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_max_parallel') }}</label>
+                        <input
+                          v-model.number="planExecutionForm.maxParallelInGroup"
+                          type="number"
+                          min="0"
+                          max="64"
+                          class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                        />
+                        <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_max_parallel_desc') }}</p>
+                      </div>
+                      <div>
+                        <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_default_timeout') }}</label>
+                        <input
+                          v-model.number="planExecutionForm.defaultTimeoutSeconds"
+                          type="number"
+                          min="0"
+                          max="3600"
+                          class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                        />
+                        <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_default_timeout_desc') }}</p>
+                      </div>
+                      <div>
+                        <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_default_max_retries') }}</label>
+                        <input
+                          v-model.number="planExecutionForm.defaultMaxRetries"
+                          type="number"
+                          min="0"
+                          max="20"
+                          class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                        />
+                        <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_default_max_retries_desc') }}</p>
+                      </div>
+                      <div>
+                        <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_retry_interval') }}</label>
+                        <input
+                          v-model.number="planExecutionForm.retryIntervalSeconds"
+                          type="number"
+                          min="0"
+                          max="60"
+                          step="0.1"
+                          class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                        />
+                        <p class="text-[10px] text-muted-foreground/50 mt-0.5">{{ t('agents.create.pe_retry_interval_desc') }}</p>
+                      </div>
+                      <div class="sm:col-span-2">
+                        <label class="text-[10px] text-muted-foreground">{{ t('agents.create.pe_on_timeout') }}</label>
+                        <select
+                          v-model="planExecutionForm.onTimeoutStrategy"
+                          class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                        >
+                          <option value="">{{ t('agents.create.pe_on_timeout_inherit') }}</option>
+                          <option value="stop">{{ t('agents.create.failure_strategy_stop') }}</option>
+                          <option value="continue">{{ t('agents.create.failure_strategy_continue') }}</option>
+                          <option value="replan">{{ t('agents.create.failure_strategy_replan') }}</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 </div>
 

@@ -115,7 +115,9 @@ class CreateAgentRequest(BaseModel):
         default=None,
         description=(
             "Model parameters: intent_rules, skill_param_extractors, use_skill_discovery (bool), "
-            "skill_discovery (object: tag_match_weight, min_semantic_similarity, min_hybrid_score for runtime discovery), etc."
+            "skill_discovery (object: tag_match_weight, min_semantic_similarity, min_hybrid_score for runtime discovery), "
+            "plan_execution (object: max_parallel_in_group, default_timeout_seconds, default_max_retries, "
+            "default_retry_interval_seconds, default_on_timeout_strategy for PlanBasedExecutor), etc."
         ),
     )
     # V3: Plan → Graph → Kernel（与 model_params.execution_strategy 二选一亦可，显式字段优先由服务端合并逻辑处理）

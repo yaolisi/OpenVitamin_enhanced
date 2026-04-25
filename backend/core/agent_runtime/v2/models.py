@@ -65,6 +65,19 @@ class Step(BaseModel):
     replan_instruction: Optional[str] = None  # 重规划指令
     on_failure_replan: Optional[str] = None  # 失败时重规划指令
 
+    # 并行/韧性（PlanBasedExecutor）：同 Plan 内连续、且 parallel_group 相同的步骤在同一批次并发执行
+    parallel_group: Optional[str] = None
+    # 也可在 inputs 中设 _parallel_group 覆盖；优先使用字段值
+
+    # 单步超时（秒，None=用 Plan/全局默认；0 或负数表示不限制，若需「立即超时」可设极小数）
+    timeout_seconds: Optional[float] = None
+    # 超时后策略，None=用 Plan/Agent；stop / continue / replan
+    on_timeout_strategy: Optional[str] = None
+
+    # 失败重试（在步骤内重试，不同于 RePlan 换计划）
+    max_retries: Optional[int] = None
+    retry_interval_seconds: Optional[float] = None
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -83,6 +96,14 @@ class Plan(BaseModel):
     failure_strategy: Optional[str] = None
     # V2.2: Plan 血缘关系
     parent_plan_id: Optional[str] = None  # 父 Plan ID
+
+    # 全 Plan 默认：可被 Step 字段覆盖
+    default_timeout_seconds: Optional[float] = None
+    default_on_timeout_strategy: Optional[str] = None  # stop / continue / replan
+    default_max_retries: Optional[int] = None
+    default_retry_interval_seconds: Optional[float] = None
+    # 同 parallel_group 内并发上限（与全局 agent_plan_max_parallel_steps 二选一取较小，见执行器）
+    max_parallel_in_group: Optional[int] = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

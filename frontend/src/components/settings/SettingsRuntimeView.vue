@@ -15,6 +15,7 @@ import {
   Mic,
   Zap,
   Search,
+  Zap,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -71,6 +72,10 @@ const {
   skillDiscoveryTagMatchWeight,
   skillDiscoveryMinSemanticSimilarity,
   skillDiscoveryMinHybridScore,
+  agentPlanMaxParallelSteps,
+  agentStepDefaultTimeoutSeconds,
+  agentStepDefaultMaxRetries,
+  agentStepDefaultRetryIntervalSeconds,
   fillSmartRoutingTemplate,
   clearSmartRoutingPolicies,
   upsertCanaryPolicy,
@@ -574,6 +579,89 @@ watch(
                     />
                     <p class="text-xs text-muted-foreground">
                       {{ t('settings.runtime.skill_discovery_min_hybrid_hint') }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-5">
+                <div class="flex items-center gap-2">
+                  <Zap class="w-4 h-4 text-amber-500" />
+                  <h3 class="text-sm font-semibold text-foreground">
+                    {{ t('settings.runtime.agent_plan_exec_title') }}
+                  </h3>
+                </div>
+                <p class="text-xs text-muted-foreground leading-relaxed">
+                  {{ t('settings.runtime.agent_plan_exec_desc') }}
+                </p>
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div class="space-y-2">
+                    <label for="agent-plan-parallel" class="text-sm font-medium text-foreground">{{
+                      t('settings.runtime.agent_plan_max_parallel')
+                    }}</label>
+                    <Input
+                      id="agent-plan-parallel"
+                      v-model.number="agentPlanMaxParallelSteps"
+                      type="number"
+                      min="1"
+                      max="32"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.agent_plan_max_parallel_hint') }}
+                    </p>
+                  </div>
+                  <div class="space-y-2">
+                    <label for="agent-step-timeout" class="text-sm font-medium text-foreground">{{
+                      t('settings.runtime.agent_step_default_timeout')
+                    }}</label>
+                    <Input
+                      id="agent-step-timeout"
+                      v-model.number="agentStepDefaultTimeoutSeconds"
+                      type="number"
+                      min="0"
+                      max="3600"
+                      step="1"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.agent_step_default_timeout_hint') }}
+                    </p>
+                  </div>
+                  <div class="space-y-2">
+                    <label for="agent-step-retries" class="text-sm font-medium text-foreground">{{
+                      t('settings.runtime.agent_step_default_retries')
+                    }}</label>
+                    <Input
+                      id="agent-step-retries"
+                      v-model.number="agentStepDefaultMaxRetries"
+                      type="number"
+                      min="0"
+                      max="20"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.agent_step_default_retries_hint') }}
+                    </p>
+                  </div>
+                  <div class="space-y-2">
+                    <label for="agent-retry-interval" class="text-sm font-medium text-foreground">{{
+                      t('settings.runtime.agent_step_retry_interval')
+                    }}</label>
+                    <Input
+                      id="agent-retry-interval"
+                      v-model.number="agentStepDefaultRetryIntervalSeconds"
+                      type="number"
+                      min="0"
+                      max="60"
+                      step="0.1"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.agent_step_retry_interval_hint') }}
                     </p>
                   </div>
                 </div>
