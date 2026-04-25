@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from api.errors import raise_api_error
 from api.stream_resume_store import get_stream_resume_store, iter_resume_chunks
+from api.streaming_gzip import gzip_async_str_iterator
 from config.settings import settings
 from core.types import ChatCompletionRequest, ChatCompletionResponse, Message as LLMMessage
 from core.agents.router import get_router
@@ -618,6 +619,57 @@ def _finalize_rag_trace_for_message(trace_id: Optional[str], message: Optional[A
         logger.warning(f"[RAGTrace] Failed to finalize trace {trace_id}: {e}")
 
 
+def _resolve_stream_format(req: ChatCompletionRequest) -> str:
+    v = getattr(req, "stream_format", None)
+    if v in ("openai", "jsonl", "markdown"):
+        return v
+    return "openai"
+
+
+def _stream_sse_data(obj: dict[str, Any]) -> str:
+    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
+def _stream_delta_event(
+    *,
+    stream_format: str,
+    completion_id: str,
+    created_time: int,
+    model_id: str,
+    content: str,
+    cidx: int,
+    char_off: int,
+) -> str:
+    if stream_format == "jsonl":
+        return _stream_sse_data(
+            {
+                "object": "openvitamin.stream.jsonl",
+                "i": cidx,
+                "o": char_off,
+                "c": content,
+                "d": False,
+            }
+        )
+    if stream_format == "markdown":
+        return _stream_sse_data(
+            {
+                "object": "openvitamin.stream.md",
+                "i": cidx,
+                "o": char_off,
+                "c": content,
+            }
+        )
+    chunk: dict[str, Any] = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created_time,
+        "model": model_id,
+        "choices": [{"index": 0, "delta": {"content": content}}],
+        "openvitamin": {"cidx": cidx, "char_off": char_off, "char_len": len(content or "")},
+    }
+    return _stream_sse_data(chunk)
+
+
 def _handle_streaming_chat(
     *,
     req: ChatCompletionRequest,
@@ -634,6 +686,8 @@ def _handle_streaming_chat(
     conv_manager: ConversationManager,
     persist_success_turn: Callable[[str, bool], Optional[Any]],
 ) -> StreamingResponse:
+    use_gzip = bool(getattr(req, "stream_gzip", False))
+    stream_format = _resolve_stream_format(req)
     stream_headers = {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
@@ -641,36 +695,54 @@ def _handle_streaming_chat(
     }
     if session_id:
         stream_headers["X-Session-Id"] = session_id
+    if use_gzip:
+        stream_headers["Vary"] = "Accept-Encoding"
+        stream_headers["Content-Encoding"] = "gzip"
+
+    gen = _stream_event_generator(
+        req=req,
+        request=request,
+        agent=agent,
+        session_id=session_id,
+        completion_id=completion_id,
+        created_time=created_time,
+        trace_id=trace_id,
+        user_text=user_text,
+        user_id=user_id,
+        persistence_mode=persistence_mode,
+        request_id=request_id,
+        conv_manager=conv_manager,
+        persist_success_turn=persist_success_turn,
+        stream_format=stream_format,
+        use_gzip=use_gzip,
+    )
+    body: Union[AsyncIterator[str], AsyncIterator[bytes]] = (
+        gzip_async_str_iterator(gen) if use_gzip else gen
+    )
     return StreamingResponse(
-        _stream_event_generator(
-            req=req,
-            request=request,
-            agent=agent,
-            session_id=session_id,
-            completion_id=completion_id,
-            created_time=created_time,
-            trace_id=trace_id,
-            user_text=user_text,
-            user_id=user_id,
-            persistence_mode=persistence_mode,
-            request_id=request_id,
-            conv_manager=conv_manager,
-            persist_success_turn=persist_success_turn,
-        ),
+        body,
         media_type="text/event-stream",
         headers=stream_headers,
     )
 
 
-def _stream_build_chunk(*, completion_id: str, created_time: int, model_id: str, content: str) -> str:
-    chunk = {
-        "id": completion_id,
-        "object": "chat.completion.chunk",
-        "created": created_time,
-        "model": model_id,
-        "choices": [{"index": 0, "delta": {"content": content}}],
-    }
-    return f"data: {json.dumps(chunk)}\n\n"
+def _stream_build_chunk(
+    *,
+    completion_id: str,
+    created_time: int,
+    model_id: str,
+    content: str,
+    stream_format: str = "openai",
+) -> str:
+    return _stream_delta_event(
+        stream_format=stream_format,
+        completion_id=completion_id,
+        created_time=created_time,
+        model_id=model_id,
+        content=content,
+        cidx=0,
+        char_off=0,
+    )
 
 
 async def _stream_on_success(
@@ -789,6 +861,7 @@ def _stream_on_exception(
     request_id: Optional[str],
     conv_manager: ConversationManager,
     err: Exception,
+    stream_format: str = "openai",
 ) -> list[str]:
     model_id = cast(str, req.model)
     is_client_disconnect = (
@@ -831,6 +904,7 @@ def _stream_on_exception(
                 created_time=created_time,
                 model_id=model_id,
                 content=f"\nError: {str(err)}",
+                stream_format=stream_format,
             ),
             "data: [DONE]\n\n",
         ]
@@ -853,9 +927,13 @@ async def _stream_event_generator(
     request_id: Optional[str],
     conv_manager: ConversationManager,
     persist_success_turn: Callable[[str, bool], Optional[Any]],
+    stream_format: str = "openai",
+    use_gzip: bool = False,
 ) -> AsyncIterator[str]:
     model_id = cast(str, req.model)
     full_text = ""
+    content_cidx = 0
+    char_offset = 0
     stream_start = time.perf_counter()
     log_structured("Chat", "chat_llm_start", model_id=model_id, session_id=session_id, stream=True, completion_id=completion_id)
     logger.info(f"Starting event generator for {completion_id}")
@@ -871,8 +949,16 @@ async def _stream_event_generator(
         rsess.completion_id = completion_id
         rsess.model_id = model_id
         rsess.sse_created = int(created_time)
-        meta = {"object": "openvitamin.stream.meta", "stream_id": stream_id, "completion_id": completion_id}
-        meta_sse = f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        rsess.use_gzip = use_gzip
+        rsess.stream_format = stream_format
+        meta = {
+            "object": "openvitamin.stream.meta",
+            "stream_id": stream_id,
+            "completion_id": completion_id,
+            "format": stream_format,
+            "content_encoding": "gzip" if use_gzip else "identity",
+        }
+        meta_sse = _stream_sse_data(meta)
         await resume_store.append_chunk(stream_id, meta_sse)
         yield meta_sse
 
@@ -885,12 +971,17 @@ async def _stream_event_generator(
                     logger.info(f"Client disconnected for {completion_id}, stopping stream")
                     break
             full_text += token
-            sse = _stream_build_chunk(
+            sse = _stream_delta_event(
+                stream_format=stream_format,
                 completion_id=completion_id,
                 created_time=created_time,
                 model_id=model_id,
                 content=token,
+                cidx=content_cidx,
+                char_off=char_offset,
             )
+            char_offset += len(token)
+            content_cidx += 1
             if resume_enabled and stream_id and resume_store:
                 await resume_store.append_chunk(stream_id, sse)
             if not disconnected:
@@ -910,15 +1001,33 @@ async def _stream_event_generator(
         )
         routing_meta = getattr(request.state, "chat_routing_metadata", None)
         if routing_meta and not disconnected:
-            final_chunk = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": created_time,
-                "model": model_id,
-                "metadata": routing_meta,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-            }
-            final_sse = f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+            if stream_format == "openai":
+                final_chunk: dict[str, Any] = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_time,
+                    "model": model_id,
+                    "metadata": routing_meta,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                }
+                final_sse = _stream_sse_data(final_chunk)
+            elif stream_format == "jsonl":
+                final_sse = _stream_sse_data(
+                    {
+                        "object": "openvitamin.stream.jsonl",
+                        "d": True,
+                        "metadata": routing_meta,
+                        "finish_reason": "stop",
+                    }
+                )
+            else:
+                final_sse = _stream_sse_data(
+                    {
+                        "object": "openvitamin.stream.md",
+                        "d": True,
+                        "metadata": routing_meta,
+                    }
+                )
             if resume_enabled and stream_id and resume_store:
                 await resume_store.append_chunk(stream_id, final_sse)
             yield final_sse
@@ -943,6 +1052,7 @@ async def _stream_event_generator(
             request_id=request_id,
             conv_manager=conv_manager,
             err=e,
+            stream_format=stream_format,
         ):
             if resume_enabled and stream_id and resume_store:
                 await resume_store.append_chunk(stream_id, chunk)
@@ -1219,7 +1329,12 @@ async def chat_completions(
     """
     统一的聊天完成端点
     支持通过 model_id 或 model_require 选择模型
-    
+
+    流式（stream=true）增强：
+    - stream_gzip：对 SSE body 做 GZip（中间件不压缩 text/event-stream）
+    - stream_format：openai | jsonl | markdown；首包 openvitamin.stream.meta 含 format 与续传信息
+    - 断点续传：POST /v1/chat/completions/stream/resume，与首流同 gzip/格式
+
     Auto 模式智能选择：
     - 自动检测消息中是否包含图像
     - 有图像时自动切换到 VLM
@@ -1329,12 +1444,17 @@ async def chat_stream_resume(body: ChatStreamResumeBody, request: Request) -> St
         raise_api_error(status_code=404, code="stream_not_found", message="流不存在或已过期")
 
     wait_timeout = float(getattr(settings, "chat_stream_resume_wait_timeout_seconds", 120) or 120)
+    use_gzip = bool(getattr(sess, "use_gzip", False))
+    rfmt = getattr(sess, "stream_format", "openai") or "openai"
 
     stream_headers = {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     }
+    if use_gzip:
+        stream_headers["Vary"] = "Accept-Encoding"
+        stream_headers["Content-Encoding"] = "gzip"
 
     async def _gen() -> AsyncIterator[str]:
         try:
@@ -1351,7 +1471,10 @@ async def chat_stream_resume(body: ChatStreamResumeBody, request: Request) -> St
                 created_time=int(sess.sse_created or sess.created_at),
                 model_id=sess.model_id or "unknown",
                 content="\nError: stream resume wait timeout",
+                stream_format=rfmt,
             )
             yield "data: [DONE]\n\n"
 
-    return StreamingResponse(_gen(), media_type="text/event-stream", headers=stream_headers)
+    str_iter = _gen()
+    out = gzip_async_str_iterator(str_iter) if use_gzip else str_iter
+    return StreamingResponse(out, media_type="text/event-stream", headers=stream_headers)

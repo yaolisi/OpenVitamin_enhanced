@@ -27,6 +27,8 @@ import {
 import { metricDelta, metricDeltaClass, metricDeltaText } from '@/utils/metricsDelta'
 import { useCacheMonitor } from '@/composables/useCacheMonitor'
 import { useRuntimeSettings } from '@/composables/useRuntimeSettings'
+import { useChatStreamPreferences } from '@/composables/useChatStreamPreferences'
+import type { ChatStreamFormat } from '@/services/api'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -118,14 +120,28 @@ const {
   handleClearInferenceCache,
 } = useCacheMonitor()
 
+const { streamGzip: chatStreamGzip, streamFormat: chatStreamFormat, load: loadChatStreamPrefs } =
+  useChatStreamPreferences()
+const onStreamFormatSelect = (e: Event) => {
+  const v = (e.target as HTMLSelectElement).value as ChatStreamFormat
+  if (v === 'openai' || v === 'jsonl' || v === 'markdown') {
+    chatStreamFormat.value = v
+  }
+}
+const setChatStreamGzip = (v: boolean) => {
+  chatStreamGzip.value = v
+}
+
 onMounted(() => {
   loadSmartRoutingGroupState()
   loadSmartRoutingDiffViewState()
   void loadConfig()
+  loadChatStreamPrefs()
 })
 
 onActivated(() => {
   void loadConfig()
+  loadChatStreamPrefs()
 })
 
 const handleSaveWithCacheRefresh = async () => {
@@ -459,6 +475,37 @@ watch(
                   @update:modelValue="isEditing = true"
                 />
                 <p class="text-xs text-muted-foreground">{{ t('settings.runtime.min_interval_desc') }}</p>
+              </div>
+              <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-4">
+                <div>
+                  <h3 class="text-sm font-semibold text-foreground">{{ t('settings.runtime.stream_chat_title') }}</h3>
+                  <p class="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    {{ t('settings.runtime.stream_chat_local_note') }}
+                  </p>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div class="space-y-1 min-w-0 pr-2">
+                    <p class="text-sm font-medium text-foreground">{{ t('settings.runtime.stream_gzip') }}</p>
+                    <p class="text-xs text-muted-foreground">{{ t('settings.runtime.stream_gzip_desc') }}</p>
+                  </div>
+                  <Switch :checked="chatStreamGzip" @update:checked="setChatStreamGzip" />
+                </div>
+                <div class="space-y-2 max-w-md">
+                  <label for="stream-format-select" class="text-sm font-medium text-foreground">{{
+                    t('settings.runtime.stream_format')
+                  }}</label>
+                  <select
+                    id="stream-format-select"
+                    :value="chatStreamFormat"
+                    class="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm text-foreground"
+                    @change="onStreamFormatSelect"
+                  >
+                    <option value="openai">{{ t('settings.runtime.stream_format_openai') }}</option>
+                    <option value="jsonl">{{ t('settings.runtime.stream_format_jsonl') }}</option>
+                    <option value="markdown">{{ t('settings.runtime.stream_format_markdown') }}</option>
+                  </select>
+                  <p class="text-xs text-muted-foreground">{{ t('settings.runtime.stream_format_desc') }}</p>
+                </div>
               </div>
               <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-5">
                 <div class="flex items-center justify-between gap-4">

@@ -11,9 +11,13 @@ import {
   type ChatStreamChunk,
   type ChatStreamResponse,
   type ChatRoutingMetadata,
+  type ChatRequest,
+  type ChatStreamFormat,
+  streamChunkDeltaText,
   setSessionId
 } from '@/services/api'
 import { useParameters } from './useParameters'
+import { useChatStreamPreferences } from './useChatStreamPreferences'
 import { getFriendlyErrorMessage } from '@/utils/errorHints'
 
 export interface ChatMessage {
@@ -88,9 +92,24 @@ watch(globalKnowledgeBaseId, (val) => {
   }
 })
 
-interface SendMessageOptions {
+export interface SendMessageOptions {
   stream?: boolean
   signal?: AbortSignal
+  /** 覆盖「设置 → 运行时」中的流式 GZip 偏好 */
+  streamGzip?: boolean
+  /** 覆盖「设置 → 运行时」中的流式输出格式 */
+  streamFormat?: ChatStreamFormat
+}
+
+function applyStreamTransportPrefs(req: ChatRequest, opts: SendMessageOptions, defaults: { gzip: boolean; format: ChatStreamFormat }) {
+  const gz = opts.streamGzip !== undefined ? opts.streamGzip : defaults.gzip
+  const fmt = opts.streamFormat !== undefined ? opts.streamFormat : defaults.format
+  if (gz) {
+    req.stream_gzip = true
+  }
+  if (fmt && fmt !== 'openai') {
+    req.stream_format = fmt
+  }
 }
 
 export function useChat(options: UseChatOptions = {}) {
@@ -102,6 +121,7 @@ export function useChat(options: UseChatOptions = {}) {
   const knowledgeBaseId = globalKnowledgeBaseId
   
   const params = useParameters()
+  const { streamGzip, streamFormat } = useChatStreamPreferences()
 
   // 初始化模型 (仅在全局模型为默认 'auto' 且 options 提供了具体模型时)
   if (options.model && model.value === 'auto') {
@@ -243,6 +263,7 @@ export function useChat(options: UseChatOptions = {}) {
 
   /**
    * 发送消息（自动选择流式或非流式）
+   * 流式时默认使用「设置 → 运行时」中的 GZip/格式；可用 `options.streamGzip` / `options.streamFormat` 单次覆盖。
    */
   async function sendMessage(
     userContent: string, 
@@ -250,6 +271,7 @@ export function useChat(options: UseChatOptions = {}) {
     attachments?: ChatMessage['attachments']
   ): Promise<void> {
     const { stream: useStream = false, signal } = options
+    const streamTransportDefaults = { gzip: streamGzip.value, format: streamFormat.value }
     error.value = null
 
     // Convert file attachments to base64 data URLs for API transmission
@@ -287,33 +309,43 @@ export function useChat(options: UseChatOptions = {}) {
         assistantMsg.loading = true
 
         try {
+          const streamBody: ChatRequest = {
+            model: model.value,
+            messages: apiMessages,
+            temperature: temperature.value,
+            top_p: top_p.value,
+            max_tokens: Number(max_tokens.value),
+            system_prompt: params.useSystemPrompt.value ? params.systemPrompt.value : undefined,
+            max_history_messages: params.maxHistoryMessages.value,
+            rag: knowledgeBaseId.value
+              ? {
+                  knowledge_base_id: knowledgeBaseId.value,
+                  top_k: 5,
+                  score_threshold: 1.2,
+                }
+              : undefined,
+            signal,
+          }
+          applyStreamTransportPrefs(streamBody, options, streamTransportDefaults)
           await streamChatCompletion(
-            {
-              model: model.value,
-              messages: apiMessages,
-              temperature: temperature.value,
-              top_p: top_p.value,
-              max_tokens: Number(max_tokens.value),
-              system_prompt: params.useSystemPrompt.value ? params.systemPrompt.value : undefined,
-              max_history_messages: params.maxHistoryMessages.value,
-              rag: knowledgeBaseId.value ? {
-                knowledge_base_id: knowledgeBaseId.value,
-                top_k: 5,
-                score_threshold: 1.2
-              } : undefined,
-              signal,
-            },
+            streamBody,
             (chunk: ChatStreamChunk) => {
               if (chunk.object === 'openvitamin.stream.meta') return
               const c = chunk as ChatStreamResponse
               if (c.model) {
                 updateMessageModelName(assistantMsg.id, c.model)
               }
-              if (c.choices?.[0]?.delta?.content) {
-                updateMessageContent(assistantMsg.id, assistantMsg.content + c.choices[0].delta.content)
+              const delta = streamChunkDeltaText(chunk)
+              if (delta) {
+                updateMessageContent(assistantMsg.id, assistantMsg.content + delta)
               }
-              if (c.metadata?.resolved_model && c.metadata?.resolved_via) {
-                updateMessageRouting(assistantMsg.id, c.metadata)
+              const meta =
+                (chunk as ChatStreamResponse).metadata ??
+                (chunk.object === 'openvitamin.stream.jsonl' || chunk.object === 'openvitamin.stream.md'
+                  ? (chunk as { metadata?: ChatRoutingMetadata }).metadata
+                  : undefined)
+              if (meta?.resolved_model && meta?.resolved_via) {
+                updateMessageRouting(assistantMsg.id, meta)
               }
             },
             () => {
@@ -433,5 +465,8 @@ export function useChat(options: UseChatOptions = {}) {
     sendMessage,
     regenerate,
     editAndResubmit,
+    /** 与「设置 → 运行时」流式选项同步，可在聊天区做快捷绑定 */
+    streamGzip,
+    streamFormat,
   }
 }

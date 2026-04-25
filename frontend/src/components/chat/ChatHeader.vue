@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-const { t } = useI18n()
 import { 
   Select, 
   SelectContent, 
@@ -12,13 +11,37 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Share, Zap, Box, Bot, Loader2, Sparkles, Cpu, Database, X, Search } from 'lucide-vue-next'
-import { listModels, listKnowledgeBases, type ModelInfo } from '@/services/api'
+import { Share, Zap, Box, Bot, Loader2, Sparkles, Cpu, Database, X, Search, Radio } from 'lucide-vue-next'
+import { listModels, listKnowledgeBases, type ModelInfo, type ChatStreamFormat } from '@/services/api'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: string
   knowledgeBaseId?: string | null
 }>()
+
+const streamGzip = defineModel<boolean>('streamGzip', { default: false })
+const streamFormat = defineModel<ChatStreamFormat>('streamFormat', { default: 'openai' })
+
+const setStreamGzip = (v: boolean) => {
+  streamGzip.value = v
+}
+const setStreamFormat = (v: string) => {
+  if (v === 'openai' || v === 'jsonl' || v === 'markdown') {
+    streamFormat.value = v
+  }
+}
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
@@ -363,6 +386,65 @@ const orderedModelGroups = computed(() => {
 
     <!-- Right: Actions -->
     <div class="flex items-center gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger as-child>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            :class="[
+              'h-8 gap-1.5 px-2.5 text-xs',
+              streamGzip ? 'text-sky-600 dark:text-sky-400' : 'text-muted-foreground hover:text-foreground',
+            ]"
+            :title="t('chat.header.stream_transport_title')"
+          >
+            <Radio class="w-3.5 h-3.5 shrink-0" />
+            <span class="hidden sm:inline max-w-[7rem] truncate">{{
+              streamFormat === 'openai'
+                ? t('chat.header.stream_format_short_openai')
+                : streamFormat === 'jsonl'
+                  ? t('chat.header.stream_format_short_jsonl')
+                  : t('chat.header.stream_format_short_md')
+            }}</span>
+            <Badge
+              v-if="streamGzip"
+              variant="secondary"
+              class="h-4 px-1 text-[9px] font-semibold border-none bg-sky-500/15 text-sky-600 dark:text-sky-300"
+            >
+              gzip
+            </Badge>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" class="w-56" @click.stop>
+          <DropdownMenuLabel class="text-xs text-muted-foreground font-normal">
+            {{ t('chat.header.stream_transport_title') }}
+          </DropdownMenuLabel>
+          <p class="px-2 pb-1.5 text-[10px] text-muted-foreground/90 leading-relaxed">
+            {{ t('chat.header.stream_transport_sync') }}
+          </p>
+          <div class="px-2 py-2 flex items-center justify-between gap-3" @click.stop>
+            <span class="text-sm">{{ t('chat.header.stream_gzip_label') }}</span>
+            <Switch :checked="streamGzip" @update:checked="setStreamGzip" />
+          </div>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel class="text-xs">{{ t('chat.header.stream_format_label') }}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            :modelValue="streamFormat"
+            @update:modelValue="(v) => setStreamFormat(String(v))"
+            class="grid gap-0.5 p-1"
+          >
+            <DropdownMenuRadioItem value="openai" class="cursor-pointer">
+              {{ t('chat.header.stream_format_opt_openai') }}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="jsonl" class="cursor-pointer">
+              {{ t('chat.header.stream_format_opt_jsonl') }}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="markdown" class="cursor-pointer">
+              {{ t('chat.header.stream_format_opt_markdown') }}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Button 
         variant="ghost" 
         size="sm" 

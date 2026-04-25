@@ -225,6 +225,9 @@ export interface ChatRoutingMetadata {
   resolved_via: string
 }
 
+/** 与后端 core.types.StreamFormat 对齐 */
+export type ChatStreamFormat = 'openai' | 'jsonl' | 'markdown'
+
 export interface ChatRequest {
   model: string
   messages: Message[]
@@ -237,6 +240,15 @@ export interface ChatRequest {
   rag?: RAGConfig
   /** 供智能路由分桶等（如 role / is_admin），请求体 metadata */
   metadata?: Record<string, unknown>
+  /**
+   * 流式时 SSE data 行格式；默认 openai。jsonl / markdown 便于非 OpenAI 消费端集成。
+   */
+  stream_format?: ChatStreamFormat
+  /**
+   * 流式响应 GZip 压缩整段 body（中间件不压缩 text/event-stream，需显式开启）。
+   * 浏览器 fetch 会透明解压，解析逻辑与未压缩相同。
+   */
+  stream_gzip?: boolean
   signal?: AbortSignal
 }
 
@@ -287,9 +299,61 @@ export interface ChatStreamMetaChunk {
   object: 'openvitamin.stream.meta'
   stream_id: string
   completion_id: string
+  format?: ChatStreamFormat
+  content_encoding?: 'identity' | 'gzip'
 }
 
-export type ChatStreamChunk = ChatStreamResponse | ChatStreamMetaChunk
+/** 紧凑 JSONL 流式帧（与后端 openvitamin.stream.jsonl 对齐） */
+export interface ChatStreamJsonlChunk {
+  object: 'openvitamin.stream.jsonl'
+  i?: number
+  o?: number
+  c?: string
+  d?: boolean
+  metadata?: ChatRoutingMetadata
+  finish_reason?: string | null
+}
+
+/** 偏文档/Markdown 的流式帧 */
+export interface ChatStreamMarkdownChunk {
+  object: 'openvitamin.stream.md'
+  i?: number
+  o?: number
+  c?: string
+  d?: boolean
+  metadata?: ChatRoutingMetadata
+}
+
+export type ChatStreamChunk =
+  | ChatStreamResponse
+  | ChatStreamMetaChunk
+  | ChatStreamJsonlChunk
+  | ChatStreamMarkdownChunk
+
+/**
+ * 从流式 chunk 中取出本帧文本增量；meta / 结束元信息帧返回 null。
+ */
+export function streamChunkDeltaText(chunk: ChatStreamChunk): string | null {
+  if (chunk.object === 'openvitamin.stream.meta') {
+    return null
+  }
+  if (chunk.object === 'openvitamin.stream.jsonl') {
+    const j = chunk as ChatStreamJsonlChunk
+    if (j.d) {
+      return null
+    }
+    return j.c ?? null
+  }
+  if (chunk.object === 'openvitamin.stream.md') {
+    const m = chunk as ChatStreamMarkdownChunk
+    if (m.d) {
+      return null
+    }
+    return m.c ?? null
+  }
+  const c = chunk as ChatStreamResponse
+  return c.choices?.[0]?.delta?.content ?? null
+}
 
 // VLM Interfaces
 export interface VLMMessage {

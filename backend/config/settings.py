@@ -346,7 +346,7 @@ class Settings(BaseSettings):
     chat_stream_resume_ttl_seconds: int = 600
     chat_stream_resume_max_sessions: int = 500
     chat_stream_resume_wait_timeout_seconds: int = 120
-    # HTTP 响应 GZip（含流式 body；弱网可显著降低体积；前置代理请勿二次 gzip）
+    # HTTP 响应 GZip（GZip 中间件对 text/event-stream 不压缩；SSE 请用 ChatCompletionRequest.stream_gzip）
     response_gzip_enabled: bool = True
     response_gzip_minimum_size: int = 256
     # Auto 选模是否强制本地优先（存在本地候选时仅在本地中选择）

@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, model_validator
 
 # 消息角色（含 tool：用于 tool/skill 输出，表示环境观察而非用户意图）
 Role = Literal["system", "user", "assistant", "tool"]
+# 流式输出编码（SSE data 行负载格式；默认 openai 为兼容 OpenAI chat.completion.chunk）
+StreamFormat = Literal["openai", "jsonl", "markdown"]
 
 
 class MessageContentItem(BaseModel):
@@ -67,6 +69,16 @@ class ChatCompletionRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
         description="请求侧元数据（路由分桶等），与 assistant 输出无关",
+    )
+    # 流式：SSE 负载格式（与 LLM 输出文本无关；非 openai 便于消费端解析）
+    stream_format: Optional[StreamFormat] = Field(
+        default=None,
+        description="流式时 data 行 JSON 格式；默认 openai。jsonl=紧凑键；markdown=偏文档输出",
+    )
+    # 流式：GZip 压缩整段 body（注：GZip 中间件对 text/event-stream 不压缩，需显式开启）
+    stream_gzip: bool = Field(
+        default=False,
+        description="流式响应用 gzip 压缩；弱网降带宽。断点续传时与服务端元数据需一致",
     )
 
 

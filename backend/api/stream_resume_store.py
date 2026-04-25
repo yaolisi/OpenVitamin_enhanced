@@ -19,6 +19,9 @@ class StreamSession:
     sse_created: int = 0
     created_at: float = field(default_factory=time.time)
     cond: asyncio.Condition = field(default_factory=asyncio.Condition)
+    # 与首流一致：续传时若曾 gzip 则对续传 body 同样做 gzip
+    use_gzip: bool = False
+    stream_format: str = "openai"
 
 
 class StreamResumeStore:

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted, onUnmounted, computed } from 'vue'
+import { ref, nextTick, watch, onMounted, onUnmounted, computed, type ComputedRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessageSquare, ArrowDown } from 'lucide-vue-next'
 import { useChat } from '@/composables/useChat'
 import { useSessions } from '@/composables/useSessions'
-import { getSessionId, listModels, vlmGenerate, type ModelInfo } from '@/services/api'
+import { getSessionId, listModels, vlmGenerate, type ModelInfo, type ChatStreamFormat } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import ChatHeader from './ChatHeader.vue'
 import SessionTitle from './SessionTitle.vue'
@@ -17,6 +17,20 @@ const chat = useChat({
   temperature: 0.7,
   top_p: 0.9,
   max_tokens: 4096,
+})
+
+/** 供 ChatHeader 与 vue-tsc：将 Ref 转为可 v-model 的 Computed */
+const headerStreamGzip: ComputedRef<boolean> = computed({
+  get: () => chat.streamGzip.value,
+  set: (v) => {
+    chat.streamGzip.value = v
+  },
+})
+const headerStreamFormat: ComputedRef<ChatStreamFormat> = computed({
+  get: () => chat.streamFormat.value,
+  set: (v) => {
+    chat.streamFormat.value = v
+  },
 })
 
 const abortController = ref<AbortController | null>(null)
@@ -437,6 +451,8 @@ onUnmounted(() => {
   <div class="flex-1 flex flex-col min-w-0 min-h-0 bg-background overflow-hidden">
     <ChatHeader 
       v-model="chat.model.value" 
+      v-model:stream-gzip="headerStreamGzip"
+      v-model:stream-format="headerStreamFormat"
       :knowledge-base-id="chat.knowledgeBaseId.value"
       @update:knowledge-base-id="chat.knowledgeBaseId.value = $event"
     />
