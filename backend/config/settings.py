@@ -301,6 +301,18 @@ class Settings(BaseSettings):
     workflow_distributed_running_stale_seconds: int = 1800
     # 分布式并发限流检查时，是否自动将陈旧 running 回收为 failed
     workflow_distributed_running_auto_reconcile_stale: bool = True
+    # 子工作流最大嵌套深度（父=0，子=1）
+    workflow_subworkflow_max_depth: int = 5
+    # 生产环境（debug=False）是否允许子工作流使用 latest 引用策略
+    workflow_allow_latest_subworkflow_in_production: bool = False
+    # 发布子工作流新版本时，若检测到 breaking 影响已发布父流程则阻断发布
+    workflow_block_publish_on_subworkflow_breaking_impact: bool = True
+    # 契约兼容策略：新增 required 入参是否视为 breaking（否则视为 risky）
+    workflow_contract_required_input_added_breaking: bool = True
+    # 契约兼容策略：新增输出字段是否视为 risky（否则为 info）
+    workflow_contract_output_added_risky: bool = True
+    # 契约兼容策略：逗号分隔字段豁免（支持 input.foo / output.bar）
+    workflow_contract_field_exemptions: str = ""
     # Workflow 执行长期 pending 告警（秒）
     workflow_pending_warn_seconds: float = 8.0
     # Workflow 执行 pending 告警重复间隔（秒）

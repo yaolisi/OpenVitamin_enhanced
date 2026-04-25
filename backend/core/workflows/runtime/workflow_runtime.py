@@ -19,12 +19,14 @@ from core.workflows.models import (
     WorkflowExecutionNode,
     WorkflowExecutionNodeState,
     WorkflowVersion,
-    WorkflowVersionState
+    WorkflowVersionState,
+    WorkflowExecutionCreateRequest,
 )
 from core.workflows.repository import WorkflowExecutionRepository, WorkflowVersionRepository
 from core.workflows.repository import WorkflowApprovalTaskRepository
 from core.workflows.governance import ExecutionManager, ExecutionRequest
 from core.workflows.runtime.graph_runtime_adapter import GraphRuntimeAdapter
+from core.workflows.runtime.subworkflow import build_child_input, apply_output_mapping
 from core.inference.client.inference_client import InferenceClient
 from core.tools.registry import ToolRegistry
 from core.tools.context import ToolContext
@@ -428,6 +430,13 @@ class WorkflowRuntime:
                 context=context,
                 cfg=cfg,
             )
+        if workflow_node_type == "sub_workflow":
+            return await self._execute_sub_workflow_node(
+                node_def=node_def,
+                input_data=input_data,
+                context=context,
+                cfg=cfg,
+            )
         if workflow_node_type == "approval":
             return self._handle_approval_node(node_def, context)
         result = await self._execute_tool_node(cfg, input_data, context)
@@ -699,6 +708,130 @@ class WorkflowRuntime:
         self._validate_agent_output_schema(agent_output, cfg, node_def)
         self._ensure_execution_not_cancelled(context)
         return agent_output
+
+    async def _execute_sub_workflow_node(
+        self,
+        *,
+        node_def: NodeDefinition,
+        input_data: Dict[str, Any],
+        context: GraphContext,
+        cfg: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        target_workflow_id = str(cfg.get("target_workflow_id") or "").strip()
+        if not target_workflow_id:
+            raise ValueError("SUB_WORKFLOW_CONFIG_ERROR: missing target_workflow_id")
+
+        global_ctx = getattr(context, "global_data", {}) or {}
+        call_depth = int(global_ctx.get("sub_workflow_call_depth") or 0)
+        max_depth = max(1, int(getattr(settings, "workflow_subworkflow_max_depth", 5) or 5))
+        if call_depth >= max_depth:
+            raise RuntimeError(
+                f"SUB_WORKFLOW_DEPTH_EXCEEDED: current={call_depth}, max={max_depth}, node={node_def.id}"
+            )
+
+        target_version_id = self._resolve_sub_workflow_version(target_workflow_id, cfg)
+        child_input = build_child_input(
+            input_mapping=cfg.get("input_mapping") if isinstance(cfg.get("input_mapping"), dict) else {},
+            context=context,
+            node_input=input_data or {},
+        )
+        child_global_context = {
+            **(global_ctx if isinstance(global_ctx, dict) else {}),
+            "parent_execution_id": str(global_ctx.get("execution_id") or "").strip(),
+            "parent_node_id": str(node_def.id),
+            "parent_workflow_id": str(global_ctx.get("workflow_id") or "").strip(),
+            "sub_workflow_call_depth": call_depth + 1,
+        }
+
+        from core.workflows.services.workflow_execution_service import WorkflowExecutionService
+
+        execution_service = WorkflowExecutionService(self.db, execution_manager=self.execution_manager)
+        child_execution = execution_service.create_execution(
+            WorkflowExecutionCreateRequest(
+                workflow_id=target_workflow_id,
+                version_id=target_version_id,
+                input_data=child_input,
+                global_context=child_global_context,
+                trigger_type="workflow",
+            ),
+            triggered_by=str(global_ctx.get("user_id") or global_ctx.get("triggered_by") or "workflow_runtime"),
+        )
+
+        timeout = cfg.get("wait_timeout_seconds")
+        timeout_seconds = float(timeout) if timeout is not None else None
+        child_result = await self.execute(
+            child_execution,
+            wait_for_completion=True,
+            wait_timeout_seconds=timeout_seconds,
+        )
+        if child_result.state != WorkflowExecutionState.COMPLETED:
+            strategy = str(cfg.get("on_failure") or "bubble_up").strip().lower()
+            if strategy == "fallback":
+                fallback_output = cfg.get("fallback_output")
+                if isinstance(fallback_output, dict):
+                    return fallback_output
+                return {"type": "sub_workflow_result", "status": "fallback", "child_execution_id": child_result.execution_id}
+            raise RuntimeError(
+                f"SUB_WORKFLOW_EXECUTION_FAILED: node={node_def.id}, "
+                f"execution_id={child_result.execution_id}, state={child_result.state.value}, "
+                f"error={child_result.error_message}"
+            )
+
+        mapped_output = apply_output_mapping(
+            child_output=child_result.output_data or {},
+            output_mapping=cfg.get("output_mapping") if isinstance(cfg.get("output_mapping"), dict) else {},
+        )
+        return {
+            "type": "sub_workflow_result",
+            "status": "success",
+            "child_workflow_id": target_workflow_id,
+            "child_version_id": target_version_id,
+            "child_execution_id": child_result.execution_id,
+            **mapped_output,
+        }
+
+    def _resolve_sub_workflow_version(self, target_workflow_id: str, cfg: Dict[str, Any]) -> str:
+        selector = str(cfg.get("version_selector") or cfg.get("target_version_selector") or "fixed").strip().lower()
+        if selector not in {"fixed", "latest"}:
+            raise ValueError(f"SUB_WORKFLOW_CONFIG_ERROR: unsupported version selector '{selector}'")
+
+        if selector == "latest":
+            if (not bool(getattr(settings, "debug", False))) and (
+                not bool(getattr(settings, "workflow_allow_latest_subworkflow_in_production", False))
+            ):
+                raise ValueError(
+                    "SUB_WORKFLOW_VERSION_POLICY_ERROR: latest selector is disabled in production"
+                )
+            version = self.version_repository.get_published_version(target_workflow_id)
+            if not version:
+                raise ValueError(
+                    f"SUB_WORKFLOW_VERSION_NOT_FOUND: no published version for workflow {target_workflow_id}"
+                )
+            return version.version_id
+
+        target_version_id = str(cfg.get("target_version_id") or "").strip()
+        target_version_number = str(cfg.get("target_version") or "").strip()
+        if target_version_id:
+            version = self.version_repository.get_version_by_id(target_version_id)
+            if not version:
+                raise ValueError(
+                    f"SUB_WORKFLOW_VERSION_NOT_FOUND: version_id={target_version_id}"
+                )
+            if version.workflow_id != target_workflow_id:
+                raise ValueError(
+                    "SUB_WORKFLOW_CONFIG_ERROR: target_version_id does not belong to target_workflow_id"
+                )
+            return version.version_id
+        if target_version_number:
+            version = self.version_repository.get_version_by_number(target_workflow_id, target_version_number)
+            if not version:
+                raise ValueError(
+                    f"SUB_WORKFLOW_VERSION_NOT_FOUND: workflow_id={target_workflow_id}, version={target_version_number}"
+                )
+            return version.version_id
+        raise ValueError(
+            "SUB_WORKFLOW_CONFIG_ERROR: fixed selector requires target_version_id or target_version"
+        )
 
     def _persist_orchestrator_agent_id_to_execution(
         self, workflow_execution_id: str, global_ctx: Dict[str, Any]

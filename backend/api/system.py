@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import StreamingResponse
 import asyncio
 import psutil  # type: ignore[import-untyped]
@@ -11,7 +11,7 @@ from pathlib import Path
 from log import logger, log_structured
 
 import subprocess
-from typing import Annotated, Any, Literal, Optional, Dict, AsyncIterator, cast
+from typing import Annotated, Any, Literal, Optional, Dict, AsyncIterator, cast, List
 from pydantic import BaseModel, Field, ConfigDict
 
 from api.errors import raise_api_error
@@ -75,9 +75,40 @@ ALLOWED_SYSTEM_CONFIG_KEYS = {
     "agentStepDefaultTimeoutSeconds",
     "agentStepDefaultMaxRetries",
     "agentStepDefaultRetryIntervalSeconds",
+    "workflowContractRequiredInputAddedBreaking",
+    "workflowContractOutputAddedRisky",
+    "workflowContractFieldExemptions",
     "chaosFailRateWarn",
     "chaosP95WarnMs",
     "chaosNetErrWarn",
+}
+
+SYSTEM_CONFIG_SCHEMA_HINTS: Dict[str, Dict[str, Any]] = {
+    "workflowContractRequiredInputAddedBreaking": {
+        "type": "boolean",
+        "default": True,
+        "recommended": True,
+        "description": "新增 required 入参是否按 breaking 处理（建议生产开启）。",
+    },
+    "workflowContractOutputAddedRisky": {
+        "type": "boolean",
+        "default": True,
+        "recommended": True,
+        "description": "新增输出字段是否按 risky 处理（建议开启，便于风险提示）。",
+    },
+    "workflowContractFieldExemptions": {
+        "type": "string",
+        "default": "",
+        "recommended": "",
+        "description": "字段豁免列表，逗号分隔，格式 input.xxx 或 output.xxx。",
+        "example": "input.age,output.debug",
+    },
+}
+
+SYSTEM_CONFIG_EXAMPLE_PAYLOAD: Dict[str, Any] = {
+    "workflowContractRequiredInputAddedBreaking": True,
+    "workflowContractOutputAddedRisky": True,
+    "workflowContractFieldExemptions": "input.age,output.debug",
 }
 
 
@@ -117,6 +148,9 @@ class SystemConfigUpdate(BaseModel):
     agentStepDefaultTimeoutSeconds: Optional[float] = Field(default=None, ge=0.0, le=3600.0)
     agentStepDefaultMaxRetries: Optional[int] = Field(default=None, ge=0, le=20)
     agentStepDefaultRetryIntervalSeconds: Optional[float] = Field(default=None, ge=0.0, le=60.0)
+    workflowContractRequiredInputAddedBreaking: Optional[bool] = None
+    workflowContractOutputAddedRisky: Optional[bool] = None
+    workflowContractFieldExemptions: Optional[str] = Field(default=None, max_length=4096)
     chaosFailRateWarn: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     chaosP95WarnMs: Optional[int] = Field(default=None, ge=1, le=600000)
     chaosNetErrWarn: Optional[int] = Field(default=None, ge=0, le=10000)
@@ -341,6 +375,71 @@ async def update_config(
     for key, value in config_data.items():
         store.set_setting(key, value)
     return {"success": True}
+
+
+@router.get("/config/schema")
+async def get_config_schema(
+    keys: Annotated[Optional[str], Query(description="逗号分隔，仅返回指定配置键 schema")] = None,
+    keys_list: Annotated[Optional[List[str]], Query(alias="keys", description="可重复 keys 参数")] = None,
+    include_examples: Annotated[bool, Query(description="是否包含示例 payload")] = True,
+    compact: Annotated[bool, Query(description="紧凑模式，仅保留关键 schema 字段")] = False,
+) -> Dict[str, Any]:
+    """
+    返回系统配置字段定义与示例，供前端配置页动态渲染使用。
+    """
+    requested_keys: set[str] = set()
+    for raw in [keys or "", *(keys_list or [])]:
+        for k in str(raw or "").split(","):
+            kk = k.strip()
+            if kk:
+                requested_keys.add(kk)
+    if requested_keys:
+        schema_hints = {
+            key: value
+            for key, value in SYSTEM_CONFIG_SCHEMA_HINTS.items()
+            if key in requested_keys
+        }
+        allowed_keys = sorted(set(ALLOWED_SYSTEM_CONFIG_KEYS) & requested_keys)
+    else:
+        schema_hints = SYSTEM_CONFIG_SCHEMA_HINTS
+        allowed_keys = sorted(ALLOWED_SYSTEM_CONFIG_KEYS)
+    if compact:
+        schema_hints = _compact_schema_hints(schema_hints)
+    response: Dict[str, Any] = {
+        "allowed_keys": allowed_keys,
+        "schema_hints": schema_hints,
+        "query_examples": {
+            "all": "/api/system/config/schema",
+            "compact_no_examples": "/api/system/config/schema?compact=true&include_examples=false",
+            "filtered_keys_csv": (
+                "/api/system/config/schema?"
+                "keys=workflowContractRequiredInputAddedBreaking,workflowContractFieldExemptions"
+            ),
+            "filtered_keys_repeated": (
+                "/api/system/config/schema?"
+                "keys=workflowContractRequiredInputAddedBreaking&keys=workflowContractFieldExemptions"
+            ),
+            "combined": (
+                "/api/system/config/schema?"
+                "keys=workflowContractOutputAddedRisky&compact=true&include_examples=false"
+            ),
+        },
+    }
+    if include_examples:
+        response["examples"] = {
+            "workflow_contract_policy": SYSTEM_CONFIG_EXAMPLE_PAYLOAD,
+        }
+    return response
+
+
+def _compact_schema_hints(schema_hints: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    keep_fields = {"type", "default", "recommended"}
+    compacted: Dict[str, Dict[str, Any]] = {}
+    for key, hint in (schema_hints or {}).items():
+        if not isinstance(hint, dict):
+            continue
+        compacted[key] = {k: v for k, v in hint.items() if k in keep_fields}
+    return compacted
 
 @router.post("/engine/reload")
 async def reload_engine(*, _role: Annotated[Any, Depends(require_platform_admin)]) -> Dict[str, Any]:

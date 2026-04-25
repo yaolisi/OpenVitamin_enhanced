@@ -582,6 +582,58 @@ async def list_versions(
     )
 
 
+# 必须在 /{version_id} 之前注册，避免与版本详情路由冲突。
+@router.get("/{workflow_id}/impact", response_model=Dict[str, Any])
+async def get_workflow_impact(
+    http_request: Request,
+    workflow_id: str,
+    target_version_id: Annotated[Optional[str], Query(description="指定版本ID进行影响分析")] = None,
+    baseline_version_id: Annotated[Optional[str], Query(description="对比基线版本ID，可选")] = None,
+    published_only: Annotated[bool, Query(description="仅分析已发布版本")] = False,
+    *,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[str, Depends(get_current_user)],
+) -> Dict[str, Any]:
+    """分析该 workflow（子工作流）被哪些父工作流版本引用。"""
+    tenant_id = resolve_tenant_id(http_request, default_tenant=getattr(settings, "tenant_default_id", "default"))
+    workflow_service = WorkflowService(db)
+    workflow = workflow_service.get_workflow(workflow_id, tenant_id=tenant_id)
+    if not workflow:
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="workflow_not_found",
+            message=MSG_WORKFLOW_NOT_FOUND,
+            details={"workflow_id": workflow_id},
+        )
+        raise AssertionError("unreachable")
+    workflow = _ensure_workflow_tenant(workflow, tenant_id)
+    if not workflow.has_permission(current_user, "read"):
+        raise_api_error(
+            status_code=status.HTTP_403_FORBIDDEN,
+            code="workflow_access_denied",
+            message=MSG_ACCESS_DENIED,
+            details={"workflow_id": workflow_id, "action": "read"},
+        )
+
+    version_service = WorkflowVersionService(db)
+    if target_version_id:
+        version = version_service.get_version(target_version_id)
+        if not version or version.workflow_id != workflow_id:
+            raise_api_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="workflow_version_not_found",
+                message=MSG_VERSION_NOT_FOUND,
+                details={"workflow_id": workflow_id, "version_id": target_version_id},
+            )
+            raise AssertionError("unreachable")
+    return version_service.analyze_subworkflow_impact(
+        target_workflow_id=workflow_id,
+        target_version_id=target_version_id,
+        include_only_published=published_only,
+        baseline_version_id=baseline_version_id,
+    )
+
+
 # 必须在 /{version_id} 之前注册，否则路径 .../versions/compare 会被当成 version_id="compare"
 @router.get("/{workflow_id}/versions/compare", response_model=Dict[str, Any])
 async def diff_versions(
@@ -1279,7 +1331,6 @@ async def get_execution(
             details={"workflow_id": workflow_id, "execution_id": execution_id},
         )
         raise AssertionError("unreachable")
-        raise AssertionError("unreachable")
 
     execution = await _hydrate_execution_live_from_kernel(execution)
     if reconcile:
@@ -1288,6 +1339,63 @@ async def get_execution(
     if execution.graph_instance_id:
         node_timeline_override = await _node_timeline_from_event_store(execution.graph_instance_id)
     return _execution_to_response(execution, node_timeline_override=node_timeline_override)
+
+
+@router.get("/{workflow_id}/executions/{execution_id}/call-chain", response_model=Dict[str, Any])
+async def get_execution_call_chain(
+    http_request: Request,
+    workflow_id: str,
+    execution_id: str,
+    limit: Annotated[int, Query(ge=1, le=2000)] = 500,
+    *,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[str, Depends(get_current_user)],
+) -> Dict[str, Any]:
+    """查询执行调用链（父子工作流）。"""
+    tenant_id = resolve_tenant_id(http_request, default_tenant=getattr(settings, "tenant_default_id", "default"))
+    workflow_service = WorkflowService(db)
+    workflow = workflow_service.get_workflow(workflow_id, tenant_id=tenant_id)
+    if not workflow:
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="workflow_not_found",
+            message=MSG_WORKFLOW_NOT_FOUND,
+            details={"workflow_id": workflow_id},
+        )
+        raise AssertionError("unreachable")
+    workflow = _ensure_workflow_tenant(workflow, tenant_id)
+    if not workflow.has_permission(current_user, "read"):
+        raise_api_error(
+            status_code=status.HTTP_403_FORBIDDEN,
+            code="workflow_access_denied",
+            message=MSG_ACCESS_DENIED,
+            details={"workflow_id": workflow_id, "action": "read"},
+        )
+
+    execution_service = WorkflowExecutionService(db)
+    root_execution = execution_service.get_execution(execution_id)
+    if not root_execution or root_execution.workflow_id != workflow_id:
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="workflow_execution_not_found",
+            message=MSG_EXECUTION_NOT_FOUND,
+            details={"workflow_id": workflow_id, "execution_id": execution_id},
+        )
+        raise AssertionError("unreachable")
+
+    candidate_executions = execution_service.list_executions(
+        workflow_id=None,
+        state=None,
+        limit=limit,
+        offset=0,
+    )
+    chain = _build_execution_call_chain(root_execution, candidate_executions)
+    return {
+        "root_execution_id": root_execution.execution_id,
+        "correlation_id": chain["correlation_id"],
+        "items": chain["items"],
+        "total": len(chain["items"]),
+    }
 
 
 async def _kernel_debug_snapshot(graph_instance_id: str) -> Dict[str, Any]:
@@ -2614,6 +2722,53 @@ def _execution_to_status_response(
         wait_duration_ms=execution.wait_duration_ms,
         node_timeline=node_timeline,
     )
+
+
+def _build_execution_call_chain(
+    root_execution: WorkflowExecution,
+    candidates: List[WorkflowExecution],
+) -> Dict[str, Any]:
+    root_ctx = root_execution.global_context or {}
+    correlation_id = str(root_ctx.get("correlation_id") or f"wfex_{root_execution.execution_id}").strip()
+    scoped: List[WorkflowExecution] = []
+    for item in candidates:
+        item_ctx = item.global_context or {}
+        item_correlation = str(item_ctx.get("correlation_id") or "").strip()
+        parent_execution_id = str(item_ctx.get("parent_execution_id") or "").strip()
+        if item.execution_id == root_execution.execution_id:
+            scoped.append(item)
+            continue
+        if item_correlation and item_correlation == correlation_id:
+            scoped.append(item)
+            continue
+        if parent_execution_id and parent_execution_id == root_execution.execution_id:
+            scoped.append(item)
+            continue
+
+    scoped.sort(
+        key=lambda ex: (
+            ex.created_at.isoformat() if ex.created_at else "",
+            ex.execution_id,
+        )
+    )
+    items: List[Dict[str, Any]] = []
+    for ex in scoped:
+        ctx = ex.global_context or {}
+        items.append(
+            {
+                "execution_id": ex.execution_id,
+                "workflow_id": ex.workflow_id,
+                "version_id": ex.version_id,
+                "state": ex.state.value,
+                "created_at": ex.created_at.isoformat() if ex.created_at else None,
+                "started_at": ex.started_at.isoformat() if ex.started_at else None,
+                "finished_at": ex.finished_at.isoformat() if ex.finished_at else None,
+                "parent_execution_id": ctx.get("parent_execution_id"),
+                "parent_node_id": ctx.get("parent_node_id"),
+                "correlation_id": ctx.get("correlation_id"),
+            }
+        )
+    return {"correlation_id": correlation_id, "items": items}
 
 
 def _map_kernel_graph_state_to_workflow_state(kernel_state: str) -> Optional[str]:

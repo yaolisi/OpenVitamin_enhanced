@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import hashlib
 import importlib
+import json
 import sys
 import types
 import uuid
@@ -18,6 +20,7 @@ from core.data.models.workflow import (
     WorkflowORM,
     WorkflowExecutionORM,
     WorkflowApprovalTaskORM,
+    WorkflowVersionORM,
 )
 from api.errors import register_error_handlers
 
@@ -121,6 +124,178 @@ def _seed_workflow_execution_and_task(session_factory, *, task_status: str = "pe
         )
         db.commit()
     return execution_id, task_id
+
+
+def _seed_workflow_versions_for_impact(session_factory):
+    target_version_id = f"v_target_{uuid.uuid4().hex[:6]}"
+    with session_factory() as db:
+        db.add(
+            WorkflowVersionORM(
+                version_id=target_version_id,
+                workflow_id="wf_1",
+                definition_id="def_target",
+                version_number="1.0.0",
+                dag_json=json.dumps({"nodes": [], "edges": [], "entry_node": None, "global_config": {}}),
+                checksum="c1",
+                state="published",
+                created_by="u1",
+            )
+        )
+        db.add(
+            WorkflowVersionORM(
+                version_id=f"v_parent_fixed_{uuid.uuid4().hex[:6]}",
+                workflow_id="wf_parent_fixed",
+                definition_id="def_pf",
+                version_number="1.0.0",
+                dag_json=json.dumps(
+                    {
+                        "nodes": [
+                            {
+                                "id": "sub1",
+                                "type": "tool",
+                                "config": {
+                                    "workflow_node_type": "sub_workflow",
+                                    "target_workflow_id": "wf_1",
+                                    "target_version_selector": "fixed",
+                                    "target_version_id": target_version_id,
+                                },
+                            }
+                        ],
+                        "edges": [],
+                        "entry_node": "sub1",
+                        "global_config": {},
+                    }
+                ),
+                checksum="c2",
+                state="published",
+                created_by="u1",
+            )
+        )
+        db.add(
+            WorkflowVersionORM(
+                version_id=f"v_parent_latest_{uuid.uuid4().hex[:6]}",
+                workflow_id="wf_parent_latest",
+                definition_id="def_pl",
+                version_number="1.0.0",
+                dag_json=json.dumps(
+                    {
+                        "nodes": [
+                            {
+                                "id": "sub2",
+                                "type": "tool",
+                                "config": {
+                                    "workflow_node_type": "sub_workflow",
+                                    "target_workflow_id": "wf_1",
+                                    "target_version_selector": "latest",
+                                },
+                            }
+                        ],
+                        "edges": [],
+                        "entry_node": "sub2",
+                        "global_config": {},
+                    }
+                ),
+                checksum="c3",
+                state="draft",
+                created_by="u1",
+            )
+        )
+        db.commit()
+    return target_version_id
+
+
+def _seed_versions_for_publish_breaking_guard(session_factory):
+    def _dag_json(global_config: dict) -> str:
+        return json.dumps(
+            {"nodes": [], "edges": [], "entry_node": None, "global_config": global_config},
+            separators=(",", ":"),
+        )
+
+    baseline_json = _dag_json(
+        {
+            "input_schema": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": [],
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+            },
+        }
+    )
+    new_json = _dag_json(
+        {
+            "input_schema": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+                "required": ["age"],
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {},
+            },
+        }
+    )
+    parent_json = json.dumps(
+        {
+            "nodes": [
+                {
+                    "id": "sub1",
+                    "type": "tool",
+                    "config": {
+                        "workflow_node_type": "sub_workflow",
+                        "target_workflow_id": "wf_1",
+                        "target_version_selector": "fixed",
+                        "target_version_id": "v_target_new",
+                    },
+                }
+            ],
+            "edges": [],
+            "entry_node": "sub1",
+            "global_config": {},
+        },
+        separators=(",", ":"),
+    )
+
+    with session_factory() as db:
+        db.add(
+            WorkflowVersionORM(
+                version_id="v_target_base",
+                workflow_id="wf_1",
+                definition_id="def_target_base",
+                version_number="1.0.0",
+                dag_json=baseline_json,
+                checksum=hashlib.sha256(baseline_json.encode()).hexdigest(),
+                state="published",
+                created_by="u1",
+            )
+        )
+        db.add(
+            WorkflowVersionORM(
+                version_id="v_target_new",
+                workflow_id="wf_1",
+                definition_id="def_target_new",
+                version_number="1.0.1",
+                dag_json=new_json,
+                checksum=hashlib.sha256(new_json.encode()).hexdigest(),
+                state="draft",
+                created_by="u1",
+            )
+        )
+        db.add(
+            WorkflowVersionORM(
+                version_id="v_parent_fixed_guard",
+                workflow_id="wf_parent_guard",
+                definition_id="def_parent_guard",
+                version_number="1.0.0",
+                dag_json=parent_json,
+                checksum=hashlib.sha256(parent_json.encode()).hexdigest(),
+                state="published",
+                created_by="u1",
+            )
+        )
+        db.commit()
 
 
 def test_list_approvals_api(tmp_path):
@@ -360,3 +535,81 @@ def test_diff_versions_from_missing_returns_structured_error(tmp_path):
     body = resp.json()
     assert body.get("detail") == "from_version not found"
     assert body.get("error", {}).get("code") == "workflow_diff_from_version_not_found"
+
+
+def test_workflow_impact_api_supports_risk_summary_and_published_filter(tmp_path):
+    workflows_api = _load_workflows_api_module()
+    session_factory = _make_session_factory(tmp_path)
+    _seed_workflow_execution_and_task(session_factory)
+    target_version_id = _seed_workflow_versions_for_impact(session_factory)
+    client = _build_client(session_factory, workflows_api)
+
+    resp_all = client.get(
+        "/api/v1/workflows/wf_1/impact",
+        params={"target_version_id": target_version_id},
+    )
+    assert resp_all.status_code == 200
+    data_all = resp_all.json()
+    assert data_all["total_impacted"] == 2
+    assert data_all["risk_summary"]["compatible"] == 1
+    assert data_all["risk_summary"]["risky"] == 1
+
+    resp_published = client.get(
+        "/api/v1/workflows/wf_1/impact",
+        params={"target_version_id": target_version_id, "published_only": "true"},
+    )
+    assert resp_published.status_code == 200
+    data_published = resp_published.json()
+    assert data_published["include_only_published"] is True
+    assert data_published["total_impacted"] == 1
+    assert data_published["risk_summary"]["compatible"] == 1
+    assert data_published["risk_summary"]["risky"] == 0
+
+
+def test_execution_call_chain_api_returns_parent_child_links(tmp_path):
+    workflows_api = _load_workflows_api_module()
+    session_factory = _make_session_factory(tmp_path)
+    execution_id, _ = _seed_workflow_execution_and_task(session_factory)
+    child_execution_id = f"exec_child_{uuid.uuid4().hex[:8]}"
+    with session_factory() as db:
+        db.add(
+            WorkflowExecutionORM(
+                execution_id=child_execution_id,
+                workflow_id="wf_child",
+                version_id="v1",
+                state="completed",
+                input_data={},
+                output_data={},
+                global_context={
+                    "correlation_id": f"wfex_{execution_id}",
+                    "parent_execution_id": execution_id,
+                    "parent_node_id": "sub_node_1",
+                },
+                node_states_json="[]",
+                triggered_by="u1",
+                trigger_type="workflow",
+                resource_quota={},
+            )
+        )
+        db.commit()
+    client = _build_client(session_factory, workflows_api)
+    resp = client.get(f"/api/v1/workflows/wf_1/executions/{execution_id}/call-chain")
+    assert resp.status_code == 200
+    data = resp.json()
+    ids = [item["execution_id"] for item in data["items"]]
+    assert execution_id in ids
+    assert child_execution_id in ids
+
+
+def test_publish_version_blocks_on_subworkflow_breaking_impact(tmp_path):
+    workflows_api = _load_workflows_api_module()
+    session_factory = _make_session_factory(tmp_path)
+    _seed_workflow_execution_and_task(session_factory)
+    _seed_versions_for_publish_breaking_guard(session_factory)
+    client = _build_client(session_factory, workflows_api)
+
+    resp = client.post("/api/v1/workflows/wf_1/versions/v_target_new/publish")
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body.get("error", {}).get("code") == "workflow_version_publish_invalid"
+    assert "breaking contract change" in str(body.get("detail") or "").lower()

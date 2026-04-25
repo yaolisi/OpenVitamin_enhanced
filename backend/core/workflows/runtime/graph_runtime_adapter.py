@@ -38,6 +38,7 @@ class GraphRuntimeAdapter:
         # kernel 暂无独立 AGENT 类型，复用 TOOL 调度并在 config.workflow_node_type 区分
         "agent": NodeType.TOOL,
         "approval": NodeType.TOOL,
+        "sub_workflow": NodeType.TOOL,
         "condition": NodeType.CONDITION,
         "script": NodeType.SCRIPT,
         "replan": NodeType.REPLAN,
@@ -77,7 +78,7 @@ class GraphRuntimeAdapter:
         cfg = node.config or {}
         cfg_type = str(cfg.get("workflow_node_type") or "").strip().lower()
         normalized_cfg_type = cls._normalize_workflow_node_type(cfg_type)
-        if normalized_cfg_type in {"input", "output", "agent", "approval", "condition", "loop", "replan", "script", "llm"}:
+        if normalized_cfg_type in {"input", "output", "agent", "approval", "sub_workflow", "condition", "loop", "replan", "script", "llm"}:
             return normalized_cfg_type
 
         normalized_type = cls._normalize_workflow_node_type(node.type)
@@ -425,6 +426,27 @@ class GraphRuntimeAdapter:
                 config = node.config or {}
                 if "tool_name" not in config and "tool_id" not in config:
                     errors.append(f"Tool node {node.id} missing 'tool_name' or 'tool_id' config")
+            elif normalized_type == "sub_workflow":
+                config = node.config or {}
+                target_workflow_id = str(config.get("target_workflow_id") or "").strip()
+                if not target_workflow_id:
+                    errors.append(f"Sub-workflow node {node.id} missing 'target_workflow_id' config")
+                selector = str(
+                    config.get("version_selector") or config.get("target_version_selector") or "fixed"
+                ).strip().lower()
+                if selector not in {"fixed", "latest"}:
+                    errors.append(
+                        f"Sub-workflow node {node.id} has invalid version selector '{selector}'"
+                    )
+                if selector == "fixed":
+                    has_fixed_ref = bool(
+                        str(config.get("target_version_id") or "").strip()
+                        or str(config.get("target_version") or "").strip()
+                    )
+                    if not has_fixed_ref:
+                        errors.append(
+                            f"Sub-workflow node {node.id} with fixed selector requires target_version_id or target_version"
+                        )
             elif normalized_type == "agent":
                 config = node.config or {}
                 if not str(config.get("agent_id") or "").strip():

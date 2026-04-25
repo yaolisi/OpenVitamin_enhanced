@@ -186,6 +186,24 @@ class WorkflowVersionRepository:
         )
         return [self._deserialize_version_from_orm(r) for r in rows]
 
+    def list_versions(
+        self,
+        state: Optional[WorkflowVersionState] = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> List[WorkflowVersion]:
+        """列出全量版本（用于跨工作流依赖/影响分析）"""
+        q = self.db.query(WorkflowVersionORM)
+        if state:
+            q = q.filter(WorkflowVersionORM.state == state.value)
+        rows = (
+            q.order_by(WorkflowVersionORM.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+        return [self._deserialize_version_from_orm(r) for r in rows]
+
     def count_versions_by_workflow(
         self,
         workflow_id: str,

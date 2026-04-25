@@ -47,6 +47,79 @@ def test_kernel_status_endpoint_returns_expected_shape():
     assert "description" in body
 
 
+def test_config_schema_endpoint_exposes_workflow_contract_policy_examples():
+    client = _build_client()
+    resp = client.get("/api/system/config/schema")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "allowed_keys" in body
+    assert "schema_hints" in body
+    assert "examples" in body
+    assert "query_examples" in body
+    hints = body.get("schema_hints", {})
+    assert "workflowContractRequiredInputAddedBreaking" in hints
+    assert "workflowContractOutputAddedRisky" in hints
+    assert "workflowContractFieldExemptions" in hints
+    example = body.get("examples", {}).get("workflow_contract_policy", {})
+    assert "workflowContractRequiredInputAddedBreaking" in example
+    assert "workflowContractOutputAddedRisky" in example
+    assert "workflowContractFieldExemptions" in example
+    query_examples = body.get("query_examples", {})
+    assert "combined" in query_examples
+    assert "compact=true" in str(query_examples.get("combined"))
+
+
+def test_config_schema_endpoint_supports_keys_filter():
+    client = _build_client()
+    resp = client.get(
+        "/api/system/config/schema",
+        params={"keys": "workflowContractOutputAddedRisky,workflowContractFieldExemptions"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert sorted(body.get("allowed_keys", [])) == sorted(
+        ["workflowContractOutputAddedRisky", "workflowContractFieldExemptions"]
+    )
+    hints = body.get("schema_hints", {})
+    assert "workflowContractOutputAddedRisky" in hints
+    assert "workflowContractFieldExemptions" in hints
+    assert "workflowContractRequiredInputAddedBreaking" not in hints
+
+
+def test_config_schema_endpoint_supports_repeated_keys_query():
+    client = _build_client()
+    resp = client.get(
+        "/api/system/config/schema?keys=workflowContractOutputAddedRisky&keys=workflowContractFieldExemptions"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert sorted(body.get("allowed_keys", [])) == sorted(
+        ["workflowContractOutputAddedRisky", "workflowContractFieldExemptions"]
+    )
+
+
+def test_config_schema_endpoint_can_skip_examples():
+    client = _build_client()
+    resp = client.get("/api/system/config/schema", params={"include_examples": "false"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "allowed_keys" in body
+    assert "schema_hints" in body
+    assert "examples" not in body
+
+
+def test_config_schema_endpoint_compact_mode_trims_hint_fields():
+    client = _build_client()
+    resp = client.get("/api/system/config/schema", params={"compact": "true"})
+    assert resp.status_code == 200
+    body = resp.json()
+    hints = body.get("schema_hints", {})
+    assert "workflowContractOutputAddedRisky" in hints
+    hint = hints["workflowContractOutputAddedRisky"]
+    assert set(hint.keys()).issubset({"type", "default", "recommended"})
+    assert "description" not in hint
+
+
 def test_feature_flags_update_and_fetch_roundtrip(monkeypatch):
     client = _build_client()
     saved: dict = {}
@@ -224,12 +297,18 @@ def test_update_config_accepts_valid_smart_routing_policy(monkeypatch):
     payload = {
         "inferenceSmartRoutingEnabled": True,
         "inferenceSmartRoutingPoliciesJson": '{"reasoning-model":{"strategy":"canary","stable":"stable-v1","canary":"canary-v2","canary_percent":10}}',
+        "workflowContractRequiredInputAddedBreaking": False,
+        "workflowContractOutputAddedRisky": True,
+        "workflowContractFieldExemptions": "input.age,output.debug",
     }
     resp = client.post("/api/system/config", json=payload)
     assert resp.status_code == 200
     assert resp.json().get("success") is True
     assert captured.get("inferenceSmartRoutingEnabled") is True
     assert isinstance(captured.get("inferenceSmartRoutingPoliciesJson"), str)
+    assert captured.get("workflowContractRequiredInputAddedBreaking") is False
+    assert captured.get("workflowContractOutputAddedRisky") is True
+    assert captured.get("workflowContractFieldExemptions") == "input.age,output.debug"
 
 
 def test_update_config_rejects_invalid_smart_routing_policy(monkeypatch):
