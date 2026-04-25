@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Wrench,
   Trash2,
+  Sparkles,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,7 +22,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { listSkills, deleteSkill, type SkillRecord } from '@/services/api'
+import {
+  listSkills,
+  deleteSkill,
+  listAgents,
+  skillDiscoverySearch,
+  skillDiscoveryRecommend,
+  type SkillRecord,
+  type SkillDiscoveryItem,
+  type AgentDefinition,
+} from '@/services/api'
 
 const { t } = useI18n()
 
@@ -29,12 +39,25 @@ const allSkills = ref<SkillRecord[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 
+const agents = ref<AgentDefinition[]>([])
+const discoveryAgentId = ref('')
+const discoveryQuery = ref('')
+const discoveryResults = ref<SkillDiscoveryItem[]>([])
+const discoveryError = ref<string | null>(null)
+const discoveryLoading = ref(false)
+const discoveryHasSearched = ref(false)
+
 onMounted(async () => {
   loading.value = true
   loadError.value = null
   try {
-    const res = await listSkills()
-    allSkills.value = res.data || []
+    const [skillsRes, agentsRes] = await Promise.all([listSkills(), listAgents().catch(() => null)])
+    allSkills.value = skillsRes.data || []
+    if (agentsRes?.data?.length) {
+      const first = agentsRes.data[0]
+      agents.value = agentsRes.data
+      if (first?.agent_id) discoveryAgentId.value = first.agent_id
+    }
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : t('skills.err_load_list')
     allSkills.value = []
@@ -42,6 +65,63 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+const runSkillDiscoverySearch = async () => {
+  discoveryError.value = null
+  if (!discoveryAgentId.value) {
+    discoveryError.value = t('skills.discovery_need_agent')
+    return
+  }
+  const q = discoveryQuery.value.trim()
+  if (!q) {
+    discoveryError.value = t('skills.discovery_query_empty')
+    return
+  }
+  discoveryLoading.value = true
+  discoveryResults.value = []
+  try {
+    const res = await skillDiscoverySearch({
+      q,
+      agentId: discoveryAgentId.value,
+      topK: 12,
+    })
+    const raw = res.data as
+      | SkillDiscoveryItem[]
+      | Array<{ skill: SkillDiscoveryItem; semantic_score: number; tag_match_score: number; hybrid_score: number }>
+    if (raw.length > 0 && raw[0] && typeof raw[0] === 'object' && 'skill' in raw[0]) {
+      discoveryResults.value = (raw as Array<{ skill: SkillDiscoveryItem }>).map((x) => x.skill)
+    } else {
+      discoveryResults.value = raw as SkillDiscoveryItem[]
+    }
+  } catch (e) {
+    discoveryError.value = e instanceof Error ? e.message : t('skills.err_load')
+  } finally {
+    discoveryLoading.value = false
+    discoveryHasSearched.value = true
+  }
+}
+
+const runSkillDiscoveryRecommend = async () => {
+  discoveryError.value = null
+  if (!discoveryAgentId.value) {
+    discoveryError.value = t('skills.discovery_need_agent')
+    return
+  }
+  discoveryLoading.value = true
+  discoveryResults.value = []
+  try {
+    const res = await skillDiscoveryRecommend({
+      agentId: discoveryAgentId.value,
+      limit: 12,
+    })
+    discoveryResults.value = (res.data || []) as SkillDiscoveryItem[]
+  } catch (e) {
+    discoveryError.value = e instanceof Error ? e.message : t('skills.err_load')
+  } finally {
+    discoveryLoading.value = false
+    discoveryHasSearched.value = true
+  }
+}
 
 const searchQuery = ref('')
 const filterType = ref('all')
@@ -166,6 +246,80 @@ const goNext = () => {
             <SelectItem value="all">{{ t('common.all') }}</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div
+        v-if="agents.length > 0"
+        class="mt-4 rounded-2xl border border-border/60 bg-muted/20 p-4 space-y-3"
+      >
+        <div class="flex items-center gap-2">
+          <Sparkles class="w-4 h-4 text-primary shrink-0" />
+          <h2 class="text-sm font-semibold text-foreground">{{ t('skills.discovery_title') }}</h2>
+        </div>
+        <p class="text-xs text-muted-foreground leading-relaxed">{{ t('skills.discovery_desc') }}</p>
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="min-w-[200px]">
+            <label class="text-[10px] text-muted-foreground block mb-1">{{ t('skills.discovery_agent') }}</label>
+            <select
+              v-model="discoveryAgentId"
+              class="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs"
+            >
+              <option v-for="a in agents" :key="a.agent_id" :value="a.agent_id">
+                {{ a.name || a.agent_id }}
+              </option>
+            </select>
+          </div>
+          <div class="flex-1 min-w-[200px] max-w-lg">
+            <label class="text-[10px] text-muted-foreground block mb-1">{{ t('skills.discovery_query') }}</label>
+            <Input
+              v-model="discoveryQuery"
+              class="h-9 text-sm"
+              :placeholder="t('skills.discovery_query')"
+              @keydown.enter.prevent="runSkillDiscoverySearch"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            class="h-9 shrink-0"
+            :disabled="discoveryLoading"
+            @click="runSkillDiscoverySearch"
+          >
+            <Search class="w-3.5 h-3.5 mr-1" />
+            {{ t('skills.discovery_search') }}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            class="h-9 shrink-0"
+            :disabled="discoveryLoading"
+            @click="runSkillDiscoveryRecommend"
+          >
+            <Sparkles class="w-3.5 h-3.5 mr-1" />
+            {{ t('skills.discovery_recommend') }}
+          </Button>
+        </div>
+        <p v-if="discoveryError" class="text-xs text-destructive break-words">{{ discoveryError }}</p>
+        <div v-if="discoveryLoading" class="text-xs text-muted-foreground">{{ t('common.loading') }}</div>
+        <ul v-else-if="discoveryResults.length > 0" class="flex flex-wrap gap-2">
+          <li v-for="s in discoveryResults" :key="s.id" class="text-xs">
+            <button
+              type="button"
+              class="rounded-lg border border-border bg-card px-2 py-1.5 hover:bg-muted/50 text-left max-w-[280px] truncate"
+              :title="(s.description as string) || s.id"
+              @click="goToSkillDetail(s.id)"
+            >
+              <span class="font-mono text-primary">{{ s.id }}</span>
+              <span v-if="s.name" class="text-muted-foreground ml-1">· {{ s.name }}</span>
+            </button>
+          </li>
+        </ul>
+        <p
+          v-else-if="discoveryHasSearched && !discoveryLoading && !discoveryError"
+          class="text-xs text-muted-foreground"
+        >
+          {{ t('skills.discovery_empty') }}
+        </p>
       </div>
     </header>
 

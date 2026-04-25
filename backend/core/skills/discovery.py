@@ -5,12 +5,19 @@ Skill Discovery 模块
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from log import logger
 
+from core.system.runtime_settings import (
+    get_skill_discovery_min_hybrid_score,
+    get_skill_discovery_min_semantic_similarity,
+    get_skill_discovery_tag_match_weight,
+)
 from core.skills.models import SkillDefinition
+from core.skills.usage_store import top_skills_for_user
 from core.skills.registry import SkillRegistry
 from core.skills.embedding import EmbeddingService, get_embedding_service
 from core.skills.scope import SkillScopeResolver
@@ -142,6 +149,16 @@ class SkillVectorIndex:
         logger.debug("[SkillVectorIndex] Cleared")
 
 
+@dataclass(frozen=True)
+class SkillSearchHit:
+    """单次语义检索的打分结果，便于可观测与 API 返回。"""
+
+    skill: SkillDefinition
+    semantic_score: float
+    tag_match_score: float
+    hybrid_score: float
+
+
 class SkillDiscoveryEngine:
     """
     Skill 发现引擎
@@ -230,46 +247,57 @@ class SkillDiscoveryEngine:
         # 生成向量
         return self._embedding_service.embed(text)
     
-    def search(
+    @staticmethod
+    def _resolve_weights(tag_match_weight: Optional[float]) -> Tuple[float, float]:
+        w_tag = float(
+            tag_match_weight
+            if tag_match_weight is not None
+            else get_skill_discovery_tag_match_weight()
+        )
+        w_tag = min(1.0, max(0.0, w_tag))
+        return 1.0 - w_tag, w_tag
+
+    @staticmethod
+    def _resolve_thresholds(
+        min_semantic_similarity: Optional[float],
+        min_hybrid_score: Optional[float],
+    ) -> Tuple[float, float]:
+        min_sem = float(
+            min_semantic_similarity
+            if min_semantic_similarity is not None
+            else get_skill_discovery_min_semantic_similarity()
+        )
+        min_hyb = float(
+            min_hybrid_score
+            if min_hybrid_score is not None
+            else get_skill_discovery_min_hybrid_score()
+        )
+        return min_sem, min_hyb
+
+    def search_hits(
         self,
         query: str,
         agent_id: str,
         organization_id: Optional[str] = None,
         top_k: int = 5,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[SkillDefinition]:
+        filters: Optional[Dict[str, Any]] = None,
+        tag_match_weight: Optional[float] = None,
+        min_semantic_similarity: Optional[float] = None,
+        min_hybrid_score: Optional[float] = None,
+    ) -> List[SkillSearchHit]:
         """
-        搜索 Skills
-        
-        流程：
-        1. 结构化过滤（enabled / visibility / tags / category）
-        2. 权限过滤（agent 可见）
-        3. 向量相似度排序
-        4. Hybrid 评分（语义 + 标签匹配）
-        
-        Args:
-            query: 自然语言查询
-            agent_id: Agent ID（用于权限检查）
-            organization_id: 组织 ID（可选）
-            top_k: 返回结果数量
-            filters: 可选过滤器
-                - tags: List[str] - 必须包含的标签
-                - category: str - 类别过滤
-                - visibility: str - 可见性过滤
-                
-        Returns:
-            Skill 定义列表（按相关性排序）
+        同 search，但返回每项的语义/标签/混合分；阈值过滤在混合分计算之后应用。
         """
         if self._registry is None:
             raise RuntimeError("Registry not bound. Call bind_registry() first.")
         
         filters = filters or {}
+        w_sem, w_tag = self._resolve_weights(tag_match_weight)
+        t_sem, t_hyb = self._resolve_thresholds(min_semantic_similarity, min_hybrid_score)
         
-        # 步骤 1: 获取候选 Skills（结构化过滤）
         candidates = self._apply_structural_filters(filters)
         logger.debug(f"[SkillDiscoveryEngine] Structural filter: {len(candidates)} candidates")
         
-        # 步骤 2: 权限过滤
         candidates = self._scope_resolver.filter_visible(
             candidates, agent_id, organization_id
         )
@@ -278,45 +306,119 @@ class SkillDiscoveryEngine:
         if not candidates:
             return []
         
-        # 步骤 3: 向量相似度搜索
         query_vector = self._embedding_service.embed(query)
         candidate_ids = [s.id for s in candidates]
         
         vector_results = self._vector_index.search(
             query_vector,
-            top_k=len(candidates) * 2,  # 多取一些用于后续排序
+            top_k=max(len(candidates) * 2, top_k * 2),
             skill_filter=candidate_ids
         )
         
-        # 构建相似度映射
         similarity_map = {
             (skill_id, version): score
             for skill_id, version, score in vector_results
         }
         
-        # 步骤 4: Hybrid 评分和排序
-        scored_skills = []
+        scored: List[SkillSearchHit] = []
         for skill in candidates:
-            # 语义相似度
             semantic_score = similarity_map.get((skill.id, skill.version), 0.0)
+            tag_match_score = self._calculate_tag_match_score(skill, query)
+            hybrid = semantic_score * w_sem + tag_match_score * w_tag
             
-            # 标签匹配分数
-            tag_score = self._calculate_tag_match_score(skill, query)
+            if t_sem > 0.0 and semantic_score < t_sem:
+                continue
+            if t_hyb > 0.0 and hybrid < t_hyb:
+                continue
             
-            # Hybrid 评分（可配置权重）
-            # 默认：语义 70%，标签 30%
-            final_score = semantic_score * 0.7 + tag_score * 0.3
-            
-            scored_skills.append((skill, final_score))
+            scored.append(
+                SkillSearchHit(
+                    skill=skill,
+                    semantic_score=semantic_score,
+                    tag_match_score=tag_match_score,
+                    hybrid_score=hybrid,
+                )
+            )
         
-        # 按分数排序
-        scored_skills.sort(key=lambda x: x[1], reverse=True)
-        
-        # 返回 top_k
-        result = [skill for skill, _ in scored_skills[:top_k]]
-        logger.info(f"[SkillDiscoveryEngine] Search returned {len(result)} skills for query: {query[:50]}...")
-        
+        scored.sort(key=lambda h: h.hybrid_score, reverse=True)
+        result = scored[:top_k]
+        logger.info(
+            f"[SkillDiscoveryEngine] search_hits returned {len(result)} for query: {query[:50]}... "
+            f"(w_sem={w_sem:.2f} w_tag={w_tag:.2f} min_sem={t_sem} min_hyb={t_hyb})"
+        )
         return result
+
+    def search(
+        self,
+        query: str,
+        agent_id: str,
+        organization_id: Optional[str] = None,
+        top_k: int = 5,
+        filters: Optional[Dict[str, Any]] = None,
+        tag_match_weight: Optional[float] = None,
+        min_semantic_similarity: Optional[float] = None,
+        min_hybrid_score: Optional[float] = None,
+    ) -> List[SkillDefinition]:
+        """
+        搜索 Skills
+        
+        流程：
+        1. 结构化过滤（enabled / visibility / tags / category）
+        2. 权限过滤（agent 可见，public / org / private 见 SkillScopeResolver）
+        3. 向量相似度 + 标签混合分排序
+        
+        权重与阈值：未传参时使用 config.settings 中
+        skill_discovery_tag_match_weight、skill_discovery_min_semantic_similarity、
+        skill_discovery_min_hybrid_score；亦可通过 Agent model_params["skill_discovery"] 在运行时覆盖。
+        """
+        hits = self.search_hits(
+            query=query,
+            agent_id=agent_id,
+            organization_id=organization_id,
+            top_k=top_k,
+            filters=filters,
+            tag_match_weight=tag_match_weight,
+            min_semantic_similarity=min_semantic_similarity,
+            min_hybrid_score=min_hybrid_score,
+        )
+        return [h.skill for h in hits]
+
+    def recommend_for_user(
+        self,
+        user_id: str,
+        agent_id: str,
+        organization_id: Optional[str] = None,
+        limit: int = 8,
+    ) -> List[SkillDefinition]:
+        """
+        根据该用户历史使用次数，在可见性规则下推荐技能；无历史时回退为可见启用的前若干项（探索）。
+        """
+        if self._registry is None:
+            raise RuntimeError("Registry not bound. Call bind_registry() first.")
+        
+        all_visible = self._scope_resolver.filter_visible(
+            self._registry.list_all(enabled_only=True),
+            agent_id,
+            organization_id,
+        )
+        if not all_visible:
+            return []
+        
+        by_id = {s.id: s for s in all_visible}
+        ranked: List[SkillDefinition] = []
+        seen_ids: set[str] = set()
+        for sid, _count in top_skills_for_user(user_id, limit=limit * 4):
+            s = by_id.get(sid)
+            if s is not None and s.id not in seen_ids:
+                seen_ids.add(s.id)
+                ranked.append(s)
+            if len(ranked) >= limit:
+                break
+        if ranked:
+            return ranked[:limit]
+        # 冷启动：同目录下无使用记录时给出可见技能列表的确定性子集
+        all_visible.sort(key=lambda x: x.id)
+        return all_visible[:limit]
     
     def _apply_structural_filters(
         self,

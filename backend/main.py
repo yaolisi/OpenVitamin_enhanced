@@ -41,6 +41,7 @@ from api.rag_trace import router as rag_trace_router
 from api.agents import router as agents_router, session_router as agent_sessions_router
 from api.tools import router as tools_router
 from api.skills import router as skills_router
+from api.skill_discovery import router as skill_discovery_router
 from api.vlm import router as vlm_router
 from api.asr import router as asr_router
 from api.images import router as images_router
@@ -482,6 +483,7 @@ app.include_router(agents_router)
 app.include_router(agent_sessions_router)
 app.include_router(tools_router)
 app.include_router(skills_router)
+app.include_router(skill_discovery_router)
 app.include_router(vlm_router)
 app.include_router(asr_router)
 app.include_router(images_router)

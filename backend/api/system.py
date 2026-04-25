@@ -68,6 +68,9 @@ ALLOWED_SYSTEM_CONFIG_KEYS = {
     "runtimeReleaseMinIntervalSeconds",
     "inferenceSmartRoutingEnabled",
     "inferenceSmartRoutingPoliciesJson",
+    "skillDiscoveryTagMatchWeight",
+    "skillDiscoveryMinSemanticSimilarity",
+    "skillDiscoveryMinHybridScore",
     "chaosFailRateWarn",
     "chaosP95WarnMs",
     "chaosNetErrWarn",
@@ -103,6 +106,9 @@ class SystemConfigUpdate(BaseModel):
     runtimeReleaseMinIntervalSeconds: Optional[int] = Field(default=None, ge=1, le=3600)
     inferenceSmartRoutingEnabled: Optional[bool] = None
     inferenceSmartRoutingPoliciesJson: Optional[str] = Field(default=None, max_length=65535)
+    skillDiscoveryTagMatchWeight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    skillDiscoveryMinSemanticSimilarity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    skillDiscoveryMinHybridScore: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     chaosFailRateWarn: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     chaosP95WarnMs: Optional[int] = Field(default=None, ge=1, le=600000)
     chaosNetErrWarn: Optional[int] = Field(default=None, ge=0, le=10000)

@@ -8,6 +8,13 @@ function parseBool(value: unknown, defaultVal: boolean): boolean {
   return defaultVal
 }
 
+function parseFloat01(value: unknown, defaultVal: number): number {
+  if (value === undefined || value === null || value === '') return defaultVal
+  const n = Number(value)
+  if (Number.isNaN(n)) return defaultVal
+  return Math.min(1, Math.max(0, n))
+}
+
 type SmartRoutingPreviewItem = {
   alias: string
   strategy: string
@@ -64,6 +71,12 @@ export function useRuntimeSettings() {
   const runtimeReleaseMinIntervalSeconds = ref(5)
   const inferenceSmartRoutingEnabled = ref(true)
   const inferenceSmartRoutingPoliciesJson = ref('')
+  /** 技能语义发现：混合分中标签匹配权重（0–1），语义为 1 - 该值 */
+  const skillDiscoveryTagMatchWeight = ref(0.3)
+  /** 余弦相似度下限，0 表示不筛 */
+  const skillDiscoveryMinSemanticSimilarity = ref(0)
+  /** 混合分下限，0 表示不筛 */
+  const skillDiscoveryMinHybridScore = ref(0)
   const DEFAULT_SMART_ROUTING_POLICIES_TEMPLATE = `{
   "reasoning-model": {
     "strategy": "blue_green",
@@ -123,6 +136,12 @@ export function useRuntimeSettings() {
       runtimeReleaseMinIntervalSeconds.value = Math.min(3600, Math.max(1, Number(s.runtimeReleaseMinIntervalSeconds) || 5))
       inferenceSmartRoutingEnabled.value = parseBool(s.inferenceSmartRoutingEnabled, true)
       inferenceSmartRoutingPoliciesJson.value = String(s.inferenceSmartRoutingPoliciesJson || '')
+      skillDiscoveryTagMatchWeight.value = parseFloat01(s.skillDiscoveryTagMatchWeight, 0.3)
+      skillDiscoveryMinSemanticSimilarity.value = parseFloat01(
+        s.skillDiscoveryMinSemanticSimilarity,
+        0,
+      )
+      skillDiscoveryMinHybridScore.value = parseFloat01(s.skillDiscoveryMinHybridScore, 0)
       smartRoutingJsonError.value = ''
       refreshSmartRoutingPreview()
       isEditing.value = false
@@ -156,6 +175,12 @@ export function useRuntimeSettings() {
         runtimeReleaseMinIntervalSeconds: runtimeReleaseMinIntervalSeconds.value,
         inferenceSmartRoutingEnabled: Boolean(inferenceSmartRoutingEnabled.value),
         inferenceSmartRoutingPoliciesJson: policyText,
+        skillDiscoveryTagMatchWeight: parseFloat01(skillDiscoveryTagMatchWeight.value, 0.3),
+        skillDiscoveryMinSemanticSimilarity: parseFloat01(
+          skillDiscoveryMinSemanticSimilarity.value,
+          0,
+        ),
+        skillDiscoveryMinHybridScore: parseFloat01(skillDiscoveryMinHybridScore.value, 0),
       })
       await loadConfig()
       if (policyText) {
@@ -643,6 +668,9 @@ export function useRuntimeSettings() {
     runtimeReleaseMinIntervalSeconds,
     inferenceSmartRoutingEnabled,
     inferenceSmartRoutingPoliciesJson,
+    skillDiscoveryTagMatchWeight,
+    skillDiscoveryMinSemanticSimilarity,
+    skillDiscoveryMinHybridScore,
     fillSmartRoutingTemplate,
     clearSmartRoutingPolicies,
     config,

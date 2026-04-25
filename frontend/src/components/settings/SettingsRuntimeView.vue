@@ -14,6 +14,7 @@ import {
   ScanSearch,
   Mic,
   Zap,
+  Search,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -67,6 +68,9 @@ const {
   runtimeReleaseMinIntervalSeconds,
   inferenceSmartRoutingEnabled,
   inferenceSmartRoutingPoliciesJson,
+  skillDiscoveryTagMatchWeight,
+  skillDiscoveryMinSemanticSimilarity,
+  skillDiscoveryMinHybridScore,
   fillSmartRoutingTemplate,
   clearSmartRoutingPolicies,
   upsertCanaryPolicy,
@@ -505,6 +509,73 @@ watch(
                     <option value="markdown">{{ t('settings.runtime.stream_format_markdown') }}</option>
                   </select>
                   <p class="text-xs text-muted-foreground">{{ t('settings.runtime.stream_format_desc') }}</p>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-5">
+                <div class="flex items-center gap-2">
+                  <Search class="w-4 h-4 text-muted-foreground" />
+                  <h3 class="text-sm font-semibold text-foreground">
+                    {{ t('settings.runtime.skill_discovery_title') }}
+                  </h3>
+                </div>
+                <p class="text-xs text-muted-foreground leading-relaxed">
+                  {{ t('settings.runtime.skill_discovery_desc') }}
+                </p>
+                <div class="grid gap-4 md:grid-cols-3">
+                  <div class="space-y-2">
+                    <label for="skill-discovery-tag-w" class="text-sm font-medium text-foreground">{{
+                      t('settings.runtime.skill_discovery_tag_weight')
+                    }}</label>
+                    <Input
+                      id="skill-discovery-tag-w"
+                      v-model.number="skillDiscoveryTagMatchWeight"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.skill_discovery_tag_weight_hint') }}
+                    </p>
+                  </div>
+                  <div class="space-y-2">
+                    <label for="skill-discovery-min-sem" class="text-sm font-medium text-foreground">{{
+                      t('settings.runtime.skill_discovery_min_semantic')
+                    }}</label>
+                    <Input
+                      id="skill-discovery-min-sem"
+                      v-model.number="skillDiscoveryMinSemanticSimilarity"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.skill_discovery_min_semantic_hint') }}
+                    </p>
+                  </div>
+                  <div class="space-y-2">
+                    <label for="skill-discovery-min-hyb" class="text-sm font-medium text-foreground">{{
+                      t('settings.runtime.skill_discovery_min_hybrid')
+                    }}</label>
+                    <Input
+                      id="skill-discovery-min-hyb"
+                      v-model.number="skillDiscoveryMinHybridScore"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.skill_discovery_min_hybrid_hint') }}
+                    </p>
+                  </div>
                 </div>
               </div>
               <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-5">

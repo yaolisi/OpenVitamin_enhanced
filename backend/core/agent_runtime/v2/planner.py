@@ -598,7 +598,12 @@ class Planner:
             return None
         try:
             from core.skills.discovery import get_discovery_engine
+            from core.skills.usage_store import record_skill_use
+
             engine = get_discovery_engine()
+            sd: Dict[str, Any] = {}
+            if isinstance((agent.model_params or {}).get("skill_discovery"), dict):
+                sd = (agent.model_params or {})["skill_discovery"]  # type: ignore[assignment]
             
             # 步骤 1: 向量检索获取候选（扩大范围）
             results = engine.search(
@@ -607,6 +612,9 @@ class Planner:
                 organization_id=context.get("organization_id"),
                 top_k=50,
                 filters={"enabled_only": True},
+                tag_match_weight=sd.get("tag_match_weight"),
+                min_semantic_similarity=sd.get("min_semantic_similarity"),
+                min_hybrid_score=sd.get("min_hybrid_score"),
             )
             
             # 过滤出 enabled_skills 内的候选
@@ -617,18 +625,33 @@ class Planner:
             
             # 步骤 2: 如果只有一个候选，直接返回
             if len(candidates) == 1:
-                logger.info(f"[Planner] Semantic discovery: single candidate {candidates[0].id}")
-                return candidates[0].id
+                pick = candidates[0].id
+                try:
+                    record_skill_use(
+                        str(context.get("user_id", "default")),
+                        pick,
+                    )
+                except Exception:
+                    pass
+                logger.info(f"[Planner] Semantic discovery: single candidate {pick}")
+                return pick
             
             # 步骤 3: 使用 LLM 选择最合适的 skill
             selected = await self._llm_select_skill(agent, user_input, candidates, context)
+            pick: Optional[str] = None
             if selected:
+                pick = selected
                 logger.info(f"[Planner] Semantic discovery: LLM selected {selected}")
-                return selected
-            
-            # 降级：返回第一个候选
-            logger.info(f"[Planner] Semantic discovery: fallback to first candidate {candidates[0].id}")
-            return candidates[0].id
+            else:
+                # 降级：返回第一个候选
+                pick = candidates[0].id
+                logger.info(f"[Planner] Semantic discovery: fallback to first candidate {pick}")
+            if pick:
+                try:
+                    record_skill_use(str(context.get("user_id", "default")), pick)
+                except Exception:
+                    pass
+            return pick
             
         except Exception as e:
             logger.warning(f"[Planner] Semantic discovery failed: {e}", exc_info=True)

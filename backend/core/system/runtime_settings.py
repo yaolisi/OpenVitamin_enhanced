@@ -24,6 +24,17 @@ def _get_int(key: str, fallback: int, min_val: int, max_val: int) -> int:
         return fallback
 
 
+def _get_float(key: str, fallback: float, min_val: float, max_val: float) -> float:
+    v = get_system_settings_store().get_setting(key)
+    if v is None:
+        return fallback
+    try:
+        n = float(v)
+        return max(min_val, min(max_val, n))
+    except (TypeError, ValueError):
+        return fallback
+
+
 def get_auto_unload_local_model_on_switch() -> bool:
     return _get_bool("autoUnloadLocalModelOnSwitch", getattr(settings, "auto_unload_local_model_on_switch", False))
 
@@ -81,3 +92,33 @@ def get_inference_smart_routing_policies_json() -> str:
     if value is None:
         value = getattr(settings, "inference_smart_routing_policies_json", "")
     return str(value or "")
+
+
+def get_skill_discovery_tag_match_weight() -> float:
+    """技能语义检索：标签匹配项在混合分中的权重（0–1），语义为 1 减该值。"""
+    return _get_float(
+        "skillDiscoveryTagMatchWeight",
+        float(getattr(settings, "skill_discovery_tag_match_weight", 0.3)),
+        0.0,
+        1.0,
+    )
+
+
+def get_skill_discovery_min_semantic_similarity() -> float:
+    """仅保留余弦相似度 ≥ 此值的候选项；0 表示不启用。"""
+    return _get_float(
+        "skillDiscoveryMinSemanticSimilarity",
+        float(getattr(settings, "skill_discovery_min_semantic_similarity", 0.0)),
+        0.0,
+        1.0,
+    )
+
+
+def get_skill_discovery_min_hybrid_score() -> float:
+    """混合分最低门槛；0 表示不启用。"""
+    return _get_float(
+        "skillDiscoveryMinHybridScore",
+        float(getattr(settings, "skill_discovery_min_hybrid_score", 0.0)),
+        0.0,
+        1.0,
+    )

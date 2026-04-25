@@ -63,6 +63,11 @@ const intentRules = ref<{keywords: string[], skills: string[], regex?: string}[]
 const newIntentRule = ref({ keywords: '', skills: [] as string[], regex: '' })
 // 运行时技能语义发现（model_params.use_skill_discovery）
 const useSkillDiscovery = ref(false)
+// 覆盖全局「运行时 → 技能语义发现」的阈值/权重（model_params.skill_discovery）
+const skillDiscoveryOverride = ref(false)
+const sdTagWeight = ref(0.3)
+const sdMinSemantic = ref(0)
+const sdMinHybrid = ref(0)
 
 
 // Loading and data states
@@ -358,7 +363,16 @@ const handleCreateAgent = async () => {
       // Intent Rules + 语义发现（仅 plan_based 时传 use_skill_discovery）：创建时仅设置 intent_rules 与 use_skill_discovery
       model_params: (intentRules.value.length > 0 || (executionMode.value === 'plan_based' && useSkillDiscovery.value)) ? {
         intent_rules: intentRules.value.filter(r => (r.keywords.length > 0 || r.regex) && r.skills.length > 0),
-        ...(executionMode.value === 'plan_based' ? { use_skill_discovery: useSkillDiscovery.value } : {})
+        ...(executionMode.value === 'plan_based' ? { use_skill_discovery: useSkillDiscovery.value } : {}),
+        ...(executionMode.value === 'plan_based' && useSkillDiscovery.value && skillDiscoveryOverride.value
+          ? {
+              skill_discovery: {
+                tag_match_weight: Math.min(1, Math.max(0, Number(sdTagWeight.value) || 0.3)),
+                min_semantic_similarity: Math.min(1, Math.max(0, Number(sdMinSemantic.value) || 0)),
+                min_hybrid_score: Math.min(1, Math.max(0, Number(sdMinHybrid.value) || 0)),
+              },
+            }
+          : {}),
       } : undefined
     }
 
@@ -879,6 +893,52 @@ onMounted(() => {
                     <p class="text-[10px] text-muted-foreground/60 -mt-1">
                       {{ t('agents.create.use_skill_discovery_desc') }}
                     </p>
+                    <div v-if="useSkillDiscovery" class="mt-2 space-y-2 rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
+                      <label class="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                        <input
+                          v-model="skillDiscoveryOverride"
+                          type="checkbox"
+                          class="h-3.5 w-3.5 rounded border-border bg-background text-purple-500"
+                        />
+                        <span>{{ t('agents.create.skill_discovery_override') }}</span>
+                      </label>
+                      <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.skill_discovery_override_desc') }}</p>
+                      <div v-if="skillDiscoveryOverride" class="grid gap-2 sm:grid-cols-3">
+                        <div>
+                          <label class="text-[10px] text-muted-foreground">{{ t('agents.create.sd_tag_weight') }}</label>
+                          <input
+                            v-model.number="sdTagWeight"
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                          />
+                        </div>
+                        <div>
+                          <label class="text-[10px] text-muted-foreground">{{ t('agents.create.sd_min_semantic') }}</label>
+                          <input
+                            v-model.number="sdMinSemantic"
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                          />
+                        </div>
+                        <div>
+                          <label class="text-[10px] text-muted-foreground">{{ t('agents.create.sd_min_hybrid') }}</label>
+                          <input
+                            v-model.number="sdMinHybrid"
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            class="w-full mt-0.5 px-2 py-1 text-xs rounded border border-border bg-background"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </template>
                   <p class="text-[10px] text-muted-foreground/60">
                     {{ t('agents.create.intent_rules_desc') }}

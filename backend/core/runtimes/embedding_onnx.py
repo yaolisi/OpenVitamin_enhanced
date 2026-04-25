@@ -14,15 +14,38 @@ except ImportError:
     HAS_ONNXRUNTIME = False
     ort = None
 
-# Transformers is optional
-try:
-    from transformers import AutoTokenizer
-    HAS_TRANSFORMERS = True
-except ImportError:
-    HAS_TRANSFORMERS = False
-    AutoTokenizer = None
+# Transformers 延迟加载：避免 import 本模块时拉取 transformers/torch（影响仅测 system API 等轻量用例、及 torch 与 Python 版本不匹时进程 Abort）。
+_TokenizerCls: Any = None
+_transformers_load_attempted: bool = False
+
+
+def _get_autotokenizer_class() -> Any:
+    global _TokenizerCls, _transformers_load_attempted
+    if _transformers_load_attempted:
+        return _TokenizerCls
+    _transformers_load_attempted = True
+    try:
+        from transformers import AutoTokenizer as _AT
+
+        _TokenizerCls = _AT
+    except Exception:
+        _TokenizerCls = None
+    return _TokenizerCls
+
+
+def has_transformers_for_embedding() -> bool:
+    """供工厂或诊断使用；首次调用会尝试加载 tokenizer 类。"""
+    return _get_autotokenizer_class() is not None
+
 
 from .base import EmbeddingRuntime
+
+
+def __getattr__(name: str) -> Any:
+    """延迟属性：HAS_TRANSFORMERS 在首次访问时再探测 transformers 是否可用。"""
+    if name == "HAS_TRANSFORMERS":
+        return has_transformers_for_embedding()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class OnnxEmbeddingRuntime(EmbeddingRuntime):
@@ -51,7 +74,8 @@ class OnnxEmbeddingRuntime(EmbeddingRuntime):
         self.pooling = pooling
         self.normalize = normalize
 
-        if not HAS_TRANSFORMERS:
+        AutoTokenizer = _get_autotokenizer_class()
+        if AutoTokenizer is None:
             raise RuntimeError(
                 "transformers is not installed. "
                 "Install it with: pip install transformers"

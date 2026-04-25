@@ -250,6 +250,13 @@ class Settings(BaseSettings):
     agent_plan_max_parallel_steps: int = 4
     # V2.9 按 runtime 类型的并发上限覆盖（JSON 对象，如 {"llama.cpp": 1, "ollama": 4}）。为空则使用代码默认 MODEL_RUNTIME_CONFIG。
     runtime_max_concurrency_overrides: str = ""
+
+    # 技能语义发现（SkillDiscoveryEngine）：混合排序中「标签匹配」权重，其余为语义余弦（两者之和为 1）
+    skill_discovery_tag_match_weight: float = 0.3
+    # 仅保留余弦相似度 >= 该值的候选（0 表示不启用下限过滤）
+    skill_discovery_min_semantic_similarity: float = 0.0
+    # 仅保留混合分 >= 该值的候选（0 表示不启用）
+    skill_discovery_min_hybrid_score: float = 0.0
     # model.json 备份根目录，为空则使用 backend/data/backups（与 DB 备份目录并列时其下为 model_json/）
     model_json_backup_directory: str = ""
     # model.json 定时全量快照：是否启用、每日执行时间（UTC，如 "02:00" 或 "02:00:00"）

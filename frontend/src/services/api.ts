@@ -1781,6 +1781,67 @@ export async function executeSkill(skillId: string, inputs: Record<string, unkno
   return response.json()
 }
 
+/** 与后端 SkillDefinition 对齐的轻量结构（发现接口返回） */
+export interface SkillDiscoveryItem {
+  id: string
+  name?: string
+  description?: string
+  visibility?: string
+  [key: string]: unknown
+}
+
+export async function skillDiscoverySearch(params: {
+  q: string
+  agentId: string
+  organizationId?: string | null
+  topK?: number
+  includeScores?: boolean
+}): Promise<{
+  object: string
+  data: SkillDiscoveryItem[] | Array<{ skill: SkillDiscoveryItem; semantic_score: number; tag_match_score: number; hybrid_score: number }>
+  defaults?: { tag_match_weight: number; min_semantic_similarity: number; min_hybrid_score: number }
+}> {
+  const usp = new URLSearchParams()
+  usp.set('q', params.q)
+  usp.set('agent_id', params.agentId)
+  if (params.organizationId) usp.set('organization_id', params.organizationId)
+  if (params.topK != null) usp.set('top_k', String(params.topK))
+  if (params.includeScores) usp.set('include_scores', 'true')
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/skill-discovery/search?${usp.toString()}`,
+    { method: 'GET' },
+  )
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(
+      (typeof err?.detail === 'string' ? err.detail : null) || `API error: ${response.statusText}`,
+    )
+  }
+  return response.json()
+}
+
+export async function skillDiscoveryRecommend(params: {
+  agentId: string
+  organizationId?: string | null
+  limit?: number
+}): Promise<{ object: string; data: SkillDiscoveryItem[] }> {
+  const usp = new URLSearchParams()
+  usp.set('agent_id', params.agentId)
+  if (params.organizationId) usp.set('organization_id', params.organizationId)
+  if (params.limit != null) usp.set('limit', String(params.limit))
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/skill-discovery/recommend?${usp.toString()}`,
+    { method: 'GET' },
+  )
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(
+      (typeof err?.detail === 'string' ? err.detail : null) || `API error: ${response.statusText}`,
+    )
+  }
+  return response.json()
+}
+
 export async function getSystemConfig(): Promise<SystemConfig> {
   const response = await apiFetch(`${API_BASE_URL}/api/system/config`, { method: 'GET' })
   if (!response.ok) throw new Error(`API error: ${response.statusText}`)

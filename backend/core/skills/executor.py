@@ -148,6 +148,14 @@ class SkillExecutor:
             
             # 5. 成功返回
             metrics.finalize()
+            try:
+                uid = (request.metadata or {}).get("user_id")
+                if uid:
+                    from core.skills.usage_store import record_skill_use
+
+                    record_skill_use(str(uid), definition.id)
+            except Exception:
+                pass
             return SkillExecutionResponse.success(
                 output=result,
                 trace_id=request.trace_id,

@@ -9,7 +9,13 @@ from core.skills.registry import SkillRegistry
 from core.skills.contract import SkillExecutionRequest, SkillExecutionResponse
 
 # 新增：Discovery & Scope 模块
-from core.skills.discovery import SkillDiscoveryEngine, get_discovery_engine, SkillVectorIndex
+from core.skills.discovery import (
+    SkillDiscoveryEngine,
+    SkillSearchHit,
+    SkillVectorIndex,
+    get_discovery_engine,
+)
+from core.skills.usage_store import record_skill_use, top_skills_for_user
 from core.skills.scope import SkillScopeResolver, SkillPermissionChecker
 from core.skills.embedding import EmbeddingService, MockEmbeddingService, LocalEmbeddingService, get_embedding_service
 
@@ -39,7 +45,10 @@ __all__ = [
     # Discovery & Semantic Search（新增）
     "SkillDiscoveryEngine",
     "get_discovery_engine",
+    "SkillSearchHit",
     "SkillVectorIndex",
+    "record_skill_use",
+    "top_skills_for_user",
     
     # Scope & Permission（新增）
     "SkillScopeResolver",

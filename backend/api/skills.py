@@ -3,10 +3,11 @@ Skill v1 FastAPI 接口：创建、列表、获取、执行。
 """
 from typing import Any, Dict, List, Optional, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from api.errors import raise_api_error
+from middleware.user_context import get_user_id
 from core.skills import create_skill, get_skill, list_skills, SkillExecutor, update_skill, delete_skill
 from core.skills.models import SkillType
 from core.skills.registry import SkillRegistry
@@ -144,9 +145,13 @@ async def api_delete_skill(skill_id: str) -> Dict[str, Any]:
 
 
 @router.post("/{skill_id}/execute")
-async def api_execute_skill(skill_id: str, body: ExecuteSkillBody) -> Dict[str, Any]:
+async def api_execute_skill(
+    request: Request, skill_id: str, body: ExecuteSkillBody
+) -> Dict[str, Any]:
     """执行 Skill（供 Agent Runtime 使用）。返回 type + output（及可选的 error / prompt）。"""
     from core.skills.contract import SkillExecutionRequest
+
+    user_id = get_user_id(request)
     
     skill = get_skill(skill_id)
     if not skill:
@@ -172,6 +177,7 @@ async def api_execute_skill(skill_id: str, body: ExecuteSkillBody) -> Dict[str, 
         input=body.inputs,
         trace_id=f"api_{skill_id}",
         caller_id="api",
+        metadata={"user_id": user_id} if user_id else {},
     )
     
     # 使用 SkillExecutor 统一入口执行
