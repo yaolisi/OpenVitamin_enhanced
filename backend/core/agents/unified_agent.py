@@ -8,8 +8,10 @@ from core.models.selector import get_model_selector
 from core.runtimes.factory import get_runtime_factory
 from core.models.descriptor import ModelDescriptor
 from core.runtime.queue.inference_queue import get_inference_queue_manager
+from core.runtime.queue.continuous_batcher import get_continuous_batcher
 from core.runtime.manager.model_instance_manager import get_model_instance_manager
 from core.runtime.manager.runtime_metrics import get_runtime_metrics
+from core.system.runtime_settings import get_continuous_batch_enabled
 from log import log_structured
 
 class UnifiedModelAgent(ModelAgent):
@@ -43,8 +45,15 @@ class UnifiedModelAgent(ModelAgent):
 
         # 3) 调用运行时（按模型并发限流）
         try:
-            async with self.runtime_factory.model_usage(descriptor.id):
-                text = await queue.run(runtime.chat(descriptor, req))
+            if get_continuous_batch_enabled():
+                text = await get_continuous_batcher().submit(
+                    model_id=descriptor.id,
+                    runtime_type=runtime_type,
+                    req=req,
+                )
+            else:
+                async with self.runtime_factory.model_usage(descriptor.id):
+                    text = await queue.run(runtime.chat(descriptor, req))
         except Exception:
             metrics.record_request_failed(descriptor.id)
             log_structured("RuntimeStabilization", "inference_error", level="error", model_id=descriptor.id, runtime=runtime_type)

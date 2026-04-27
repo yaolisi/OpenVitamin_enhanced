@@ -84,6 +84,9 @@ ALLOWED_SYSTEM_CONFIG_KEYS = {
     "inferencePriorityPanelHighSloCriticalRate",
     "inferencePriorityPanelHighSloWarningRate",
     "inferencePriorityPanelPreemptionCooldownBusyThreshold",
+    "continuousBatchEnabled",
+    "continuousBatchWaitMs",
+    "continuousBatchMaxSize",
     "skillDiscoveryTagMatchWeight",
     "skillDiscoveryMinSemanticSimilarity",
     "skillDiscoveryMinHybridScore",
@@ -208,6 +211,9 @@ class SystemConfigUpdate(BaseModel):
     inferencePriorityPanelHighSloCriticalRate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     inferencePriorityPanelHighSloWarningRate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     inferencePriorityPanelPreemptionCooldownBusyThreshold: Optional[int] = Field(default=None, ge=0, le=100000)
+    continuousBatchEnabled: Optional[bool] = None
+    continuousBatchWaitMs: Optional[int] = Field(default=None, ge=0, le=500)
+    continuousBatchMaxSize: Optional[int] = Field(default=None, ge=1, le=64)
     skillDiscoveryTagMatchWeight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     skillDiscoveryMinSemanticSimilarity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     skillDiscoveryMinHybridScore: Optional[float] = Field(default=None, ge=0.0, le=1.0)

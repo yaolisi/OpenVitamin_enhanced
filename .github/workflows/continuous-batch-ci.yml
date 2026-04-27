@@ -1,0 +1,166 @@
+name: Continuous Batch CI
+
+on:
+  push:
+    paths:
+      - "backend/scripts/continuous_batch_*.py"
+      - "backend/tests/test_continuous_batch_*.py"
+      - "Makefile"
+      - ".github/workflows/continuous-batch-ci.yml"
+  pull_request:
+    paths:
+      - "backend/scripts/continuous_batch_*.py"
+      - "backend/tests/test_continuous_batch_*.py"
+      - "Makefile"
+      - ".github/workflows/continuous-batch-ci.yml"
+  workflow_dispatch:
+    inputs:
+      run_gate:
+        description: "Run full cb-pipeline gate (requires reachable backend)"
+        required: false
+        default: "false"
+      gate_profile:
+        description: "Gate profile: strict | balanced | lenient"
+        required: false
+        default: "balanced"
+      base_url:
+        description: "Backend base URL for gate run"
+        required: false
+        default: "http://127.0.0.1:8000"
+      model:
+        description: "Model ID for gate run"
+        required: false
+        default: "ollama:deepseek-r1:32b"
+
+jobs:
+  cb-tests:
+    name: Continuous batch unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run continuous batch test suite
+        run: make cb-fast
+
+  cb-gate:
+    name: Continuous batch pipeline gate
+    if: github.event_name == 'workflow_dispatch' && inputs.run_gate == 'true'
+    runs-on: ubuntu-latest
+    needs: cb-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run continuous batch pipeline with gate
+        env:
+          API_KEY: ${{ secrets.OPENVITAMIN_API_KEY }}
+          API_KEY_HEADER: X-Api-Key
+        run: |
+          if [ -z "${API_KEY}" ]; then
+            echo "OPENVITAMIN_API_KEY is required for gate run"
+            exit 2
+          fi
+
+          PROFILE="${{ inputs.gate_profile }}"
+          MIN_THROUGHPUT_RATIO="1.5"
+          MAX_FIRST_RESPONSE_RATIO="0.3333"
+          MIN_SUCCESS_RATE="0.99"
+          if [ "$PROFILE" = "strict" ]; then
+            MIN_THROUGHPUT_RATIO="1.8"
+            MAX_FIRST_RESPONSE_RATIO="0.28"
+            MIN_SUCCESS_RATE="0.995"
+          elif [ "$PROFILE" = "lenient" ]; then
+            MIN_THROUGHPUT_RATIO="1.35"
+            MAX_FIRST_RESPONSE_RATIO="0.45"
+            MIN_SUCCESS_RATE="0.97"
+          fi
+
+          make cb-pipeline \
+            MODEL="${{ inputs.model }}" \
+            BASE_URL="${{ inputs.base_url }}" \
+            AUTO_TIER=1 \
+            AUTO_TRIAGE=1 \
+            MIN_THROUGHPUT_RATIO="${MIN_THROUGHPUT_RATIO}" \
+            MAX_FIRST_RESPONSE_RATIO="${MAX_FIRST_RESPONSE_RATIO}" \
+            MIN_SUCCESS_RATE="${MIN_SUCCESS_RATE}" \
+            API_KEY="${API_KEY}" \
+            API_KEY_HEADER="${API_KEY_HEADER}"
+
+      - name: Upload continuous batch artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: continuous-batch-pipeline-artifacts
+          path: |
+            backend/data/benchmarks/pipeline/**
+            backend/data/benchmarks/grid/**
+          if-no-files-found: warn
+
+      - name: Publish gate summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          summary_path = Path(".")
+          gate_files = sorted(summary_path.glob("backend/data/benchmarks/pipeline/**/gate-result.json"))
+          triage_files = sorted(summary_path.glob("backend/data/benchmarks/pipeline/**/triage.json"))
+          import os
+          ss_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          if not ss_path:
+              raise SystemExit(0)
+          out = []
+          out.append("## Continuous Batch Gate Summary")
+          if not gate_files:
+              out.append("- 未找到 gate-result.json")
+              Path(ss_path).write_text("\n".join(out), encoding="utf-8")
+              raise SystemExit(0)
+          gate = gate_files[-1]
+          out.append(f"- gate file: `{gate}`")
+          try:
+              gobj = json.loads(gate.read_text(encoding="utf-8"))
+          except Exception as e:
+              out.append(f"- gate parse error: `{e}`")
+              Path(ss_path).write_text("\n".join(out), encoding="utf-8")
+              raise SystemExit(0)
+          out.append(f"- gate ok: `{bool(gobj.get('ok', False))}`")
+          metrics = gobj.get("metrics", {}) if isinstance(gobj.get("metrics"), dict) else {}
+          thresholds = gobj.get("thresholds", {}) if isinstance(gobj.get("thresholds"), dict) else {}
+          out.append("- metrics:")
+          out.append(f"  - throughput_ratio: `{metrics.get('throughput_ratio')}` (min `{thresholds.get('min_throughput_ratio')}`)")
+          out.append(f"  - first_response_ratio: `{metrics.get('first_response_ratio')}` (max `{thresholds.get('max_first_response_ratio')}`)")
+          out.append(f"  - success_rate: `{metrics.get('success_rate')}` (min `{thresholds.get('min_success_rate')}`)")
+          checks = gobj.get("checks", [])
+          if isinstance(checks, list) and checks:
+              out.append("- checks:")
+              for c in checks[:8]:
+                  out.append(f"  - {c}")
+
+          if triage_files:
+              triage = triage_files[-1]
+              out.append(f"- triage file: `{triage}`")
+              try:
+                  tobj = json.loads(triage.read_text(encoding="utf-8"))
+                  out.append(f"- diagnosis: `{tobj.get('diagnosis', 'unknown')}`")
+                  actions = tobj.get("actions", [])
+                  if isinstance(actions, list) and actions:
+                      out.append("- actions:")
+                      for a in actions[:8]:
+                          out.append(f"  - {a}")
+              except Exception as e:
+                  out.append(f"- triage parse error: `{e}`")
+
+          Path(ss_path).write_text("\n".join(out), encoding="utf-8")
+          PY

@@ -268,6 +268,13 @@ class Settings(BaseSettings):
     agent_step_default_retry_interval_seconds: float = 1.0
     # V2.9 按 runtime 类型的并发上限覆盖（JSON 对象，如 {"llama.cpp": 1, "ollama": 4}）。为空则使用代码默认 MODEL_RUNTIME_CONFIG。
     runtime_max_concurrency_overrides: str = ""
+    # 连续动态批处理（非流式 chat）
+    continuous_batch_enabled: bool = True
+    continuous_batch_wait_ms: int = 12
+    continuous_batch_max_size: int = 8
+    # 异步 chat 任务查询缓存
+    async_chat_job_ttl_seconds: int = 1800
+    async_chat_job_max_entries: int = 2000
 
     # 技能语义发现（SkillDiscoveryEngine）：混合排序中「标签匹配」权重，其余为语义余弦（两者之和为 1）
     skill_discovery_tag_match_weight: float = 0.3

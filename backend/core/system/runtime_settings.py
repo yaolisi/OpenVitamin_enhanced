@@ -173,6 +173,28 @@ def get_inference_priority_panel_preemption_cooldown_busy_threshold() -> int:
     )
 
 
+def get_continuous_batch_enabled() -> bool:
+    return _get_bool("continuousBatchEnabled", getattr(settings, "continuous_batch_enabled", True))
+
+
+def get_continuous_batch_wait_ms() -> int:
+    return _get_int(
+        "continuousBatchWaitMs",
+        int(getattr(settings, "continuous_batch_wait_ms", 12)),
+        0,
+        500,
+    )
+
+
+def get_continuous_batch_max_size() -> int:
+    return _get_int(
+        "continuousBatchMaxSize",
+        int(getattr(settings, "continuous_batch_max_size", 8)),
+        1,
+        64,
+    )
+
+
 def get_skill_discovery_tag_match_weight() -> float:
     """技能语义检索：标签匹配项在混合分中的权重（0–1），语义为 1 减该值。"""
     return _get_float(

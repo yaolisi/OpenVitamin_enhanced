@@ -54,6 +54,13 @@ class ModelMetrics:
             "low": _default_priority_bucket(),
         }
     )
+    batch_requests: int = 0
+    batch_groups: int = 0
+    batch_items_total: int = 0
+    batch_wait_ms_total: float = 0.0
+    batch_wait_ms_max: float = 0.0
+    batch_native_groups: int = 0
+    batch_fallback_groups: int = 0
 
     @property
     def avg_latency_ms(self) -> float:
@@ -85,6 +92,16 @@ class ModelMetrics:
             "avg_latency_ms": round(self.avg_latency_ms, 2),
             "tokens_generated": self.tokens_generated,
             "queue_size": self.queue_size,
+            "batch": {
+                "requests": self.batch_requests,
+                "groups": self.batch_groups,
+                "avg_group_size": round((self.batch_items_total / self.batch_groups), 3) if self.batch_groups > 0 else 0.0,
+                "avg_wait_ms": round((self.batch_wait_ms_total / self.batch_groups), 3) if self.batch_groups > 0 else 0.0,
+                "max_wait_ms": round(self.batch_wait_ms_max, 3),
+                "native_groups": self.batch_native_groups,
+                "fallback_groups": self.batch_fallback_groups,
+                "native_ratio": round((self.batch_native_groups / self.batch_groups), 4) if self.batch_groups > 0 else 0.0,
+            },
             "by_priority": by_priority,
         }
 
@@ -171,6 +188,12 @@ class RuntimeMetrics:
             total_failed = 0
             total_latency_ms = 0.0
             total_tokens = 0
+            total_batch_requests = 0
+            total_batch_groups = 0
+            total_batch_wait_ms = 0.0
+            total_batch_wait_ms_max = 0.0
+            total_batch_native_groups = 0
+            total_batch_fallback_groups = 0
             for mid, m in self._by_model.items():
                 m.queue_size = self._queue_sizes.get(mid, 0)
                 models[mid] = m.to_dict()
@@ -178,6 +201,12 @@ class RuntimeMetrics:
                 total_failed += m.requests_failed
                 total_latency_ms += m.total_latency_ms
                 total_tokens += m.tokens_generated
+                total_batch_requests += m.batch_requests
+                total_batch_groups += m.batch_groups
+                total_batch_wait_ms += m.batch_wait_ms_total
+                total_batch_wait_ms_max = max(total_batch_wait_ms_max, m.batch_wait_ms_max)
+                total_batch_native_groups += m.batch_native_groups
+                total_batch_fallback_groups += m.batch_fallback_groups
             priority_summary = {
                 "high": _default_priority_bucket(),
                 "medium": _default_priority_bucket(),
@@ -216,6 +245,13 @@ class RuntimeMetrics:
                     "total_latency_ms": round(total_latency_ms, 2),
                     "total_tokens_generated": total_tokens,
                     "models_count": len(models),
+                    "batch_requests": total_batch_requests,
+                    "batch_groups": total_batch_groups,
+                    "batch_avg_group_size": round((total_batch_requests / total_batch_groups), 3) if total_batch_groups > 0 else 0.0,
+                    "batch_avg_wait_ms": round((total_batch_wait_ms / total_batch_groups), 3) if total_batch_groups > 0 else 0.0,
+                    "batch_max_wait_ms": round(total_batch_wait_ms_max, 3),
+                    "batch_native_groups": total_batch_native_groups,
+                    "batch_fallback_groups": total_batch_fallback_groups,
                 },
                 "by_priority_summary": priority_summary_out,
                 "by_model": models,
@@ -229,6 +265,31 @@ class RuntimeMetrics:
                 return None
             m.queue_size = self._queue_sizes.get(model_id, 0)
             return m.to_dict()
+
+    def record_batch_group(
+        self,
+        model_id: str,
+        *,
+        batch_size: int,
+        wait_ms: float,
+        native_batch: bool,
+    ) -> None:
+        if not model_id:
+            return
+        safe_batch_size = max(1, int(batch_size))
+        safe_wait_ms = max(0.0, float(wait_ms))
+        with self._lock:
+            m = self._by_model.setdefault(model_id, ModelMetrics(model_id=model_id))
+            m.batch_requests += safe_batch_size
+            m.batch_groups += 1
+            m.batch_items_total += safe_batch_size
+            m.batch_wait_ms_total += safe_wait_ms
+            m.batch_wait_ms_max = max(m.batch_wait_ms_max, safe_wait_ms)
+            if native_batch:
+                m.batch_native_groups += 1
+            else:
+                m.batch_fallback_groups += 1
+            m.queue_size = self._queue_sizes.get(model_id, 0)
 
 
 # Singleton for process-wide metrics

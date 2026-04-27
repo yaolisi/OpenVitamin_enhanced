@@ -28,6 +28,7 @@ from core.memory.memory_store import MemoryStore, MemoryStoreConfig
 from core.memory.memory_injector import MemoryInjector, MemoryInjectorConfig
 from core.memory.memory_extractor import MemoryExtractor, MemoryExtractorConfig
 from core.system.runtime_settings import get_auto_unload_local_model_on_switch
+from core.runtime.queue.async_chat_jobs import get_async_chat_job_manager
 
 router = APIRouter()
 
@@ -35,6 +36,18 @@ router = APIRouter()
 class ChatStreamResumeBody(BaseModel):
     stream_id: str = Field(..., min_length=8)
     chunk_index: int = Field(..., ge=0)
+
+
+class ChatAsyncSubmitResponse(BaseModel):
+    request_id: str
+    status: str
+
+
+class ChatAsyncResultResponse(BaseModel):
+    request_id: str
+    status: str
+    result: Optional[ChatCompletionResponse] = None
+    error: Optional[str] = None
 
 
 # 0. 确定统一数据库路径
@@ -1478,3 +1491,61 @@ async def chat_stream_resume(body: ChatStreamResumeBody, request: Request) -> St
     str_iter = _gen()
     out = gzip_async_str_iterator(str_iter) if use_gzip else str_iter
     return StreamingResponse(out, media_type="text/event-stream", headers=stream_headers)
+
+
+@router.post("/v1/chat/completions/async")
+async def chat_completions_async_submit(req: ChatCompletionRequest, request: Request) -> ChatAsyncSubmitResponse:
+    """
+    异步提交聊天请求：
+    - 立即返回 request_id
+    - 前端可通过查询接口轮询结果
+    """
+    if req.stream:
+        raise_api_error(status_code=400, code="chat_async_stream_not_supported", message="异步模式暂不支持 stream=true")
+
+    # 复制最小请求上下文，避免背景任务依赖已结束的连接对象。
+    headers = dict(request.headers)
+    state_obj = type("State", (), {})()
+
+    class _DetachedRequest:
+        def __init__(self, detached_headers: dict[str, str], detached_state: Any):
+            self.headers = detached_headers
+            self.state = detached_state
+
+        async def is_disconnected(self) -> bool:
+            await asyncio.sleep(0)
+            return False
+
+    detached_request = _DetachedRequest(headers, state_obj)
+
+    async def _runner() -> dict[str, Any]:
+        local_response = Response()
+        result = await chat_completions(req, detached_request, local_response)
+        if isinstance(result, StreamingResponse):
+            raise RuntimeError("unexpected streaming response in async submit")
+        return result.model_dump()
+
+    request_id = await get_async_chat_job_manager().submit(_runner)
+    return ChatAsyncSubmitResponse(request_id=request_id, status="queued")
+
+
+@router.get("/v1/chat/completions/async/{request_id}")
+async def chat_completions_async_result(request_id: str) -> ChatAsyncResultResponse:
+    """
+    查询异步聊天任务状态/结果。
+    """
+    job = await get_async_chat_job_manager().get(request_id)
+    if not job:
+        raise_api_error(status_code=404, code="chat_async_job_not_found", message="请求不存在或已过期")
+    result_obj: Optional[ChatCompletionResponse] = None
+    if isinstance(job.result, dict):
+        try:
+            result_obj = ChatCompletionResponse(**job.result)
+        except Exception:
+            result_obj = None
+    return ChatAsyncResultResponse(
+        request_id=job.request_id,
+        status=job.status,
+        result=result_obj,
+        error=job.error,
+    )
