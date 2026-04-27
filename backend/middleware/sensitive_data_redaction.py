@@ -4,6 +4,7 @@ Global request/response sensitive-data redaction middleware.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,6 +16,15 @@ from core.security.redaction import redact_payload
 from log import logger
 
 JSON_MEDIA_TYPE = "application/json"
+
+
+def _strip_body_length_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """重建响应体后丢弃旧的 Content-Length / Transfer-Encoding，避免长度与正文不一致。"""
+    out = dict(headers)
+    for key in list(out.keys()):
+        if key.lower() in ("content-length", "transfer-encoding"):
+            del out[key]
+    return out
 
 
 def _load_sensitive_tokens() -> list[str]:
@@ -80,7 +90,7 @@ class SensitiveDataRedactionMiddleware(BaseHTTPMiddleware):
             return Response(
                 content=body_bytes,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=_strip_body_length_headers(response.headers),
                 media_type=getattr(response, "media_type", None),
             )
 
@@ -95,6 +105,6 @@ class SensitiveDataRedactionMiddleware(BaseHTTPMiddleware):
         return Response(
             content=json.dumps(redacted_response, ensure_ascii=False),
             status_code=response.status_code,
-            headers=dict(response.headers),
+            headers=_strip_body_length_headers(response.headers),
             media_type=JSON_MEDIA_TYPE,
         )

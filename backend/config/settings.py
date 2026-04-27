@@ -44,7 +44,7 @@ def bootstrap_env_files(backend_dir: Path) -> None:
             from cryptography.fernet import Fernet
         except Exception as exc:
             raise RuntimeError(
-                "Encrypted env support requires python-dotenv[encrypted] / cryptography dependency"
+                "Encrypted env support requires the cryptography package (pip install cryptography)"
             ) from exc
         cipher = Fernet(encryption_key.encode("utf-8"))
         decrypted = cipher.decrypt(encrypted_file.read_bytes()).decode("utf-8")
@@ -90,10 +90,12 @@ def apply_production_security_defaults(s: "Settings") -> list[str]:
 
 def validate_production_security_guardrails(s: "Settings") -> list[str]:
     """
-    在生产模式（debug=False）下校验高危配置，返回违规项列表。
+    校验高危配置并返回违规项列表。
+    开发模式（debug=True）且 security_guardrails_strict=False 时跳过校验（便于本地宽松开发）；
+    其余情况执行校验；是否在启动时阻断由 main 中结合 debug / strict 决定。
     """
     issues: list[str] = []
-    if getattr(s, "debug", True):
+    if getattr(s, "debug", True) and not getattr(s, "security_guardrails_strict", True):
         return issues
 
     raw_roots = (getattr(s, "file_read_allowed_roots", "") or "").strip()

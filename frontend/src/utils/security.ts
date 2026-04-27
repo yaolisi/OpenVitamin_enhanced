@@ -39,7 +39,11 @@ export function getCookie(name: string): string | null {
     const part = rawPart.trim()
     if (part.startsWith(encodedName)) {
       const value = part.slice(encodedName.length)
-      return decodeURIComponent(value)
+      try {
+        return decodeURIComponent(value)
+      } catch {
+        return value
+      }
     }
   }
   return null

@@ -104,11 +104,19 @@ def _apply_security_baseline() -> None:
     if security_issues:
         for issue in security_issues:
             logger.error("[SecurityBaseline] BLOCKED: %s", issue)
-        if getattr(settings, "security_guardrails_strict", True):
+        strict = getattr(settings, "security_guardrails_strict", True)
+        debug_mode = getattr(settings, "debug", True)
+        if strict and not debug_mode:
             raise RuntimeError("Unsafe production security configuration. Refuse to start.")
-        logger.warning(
-            "[SecurityBaseline] security_guardrails_strict=False, continue startup with unsafe production settings."
-        )
+        if not strict:
+            logger.warning(
+                "[SecurityBaseline] security_guardrails_strict=False, continue startup with unsafe production settings."
+            )
+        elif debug_mode:
+            logger.warning(
+                "[SecurityBaseline] debug=True: guardrail violations logged above; startup continues "
+                "(set DEBUG=false for strict refusal)."
+            )
     if getattr(settings, "debug", True):
         return
     if (getattr(settings, "cors_allowed_origins", "") or "").strip() == "":

@@ -29,7 +29,8 @@ requests>=2.32.0
 anyio==4.12.1
 aiofiles==25.1.0
 redis>=5.0.0
-python-dotenv[encrypted]==1.2.1
+python-dotenv==1.2.1
+cryptography>=42.0.0
 
 # --- 系统与监控 ---
 psutil==7.2.1
