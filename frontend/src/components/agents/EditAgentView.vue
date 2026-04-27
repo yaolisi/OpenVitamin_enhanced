@@ -39,6 +39,7 @@ import {
   defaultPlanExecutionFormState,
   loadPlanExecutionFormFromModelParams,
 } from '@/utils/planExecutionConfig'
+import { TOOL_FAILURE_REFLECTION_MAX_PER_PLAN_RUN } from '@/constants/agentRuntime'
 
 const route = useRoute()
 const router = useRouter()
@@ -70,6 +71,8 @@ const planExecutionForm = reactive(defaultPlanExecutionFormState())
 // Intent Rules (通用配置：关键词/正则匹配 → Skill)
 const intentRules = ref<{keywords: string[], skills: string[], regex?: string}[]>([])
 const newIntentRule = ref({ keywords: '', skills: [] as string[], regex: '' })
+// 工具失败时反思建议（model_params.tool_failure_reflection，仅建议，不自动执行）
+const toolFailureReflection = ref(false)
 // 运行时技能语义发现（model_params.use_skill_discovery）
 const useSkillDiscovery = ref(false)
 const skillDiscoveryOverride = ref(false)
@@ -361,6 +364,10 @@ const fetchAgentData = async () => {
         (agent as { model_params?: Record<string, unknown> | null })?.model_params,
       ),
     )
+    const tfr = (modelParams as { tool_failure_reflection?: { enabled?: boolean } })?.tool_failure_reflection
+    toolFailureReflection.value = Boolean(
+      tfr && typeof tfr === 'object' && tfr.enabled === true,
+    )
   } catch (error) {
     console.error('Failed to fetch agent:', error)
     submitError.value = error instanceof Error ? error.message : 'Failed to load agent'
@@ -474,10 +481,16 @@ const handleUpdateAgent = async () => {
           } else {
             delete next.plan_execution
           }
+          if (toolFailureReflection.value) {
+            next.tool_failure_reflection = { enabled: true, mode: 'suggest_only' }
+          } else {
+            delete next.tool_failure_reflection
+          }
         } else {
           delete next.use_skill_discovery
           delete next.skill_discovery
           delete next.plan_execution
+          delete next.tool_failure_reflection
         }
         return next
       })(),
@@ -930,6 +943,23 @@ onMounted(async () => {
                 ></textarea>
                 <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.replan_prompt_desc') }}</p>
               </div>
+
+              <label
+                class="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none rounded-lg border border-purple-500/20 bg-muted/30 p-3"
+              >
+                <input
+                  v-model="toolFailureReflection"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 rounded border-border bg-background text-purple-500 focus:ring-purple-500/50"
+                />
+                <span>
+                  <span class="font-medium text-foreground">{{ t('agents.create.tool_failure_reflection') }}</span>
+                  <span class="block text-[10px] text-muted-foreground/70 mt-1">{{
+                    t('agents.create.tool_failure_reflection_desc', { max: TOOL_FAILURE_REFLECTION_MAX_PER_PLAN_RUN })
+                  }}</span>
+                </span>
+              </label>
+
               <div class="pt-2 border-t border-purple-500/20 space-y-3">
                 <div class="text-xs font-medium text-foreground/90">{{ t('agents.create.plan_execution_title') }}</div>
                 <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.plan_execution_desc') }}</p>

@@ -31,6 +31,7 @@ import {
   Wrench,
   Share2,
   ExternalLink,
+  Lightbulb,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -608,6 +609,11 @@ const currentStepDesc = computed(() => {
 })
 
 // Calculate latency from traces (average of LLM request durations)
+/** 当前会话追踪中是否包含「工具失败·反思」步骤（suggest_only） */
+const hasReflectionInTrace = computed(() =>
+  (traces.value || []).some((e) => e.event_type === 'reflection_suggestion'),
+)
+
 const sessionLatency = computed(() => {
   if (!traces.value || traces.value.length === 0) return null
   const llmTraces = traces.value.filter(t => t.event_type === 'llm_request' && t.duration_ms)
@@ -1489,6 +1495,13 @@ watch(() => {
             <p class="text-xs text-muted-foreground leading-relaxed font-medium">
               {{ t('agents.execution.current_step') }}: <span class="text-foreground font-semibold">{{ currentStepDesc }}</span>
             </p>
+            <div
+              v-if="hasReflectionInTrace && session?.session_id"
+              class="flex items-start gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-[11px] leading-relaxed text-amber-950 dark:text-amber-50/95"
+            >
+              <Lightbulb class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <span>{{ t('agents.execution.reflection_trace_hint') }}</span>
+            </div>
             <Button
               variant="outline"
               class="w-full h-10 rounded-xl bg-card border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all gap-2 text-xs font-bold shadow-sm hover:shadow-md"

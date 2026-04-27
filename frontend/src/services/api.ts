@@ -1478,6 +1478,31 @@ export type {
   PlanExecutionFormState,
 } from '@/utils/planExecutionConfig'
 
+/**
+ * 与后端 `model_params["tool_failure_reflection"]` 一致：技能步骤失败时额外生成建议（不自动修复）。
+ * @see `core/agent_runtime/reflection/tool_failure_suggest.py`
+ */
+export interface ToolFailureReflectionConfig {
+  enabled?: boolean
+  mode?: 'suggest_only'
+}
+
+/**
+ * Trace 中 `event_type === 'reflection_suggestion'` 的 `output_data` 常见字段（与后端 `executor_v2` + `tool_failure_suggest` 一致）。
+ */
+export interface ToolFailureReflectionOutputPayload {
+  mode?: 'suggest_only'
+  error_category?: unknown
+  likely_cause?: unknown
+  suggested_next_steps?: string[]
+  parameter_hints?: unknown
+  notes?: unknown
+  parse_error?: boolean
+  raw_text_excerpt?: string
+  reflection_index?: number
+  max_reflections_per_run?: number
+}
+
 export interface AgentDefinition {
   agent_id: string
   name: string
@@ -1500,6 +1525,9 @@ export interface AgentDefinition {
   max_replan_count?: number
   on_failure_strategy?: string
   replan_prompt?: string
+  /**
+   * 与后端 `AgentDefinition.model_params` 一致；可含 `plan_execution`（见 `PlanExecutionConfig`）、`tool_failure_reflection`（见 `ToolFailureReflectionConfig`）等。
+   */
   model_params?: Record<string, any>
 }
 
@@ -1534,7 +1562,7 @@ export interface CreateAgentRequest {
   /** V2.3: Contract source keys in priority order */
   plan_contract_sources?: string[]
   /**
-   * model_params 中的 plan_execution 结构见 `PlanExecutionConfig`（`@/utils/planExecutionConfig` 与后端合并逻辑一致）。
+   * `plan_execution` 见 `PlanExecutionConfig`；`tool_failure_reflection` 见 `ToolFailureReflectionConfig`（与后端合并逻辑一致）。
    */
   model_params?: Record<string, any>
 }

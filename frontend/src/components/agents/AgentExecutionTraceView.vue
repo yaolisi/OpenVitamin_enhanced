@@ -15,6 +15,7 @@ import {
   AlertCircle,
   ChevronRight,
   Loader2,
+  Lightbulb,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -166,7 +167,12 @@ const generateDagDiagram = async () => {
     id: `step${index + 1}`,
     name: getStepName(event, index),
     type: event.event_type,
-    status: event.event_type === 'error' ? 'failed' : 'completed',
+    status:
+      event.event_type === 'error'
+        ? 'failed'
+        : event.event_type === 'reflection_suggestion'
+          ? 'suggestion'
+          : 'completed',
   }))
 
   console.log('[DAG] Built steps:', steps.map(s => s.name))
@@ -178,6 +184,7 @@ const generateDagDiagram = async () => {
   mermaidDef += '  classDef completed fill:#dcfce7,stroke:#16a34a,color:#166534\n'
   mermaidDef += '  classDef failed fill:#fee2e2,stroke:#dc2626,color:#991b1b\n'
   mermaidDef += '  classDef running fill:#dbeafe,stroke:#2563eb,color:#1e40af\n'
+  mermaidDef += '  classDef suggestion fill:#fef3c7,stroke:#d97706,color:#92400e\n'
   mermaidDef += '  classDef default fill:#f3f4f6,stroke:#9ca3af,color:#374151\n'
   // Arrow styling for better visibility
   mermaidDef += '  linkStyle default stroke:#94a3b8,stroke-width:2px\n\n'
@@ -185,7 +192,8 @@ const generateDagDiagram = async () => {
   // Add nodes
   steps.forEach((step, index) => {
     const nodeId = `S${index + 1}`
-    const statusClass = step.status === 'failed' ? 'failed' : 'completed'
+    const statusClass =
+      step.status === 'failed' ? 'failed' : step.status === 'suggestion' ? 'suggestion' : 'completed'
     const shortName = step.name.length > 20 ? step.name.substring(0, 20) + '...' : step.name
     mermaidDef += `  ${nodeId}["${index + 1}. ${shortName}"]:::${statusClass}\n`
   })
@@ -287,6 +295,7 @@ function getStepTypeLabel(event: AgentTraceEvent): string {
   }
   if (event.event_type === 'llm_request') return t('agents.trace.step_type_llm')
   if (event.event_type === 'error') return t('agents.trace.step_type_error')
+  if (event.event_type === 'reflection_suggestion') return t('agents.trace.step_type_reflection')
   if (event.event_type === 'final_answer') return t('agents.trace.step_type_llm')
   return event.event_type ? t('agents.trace.step_type_step') : t('agents.trace.step_type_step')
 }
@@ -300,6 +309,15 @@ function getStepName(event: AgentTraceEvent, index: number): string {
   }
   if (event.event_type === 'llm_request') return index === 0 ? t('agents.trace.step_planning') : t('agents.trace.step_synthesis')
   if (event.event_type === 'error') return t('agents.trace.step_error')
+  if (event.event_type === 'reflection_suggestion') {
+    const sid =
+      event.tool_id ||
+      (event.input_data && typeof event.input_data === 'object'
+        ? (event.input_data as Record<string, unknown>).skill_id
+        : undefined)
+    if (typeof sid === 'string' && sid) return `${t('agents.trace.step_reflection')} · ${getToolName(sid)}`
+    return t('agents.trace.step_reflection')
+  }
   if (event.event_type === 'final_answer') return t('agents.trace.step_synthesis')
   if (skillOrToolId) return getToolName(skillOrToolId)
   return event.event_type || t('agents.trace.step_index', { n: index + 1 })
@@ -314,6 +332,7 @@ function getStepDuration(event: AgentTraceEvent): string {
 }
 
 function isStepCompleted(event: AgentTraceEvent): boolean {
+  if (event.event_type === 'reflection_suggestion') return true
   return event.event_type !== 'error' && (event.output_data != null || event.event_type === 'final_answer')
 }
 
@@ -326,6 +345,7 @@ const selectedStepStatus = computed(() => {
   const e = selectedEvent.value
   if (!e) return t('agents.trace.n_a')
   if (e.event_type === 'error') return t('agents.trace.detail_error')
+  if (e.event_type === 'reflection_suggestion') return t('agents.trace.detail_reflection')
   return t('agents.trace.detail_success')
 })
 
@@ -389,6 +409,35 @@ const errorMessage = computed(() => {
   return e?.input_data ? String(e.input_data) : null
 })
 
+/** reflection_suggestion 步骤的 output_data（结构化建议） */
+const selectedReflection = computed((): Record<string, unknown> | null => {
+  const e = selectedEvent.value
+  if (!e || e.event_type !== 'reflection_suggestion' || e.output_data == null) return null
+  if (typeof e.output_data === 'object' && !Array.isArray(e.output_data)) {
+    return e.output_data as Record<string, unknown>
+  }
+  return null
+})
+
+const reflectionSuggestedSteps = computed((): string[] => {
+  const o = selectedReflection.value
+  const raw = o?.suggested_next_steps
+  if (Array.isArray(raw)) {
+    return raw.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+  }
+  return []
+})
+
+const reflectionRunMeta = computed((): string => {
+  const o = selectedReflection.value
+  if (!o) return ''
+  const n = o.reflection_index
+  const m = o.max_reflections_per_run
+  if (n == null || m == null) return ''
+  void locale.value
+  return `${t('agents.trace.reflection_run_index', { n })} · ${t('agents.trace.reflection_run_cap', { max: m })}`
+})
+
 function goBack() {
   router.push({ name: 'agents-run', params: { id: agentId }, query: { session: sessionId.value } })
 }
@@ -425,7 +474,7 @@ async function copyOutputJson() {
   } catch (_) {}
 }
 
-const TRACE_VERSION = 'V1.0.4'
+const TRACE_VERSION = 'V1.0.5'
 </script>
 
 <template>
@@ -535,7 +584,11 @@ const TRACE_VERSION = 'V1.0.4'
                   selectedStepIndex === idx ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground',
                 ]"
               >
-                <Check v-if="isStepCompleted(event)" class="w-4 h-4 text-emerald-500" />
+                <Lightbulb
+                  v-if="event.event_type === 'reflection_suggestion'"
+                  class="w-4 h-4 text-amber-600"
+                />
+                <Check v-else-if="isStepCompleted(event)" class="w-4 h-4 text-emerald-500" />
                 <Zap v-else-if="selectedStepIndex === idx" class="w-4 h-4" />
                 <Wrench v-else-if="event.event_type === 'tool_call' || event.event_type === 'skill_call'" class="w-4 h-4" />
                 <FileText v-else class="w-4 h-4" />
@@ -579,6 +632,10 @@ const TRACE_VERSION = 'V1.0.4'
               <div class="flex items-center gap-2 text-xs">
                 <div class="w-3 h-3 rounded bg-emerald-100 border border-emerald-500"></div>
                 <span class="text-muted-foreground">{{ t('agents.trace.legend_completed') }}</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-3 h-3 rounded bg-amber-100 border border-amber-600"></div>
+                <span class="text-muted-foreground">{{ t('agents.trace.legend_suggestion') }}</span>
               </div>
               <div class="flex items-center gap-2 text-xs">
                 <div class="w-3 h-3 rounded bg-red-100 border border-red-500"></div>
@@ -637,8 +694,12 @@ const TRACE_VERSION = 'V1.0.4'
                   {{ t('agents.trace.status') }}
                 </div>
                 <div class="flex items-center gap-2">
+                  <Lightbulb
+                    v-if="selectedEvent.event_type === 'reflection_suggestion'"
+                    class="w-5 h-5 text-amber-600 shrink-0"
+                  />
                   <Check
-                    v-if="selectedEvent.event_type !== 'error'"
+                    v-else-if="selectedEvent.event_type !== 'error'"
                     class="w-5 h-5 text-emerald-500 shrink-0"
                   />
                   <AlertCircle v-else class="w-5 h-5 text-destructive shrink-0" />
@@ -658,6 +719,75 @@ const TRACE_VERSION = 'V1.0.4'
                 <span class="text-sm font-mono text-foreground">{{ methodDisplay }}</span>
               </div>
             </div>
+
+            <!-- Tool failure reflection (suggest_only) -->
+            <section
+              v-if="selectedEvent.event_type === 'reflection_suggestion' && selectedReflection"
+              class="space-y-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-6"
+            >
+              <div class="flex items-start gap-3">
+                <Lightbulb class="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h3 class="text-sm font-bold text-foreground">{{ t('agents.trace.reflection_advisory_title') }}</h3>
+                  <p class="text-xs text-muted-foreground mt-1">{{ t('agents.trace.reflection_advisory_hint') }}</p>
+                  <p
+                    v-if="reflectionRunMeta"
+                    class="text-[10px] font-mono text-muted-foreground/90 mt-2"
+                  >
+                    {{ reflectionRunMeta }}
+                  </p>
+                </div>
+              </div>
+              <p
+                v-if="selectedReflection.parse_error"
+                class="text-sm text-amber-800 dark:text-amber-200/90"
+              >
+                {{ t('agents.trace.reflection_parse_error') }}
+              </p>
+              <div v-if="selectedReflection.error_category" class="space-y-1">
+                <div class="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                  {{ t('agents.trace.reflection_category') }}
+                </div>
+                <p class="text-sm font-mono text-foreground">{{ String(selectedReflection.error_category) }}</p>
+              </div>
+              <div v-if="selectedReflection.likely_cause" class="space-y-1">
+                <div class="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                  {{ t('agents.trace.reflection_likely_cause') }}
+                </div>
+                <p class="text-sm text-foreground whitespace-pre-wrap">{{ String(selectedReflection.likely_cause) }}</p>
+              </div>
+              <div v-if="reflectionSuggestedSteps.length" class="space-y-2">
+                <div class="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                  {{ t('agents.trace.reflection_suggested_next') }}
+                </div>
+                <ol class="list-decimal list-inside space-y-1 text-sm text-foreground">
+                  <li v-for="(line, ri) in reflectionSuggestedSteps" :key="ri">{{ line }}</li>
+                </ol>
+              </div>
+              <div
+                v-if="selectedReflection.parameter_hints != null && typeof selectedReflection.parameter_hints === 'object'"
+                class="space-y-1"
+              >
+                <div class="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                  {{ t('agents.trace.reflection_parameter_hints') }}
+                </div>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/50 p-3">{{
+                  JSON.stringify(selectedReflection.parameter_hints, null, 2)
+                }}</pre>
+              </div>
+              <div v-if="selectedReflection.notes" class="space-y-1">
+                <div class="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                  {{ t('agents.trace.reflection_notes') }}
+                </div>
+                <p class="text-sm text-muted-foreground whitespace-pre-wrap">{{ String(selectedReflection.notes) }}</p>
+              </div>
+              <div v-if="selectedReflection.raw_text_excerpt" class="space-y-1">
+                <div class="text-[10px] font-black text-muted-foreground uppercase tracking-wider">raw_text_excerpt</div>
+                <pre class="text-xs font-mono whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/50 p-3">{{
+                  String(selectedReflection.raw_text_excerpt)
+                }}</pre>
+              </div>
+            </section>
 
             <!-- JSON Input -->
             <section class="space-y-2">

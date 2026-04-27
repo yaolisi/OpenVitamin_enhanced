@@ -20,7 +20,8 @@ import {
   Database,
   SearchCode,
   Binary,
-  Trash2
+  Trash2,
+  Lightbulb
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,6 +45,8 @@ const selectedModelFamily = ref<string>('all')
 const selectedStatus = ref<string>('all')
 const selectedRag = ref<string>('all')
 const selectedTool = ref<string>('all')
+/** 工具失败反思建议 model_params.tool_failure_reflection */
+const selectedReflection = ref<string>('all')
 
 
 // Extract model family from model name or ID
@@ -165,6 +168,10 @@ const fetchAgents = async (showLoading = true) => {
       const hasPython = effectiveSkills.some((id: string) => id.includes('python') || id === 'builtin_python.run')
       // Display list: builtin_* -> tool name, else skill id (for badges & filter)
       const tools = effectiveSkills.map((s: string) => s.startsWith('builtin_') ? s.slice(8) : s)
+      const mp = agent.model_params && typeof agent.model_params === 'object' ? agent.model_params as Record<string, unknown> : null
+      const tfr = mp?.tool_failure_reflection
+      const toolFailureReflection =
+        Boolean(tfr && typeof tfr === 'object' && (tfr as { enabled?: boolean }).enabled === true)
       return ({
       id: agent.agent_id,
       name: agent.name,
@@ -176,6 +183,7 @@ const fetchAgents = async (showLoading = true) => {
       runtime_label: runtimeLabelForBackend(runtimeBackend),
       rag_count: agent.rag_ids?.length || 0,
       tools,
+      tool_failure_reflection: toolFailureReflection,
       icon: hasWeb ? Globe : (hasPython ? Code2 : Bot),
       color: hasWeb ? 'blue' : (hasPython ? 'orange' : 'indigo')
       })
@@ -285,6 +293,12 @@ const filteredAgents = computed(() => {
   // Filter by tool
   if (selectedTool.value !== 'all') {
     result = result.filter(agent => agent.tools?.includes(selectedTool.value))
+  }
+
+  if (selectedReflection.value === 'on') {
+    result = result.filter((agent) => agent.tool_failure_reflection === true)
+  } else if (selectedReflection.value === 'off') {
+    result = result.filter((agent) => !agent.tool_failure_reflection)
   }
   
   // Filter by search query
@@ -416,8 +430,20 @@ const handleDeleteAgent = async (agentId: string, agentName: string) => {
         </SelectContent>
       </Select>
 
+      <Select v-model="selectedReflection">
+        <SelectTrigger class="w-[150px] h-9 bg-muted border-border rounded-md text-xs">
+          <span class="text-muted-foreground mr-1">{{ t('agents.filters.reflection') }}:</span>
+          <SelectValue :placeholder="t('agents.filters.all')" />
+        </SelectTrigger>
+        <SelectContent class="bg-card border-border">
+          <SelectItem value="all">{{ t('agents.filters.all') }}</SelectItem>
+          <SelectItem value="on">{{ t('agents.filters.reflection_on') }}</SelectItem>
+          <SelectItem value="off">{{ t('agents.filters.reflection_off') }}</SelectItem>
+        </SelectContent>
+      </Select>
+
       <button 
-        @click="selectedModelFamily = 'all'; selectedStatus = 'all'; selectedRag = 'all'; selectedTool = 'all'; searchQuery = ''"
+        @click="selectedModelFamily = 'all'; selectedStatus = 'all'; selectedRag = 'all'; selectedTool = 'all'; selectedReflection = 'all'; searchQuery = ''"
         class="text-xs font-medium text-muted-foreground/60 hover:text-foreground transition-colors ml-2"
       >
         {{ t('agents.filters.clear_all') }}
@@ -442,9 +468,19 @@ const handleDeleteAgent = async (agentId: string, agentName: string) => {
                 <h3 class="text-xl font-bold text-foreground group-hover:text-blue-500 transition-colors cursor-pointer" @click="handleRunAgent(agent.id)">{{ agent.name }}</h3>
               </div>
             </div>
-            <Badge :class="['px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest border', getStatusColor(agent.status)]">
-              {{ agent.status === 'RUNNING' ? t('agents.status.running') : (agent.status === 'READY' ? t('agents.status.ready') : t('agents.status.error')) }}
-            </Badge>
+            <div class="flex flex-col items-end gap-1.5">
+              <Badge :class="['px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest border', getStatusColor(agent.status)]">
+                {{ agent.status === 'RUNNING' ? t('agents.status.running') : (agent.status === 'READY' ? t('agents.status.ready') : t('agents.status.error')) }}
+              </Badge>
+              <Badge
+                v-if="agent.tool_failure_reflection"
+                variant="outline"
+                class="px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 gap-1"
+              >
+                <Lightbulb class="w-3 h-3" />
+                {{ t('agents.card.reflection_badge') }}
+              </Badge>
+            </div>
           </div>
 
           <!-- Description -->

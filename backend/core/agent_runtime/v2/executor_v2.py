@@ -975,6 +975,13 @@ class PlanBasedExecutor:
             complete_log.output_data = {"error": step.error}
         
         trace.add_log(complete_log)
+        await self._maybe_record_tool_failure_reflection(
+            step=step,
+            context=context,
+            trace=trace,
+            parent_step_id=parent_step_id,
+            depth=depth,
+        )
         log_structured(
             "PlanBasedExecutor", "step_finished",
             step_id=step.step_id, status=step.status.value if hasattr(step.status, "value") else str(step.status),
@@ -982,6 +989,104 @@ class PlanBasedExecutor:
         )
         
         return step
+
+    async def _maybe_record_tool_failure_reflection(
+        self,
+        step: Step,
+        context: Dict[str, Any],
+        trace: ExecutionTrace,
+        parent_step_id: Optional[str],
+        depth: int,
+    ) -> None:
+        """技能步骤失败时，可选地追加 LLM 建议（suggest_only，不修改执行结果）。"""
+        if not step.error:
+            return
+        executor_type = step.executor if isinstance(step.executor, ExecutorType) else ExecutorType(step.executor)
+        if executor_type != ExecutorType.SKILL:
+            return
+        if step.type != StepType.ATOMIC:
+            return
+        agent = context.get("agent")
+        if not agent:
+            return
+        from core.agent_runtime.reflection.tool_failure_suggest import (
+            MAX_REFLECTIONS_PER_PLAN_RUN,
+            run_tool_failure_suggestion,
+            tool_failure_reflection_enabled,
+        )
+        if not tool_failure_reflection_enabled(agent):
+            return
+        state = context.get("state")
+        if state is not None and hasattr(state, "runtime_state"):
+            n_done = int(state.runtime_state.get("tool_failure_reflection_count") or 0)
+            if n_done >= MAX_REFLECTIONS_PER_PLAN_RUN:
+                log_structured(
+                    "PlanBasedExecutor",
+                    "tool_failure_reflection_skipped_limit",
+                    step_id=step.step_id,
+                    count=n_done,
+                    max_per_run=MAX_REFLECTIONS_PER_PLAN_RUN,
+                )
+                return
+        session = context.get("session")
+        current_plan = context.get("current_plan")
+        plan_goal = ""
+        if current_plan is not None and hasattr(current_plan, "goal"):
+            plan_goal = str(getattr(current_plan, "goal", "") or "")
+        try:
+            payload = await run_tool_failure_suggestion(
+                agent=agent,
+                session=session,
+                step=step,
+                plan_goal=plan_goal,
+            )
+        except Exception as e:
+            logger.warning(f"[PlanBasedExecutor] tool_failure_reflection failed: {e}")
+            return
+        if not payload:
+            return
+        n_before = 0
+        if state is not None and hasattr(state, "runtime_state"):
+            n_before = int(state.runtime_state.get("tool_failure_reflection_count") or 0)
+        idx = n_before + 1
+        if isinstance(payload, dict):
+            payload = {
+                **payload,
+                "reflection_index": idx,
+                "max_reflections_per_run": MAX_REFLECTIONS_PER_PLAN_RUN,
+            }
+        if step.outputs is None:
+            step.outputs = {}
+        if isinstance(step.outputs, dict):
+            step.outputs = {**step.outputs, "reflection_suggestion": payload}
+        refl = StepLog(
+            step_id=step.step_id,
+            parent_step_id=parent_step_id,
+            depth=depth,
+            event_type="reflection_suggestion",
+            input_data={
+                "for_step_id": step.step_id,
+                "skill_id": (step.inputs or {}).get("skill_id") if isinstance(step.inputs, dict) else None,
+            },
+            output_data=payload,
+        )
+        skill_for_trace = (step.inputs or {}).get("skill_id") if isinstance(step.inputs, dict) else None
+        if skill_for_trace:
+            refl.tool_id = skill_for_trace
+        trace.add_log(refl)
+        log_structured(
+            "PlanBasedExecutor",
+            "tool_failure_reflection_recorded",
+            step_id=step.step_id,
+            agent_id=getattr(agent, "agent_id", "") or "",
+            skill_id=skill_for_trace or "",
+            session_id=getattr(session, "session_id", "") if session is not None else "",
+        )
+        if state is not None and hasattr(state, "set_runtime"):
+            state.set_runtime(
+                "tool_failure_reflection_count",
+                int(state.runtime_state.get("tool_failure_reflection_count") or 0) + 1,
+            )
 
     async def _execute_atomic(
         self,

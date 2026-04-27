@@ -38,6 +38,7 @@ import {
   buildPlanExecutionPayload,
   defaultPlanExecutionFormState,
 } from '@/utils/planExecutionConfig'
+import { TOOL_FAILURE_REFLECTION_MAX_PER_PLAN_RUN } from '@/constants/agentRuntime'
 import { useSystemMetrics } from '@/composables/useSystemMetrics'
 
 // Form State
@@ -67,6 +68,8 @@ const planExecutionForm = reactive(defaultPlanExecutionFormState())
 // Intent Rules (通用配置：关键词/正则匹配 → Skill)
 const intentRules = ref<{keywords: string[], skills: string[], regex?: string}[]>([])
 const newIntentRule = ref({ keywords: '', skills: [] as string[], regex: '' })
+// 工具失败时反思建议（model_params.tool_failure_reflection，仅计划模式）
+const toolFailureReflection = ref(false)
 // 运行时技能语义发现（model_params.use_skill_discovery）
 const useSkillDiscovery = ref(false)
 // 覆盖全局「运行时 → 技能语义发现」的阈值/权重（model_params.skill_discovery）
@@ -371,6 +374,7 @@ const handleCreateAgent = async () => {
           (r) => (r.keywords.length > 0 || r.regex) && r.skills.length > 0,
         )
         const useSd = executionMode.value === 'plan_based' && useSkillDiscovery.value
+        const useTfr = executionMode.value === 'plan_based' && toolFailureReflection.value
         const pe: Record<string, string | number> = {}
         if (executionMode.value === 'plan_based') {
           const built = buildPlanExecutionPayload(planExecutionForm)
@@ -379,7 +383,7 @@ const handleCreateAgent = async () => {
           }
         }
         const hasPe = Object.keys(pe).length > 0
-        if (!hasIntent && !useSd && !hasPe) return undefined
+        if (!hasIntent && !useSd && !hasPe && !useTfr) return undefined
         return {
           ...(hasIntent
             ? {
@@ -399,6 +403,7 @@ const handleCreateAgent = async () => {
               }
             : {}),
           ...(hasPe ? { plan_execution: pe } : {}),
+          ...(useTfr ? { tool_failure_reflection: { enabled: true, mode: 'suggest_only' as const } } : {}),
         }
       })(),
     }
@@ -892,6 +897,22 @@ onMounted(() => {
                     ></textarea>
                     <p class="text-[10px] text-muted-foreground/60">{{ t('agents.create.replan_prompt_desc') }}</p>
                   </div>
+
+                  <label
+                    class="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none rounded-lg border border-purple-500/20 bg-muted/30 p-3"
+                  >
+                    <input
+                      v-model="toolFailureReflection"
+                      type="checkbox"
+                      class="mt-0.5 h-4 w-4 rounded border-border bg-background text-purple-500 focus:ring-purple-500/50"
+                    />
+                    <span>
+                      <span class="font-medium text-foreground">{{ t('agents.create.tool_failure_reflection') }}</span>
+                      <span class="block text-[10px] text-muted-foreground/70 mt-1">{{
+                    t('agents.create.tool_failure_reflection_desc', { max: TOOL_FAILURE_REFLECTION_MAX_PER_PLAN_RUN })
+                  }}</span>
+                    </span>
+                  </label>
 
                   <div class="pt-2 border-t border-purple-500/20 space-y-3">
                     <div class="text-xs font-medium text-foreground/90">{{ t('agents.create.plan_execution_title') }}</div>

@@ -122,7 +122,8 @@ class CreateAgentRequest(BaseModel):
             "Model parameters: intent_rules, skill_param_extractors, use_skill_discovery (bool), "
             "skill_discovery (object: tag_match_weight, min_semantic_similarity, min_hybrid_score for runtime discovery), "
             "plan_execution (object: max_parallel_in_group, default_timeout_seconds, default_max_retries, "
-            "default_retry_interval_seconds, default_on_timeout_strategy for PlanBasedExecutor), etc."
+            "default_retry_interval_seconds, default_on_timeout_strategy for PlanBasedExecutor), "
+            "tool_failure_reflection (object: enabled bool, mode suggest_only), etc."
         ),
     )
     # V3: Plan → Graph → Kernel（与 model_params.execution_strategy 二选一亦可，显式字段优先由服务端合并逻辑处理）
@@ -222,6 +223,43 @@ def _validate_kernel_opts_consistency(
                 code="agent_kernel_opts_max_parallel_conflict",
                 message="max_parallel_nodes conflicts: top-level and model_params disagree; align or remove one.",
             )
+
+
+def _validate_model_params_tool_failure_reflection(model_params: Optional[Dict[str, Any]]) -> None:
+    """校验 model_params.tool_failure_reflection 形状（与 agent_runtime 反思模块一致）。"""
+    if not model_params:
+        return
+    raw = model_params.get("tool_failure_reflection")
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        raise_api_error(
+            status_code=400,
+            code="agent_invalid_tool_failure_reflection",
+            message="model_params.tool_failure_reflection must be a JSON object",
+            details={"field": "model_params.tool_failure_reflection"},
+        )
+    for key in raw:
+        if key not in ("enabled", "mode"):
+            raise_api_error(
+                status_code=400,
+                code="agent_invalid_tool_failure_reflection",
+                message="model_params.tool_failure_reflection only allows keys: enabled, mode",
+                details={"invalid_key": key},
+            )
+    if "enabled" in raw and raw["enabled"] is not None and not isinstance(raw["enabled"], bool):
+        raise_api_error(
+            status_code=400,
+            code="agent_invalid_tool_failure_reflection",
+            message="model_params.tool_failure_reflection.enabled must be a boolean",
+        )
+    mode = raw.get("mode")
+    if mode is not None and str(mode).strip() and str(mode).strip().lower() != "suggest_only":
+        raise_api_error(
+            status_code=400,
+            code="agent_invalid_tool_failure_reflection",
+            message="model_params.tool_failure_reflection.mode must be suggest_only or omitted",
+        )
 
 
 def _apply_response_mode(
@@ -427,6 +465,7 @@ async def create_agent(req: CreateAgentRequest) -> Any:
     model_params = _apply_response_mode(req.model_params, req.response_mode, enabled_skills)
     _validate_execution_strategy_field(req.execution_strategy)
     _validate_kernel_opts_consistency(req.execution_strategy, req.max_parallel_nodes, model_params)
+    _validate_model_params_tool_failure_reflection(model_params)
 
     agent = AgentDefinition(
         agent_id=agent_id,
@@ -540,6 +579,7 @@ async def update_agent(agent_id: str, req: CreateAgentRequest) -> Any:
     )
     _validate_execution_strategy_field(exec_strategy)
     _validate_kernel_opts_consistency(exec_strategy, max_parallel, model_params)
+    _validate_model_params_tool_failure_reflection(model_params)
 
     agent = AgentDefinition(
         agent_id=agent_id,

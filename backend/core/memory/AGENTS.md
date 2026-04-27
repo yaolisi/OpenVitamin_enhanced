@@ -68,6 +68,7 @@ Memory 模块负责 **长期记忆（Long-term Memory）与中期记忆（Summar
 - 推理生成（由 ModelAgent 负责）
 - Tool 调用逻辑
 - UI 展示细节
+- **Agent 轨迹中的「工具失败·反思」建议**（`reflection_suggestion` 等）—— 其为运行时可观测性/诊断输出，**默认不写入**长期记忆；若未来要沉淀，需单独提取管线与用户同意策略
 
 ---
 
