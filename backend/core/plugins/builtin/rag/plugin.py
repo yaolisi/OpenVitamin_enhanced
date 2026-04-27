@@ -56,6 +56,18 @@ class RAGPlugin(Plugin):
                         "description": "可选，支持多个知识库同时检索"
                     },
                     "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
+                    "retrieval_mode": {
+                        "type": "string",
+                        "default": "hybrid",
+                        "enum": ["vector", "hybrid"],
+                        "description": "检索模式：vector=纯向量，hybrid=关键词+向量+重排序"
+                    },
+                    "keyword_top_k": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+                    "vector_top_k": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+                    "rerank_top_k": {"type": "integer", "default": 10, "minimum": 1, "maximum": 100},
+                    "min_relevance_score": {"type": "number", "default": 0.5, "minimum": 0, "maximum": 1},
+                    "version_id": {"type": "string"},
+                    "version_label": {"type": "string"},
                     # 注意：score_threshold 实际是 distance 阈值（max_distance）
                     # embedding 默认 L2 normalize，常见距离范围约 0~2
                     "score_threshold": {"type": "number", "default": 1.2, "minimum": 0, "maximum": 2},
@@ -149,12 +161,24 @@ class RAGPlugin(Plugin):
             return {"messages": messages}
 
         top_k = rag_config.get("top_k", 5)
+        retrieval_mode = rag_config.get("retrieval_mode", "hybrid")
+        keyword_top_k = rag_config.get("keyword_top_k", max(top_k * 2, 10))
+        vector_top_k = rag_config.get("vector_top_k", max(top_k * 2, 10))
+        rerank_top_k = rag_config.get("rerank_top_k", top_k)
+        min_relevance_score = float(rag_config.get("min_relevance_score", 0.5))
+        version_id = rag_config.get("version_id")
+        version_label = rag_config.get("version_label")
+        if not version_id and version_label and kb_ids:
+            version_id = context.knowledge_base_store.resolve_kb_version_id(
+                kb_id=kb_ids[0],
+                version_label=version_label,
+            )
         score_threshold = rag_config.get("score_threshold", 1.2)
 
         if context.logger:
             context.logger.info(
                 f"[RAGPlugin] Processing RAG request: kb_ids={kb_ids}, top_k={top_k}, "
-                f"score_threshold={score_threshold}"
+                f"mode={retrieval_mode}, score_threshold={score_threshold}"
             )
 
         # 1. Context-Aware Query Extraction: 结合上下文生成检索 Query
@@ -226,15 +250,29 @@ class RAGPlugin(Plugin):
                 context.logger.error(f"[RAGPlugin] Failed to embed query: {e}")
             return {"messages": messages}
 
-        # 向量检索 (支持多库)
+        # 多阶段检索（hybrid）或纯向量检索（vector）
         chunks = []
         try:
-            chunks = context.knowledge_base_store.search_chunks_multi_kb(
-                knowledge_base_ids=kb_ids,
-                query_embedding=query_embedding,
-                limit=top_k,
-                max_distance=score_threshold,
-            )
+            if retrieval_mode == "hybrid":
+                chunks = context.knowledge_base_store.hybrid_search_chunks_multi_kb(
+                    knowledge_base_ids=kb_ids,
+                    query_text=query_text,
+                    query_embedding=query_embedding,
+                    keyword_limit=keyword_top_k,
+                    vector_limit=vector_top_k,
+                    rerank_limit=rerank_top_k,
+                    min_relevance_score=min_relevance_score,
+                    max_distance=score_threshold,
+                    version_id=version_id,
+                )
+            else:
+                chunks = context.knowledge_base_store.search_chunks_multi_kb(
+                    knowledge_base_ids=kb_ids,
+                    query_embedding=query_embedding,
+                    limit=top_k,
+                    max_distance=score_threshold,
+                    version_id=version_id,
+                )
         except Exception as e:
             if context.logger:
                 context.logger.error(f"[RAGPlugin] Vector search failed: {e}")
@@ -264,6 +302,7 @@ class RAGPlugin(Plugin):
             kb_ids=kb_ids,
             top_k=top_k,
             chunks=chunks,
+            version_id=version_id,
         )
 
         if not chunks:
@@ -285,6 +324,15 @@ class RAGPlugin(Plugin):
         # 为了安全，我们使用保守的默认值，并允许通过配置调整
         max_context_tokens = rag_config.get("max_context_tokens", 2000)
         context_text = self._build_context(chunks, max_context_tokens=max_context_tokens)
+        graph_context = self._build_graph_context(
+            context=context,
+            kb_ids=kb_ids,
+            query_text=query_text,
+            top_k=3,
+            version_id=version_id,
+        )
+        if graph_context:
+            context_text = f"{context_text}\n\nKnowledge Graph Facts:\n{graph_context}" if context_text else graph_context
 
         # 4. Merge: 合并到 messages (优化合并策略)
         enhanced_messages = self._merge_context(messages, context_text)
@@ -304,6 +352,35 @@ class RAGPlugin(Plugin):
                 "trace_id": trace_id,  # 返回 trace_id 供 chat.py 使用
             }
         }
+
+    def _build_graph_context(
+        self,
+        context: PluginContext,
+        kb_ids: List[str],
+        query_text: str,
+        top_k: int = 3,
+        version_id: Optional[str] = None,
+    ) -> str:
+        facts: List[str] = []
+        for kb_id in kb_ids:
+            try:
+                rows = context.knowledge_base_store.search_graph_relations(
+                    kb_id=kb_id,
+                    query_text=query_text,
+                    limit=top_k,
+                    version_id=version_id,
+                )
+                for row in rows:
+                    s = row.get("source_entity", "")
+                    r = row.get("relation", "")
+                    t = row.get("target_entity", "")
+                    if s and r and t:
+                        facts.append(f"- {s} {r} {t}")
+            except Exception:
+                continue
+        if not facts:
+            return ""
+        return "\n".join(facts[:top_k])
 
     def _extract_context_aware_query(self, messages: List[Dict[str, Any]], max_length: int = 512) -> str:
         """
@@ -461,6 +538,7 @@ class RAGPlugin(Plugin):
         kb_ids: List[str],
         top_k: int,
         chunks: List[Dict[str, Any]],
+        version_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         记录 RAG Trace 的检索阶段
@@ -498,6 +576,7 @@ class RAGPlugin(Plugin):
                 vector_store="sqlite-vec",
                 top_k=top_k,
                 user_id=user_id,
+                version_id=version_id,
             )
             
             # 添加 chunks

@@ -65,11 +65,16 @@ class RAGTraceStore:
                         vector_store TEXT NOT NULL,
                         top_k INTEGER NOT NULL,
                         retrieved_count INTEGER NOT NULL DEFAULT 0,
+                        version_id TEXT,
                         injected_token_count INTEGER,
                         finalized BOOLEAN NOT NULL DEFAULT 0,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                try:
+                    conn.execute("ALTER TABLE rag_traces ADD COLUMN version_id TEXT")
+                except sqlite3.OperationalError:
+                    pass
                 
                 # 2. 创建 rag_trace_chunks 表
                 conn.execute("""
@@ -117,6 +122,7 @@ class RAGTraceStore:
         vector_store: str,
         top_k: int,
         user_id: str = "default",
+        version_id: Optional[str] = None,
     ) -> str:
         """
         创建 RAG Trace
@@ -133,11 +139,11 @@ class RAGTraceStore:
             conn.execute("""
                 INSERT INTO rag_traces (
                     id, session_id, message_id, rag_id, rag_type,
-                    query, embedding_model, vector_store, top_k, user_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    query, embedding_model, vector_store, top_k, user_id, version_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 trace_id, session_id, message_id, rag_id, rag_type,
-                query, embedding_model, vector_store, top_k, user_id
+                query, embedding_model, vector_store, top_k, user_id, version_id
             ))
             conn.commit()
         
@@ -294,6 +300,7 @@ class RAGTraceStore:
                 "vector_store": trace["vector_store"],
                 "top_k": trace["top_k"],
                 "retrieved_count": trace["retrieved_count"],
+                "version_id": trace["version_id"],
                 "injected_token_count": trace["injected_token_count"],
                 "finalized": bool(trace["finalized"]),
                 "created_at": trace["created_at"],
@@ -336,6 +343,7 @@ class RAGTraceStore:
                 "vector_store": trace["vector_store"],
                 "top_k": trace["top_k"],
                 "retrieved_count": trace["retrieved_count"],
+                "version_id": trace["version_id"],
                 "injected_token_count": trace["injected_token_count"],
                 "finalized": bool(trace["finalized"]),
                 "created_at": trace["created_at"],

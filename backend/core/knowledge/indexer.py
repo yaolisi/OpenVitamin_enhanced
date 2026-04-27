@@ -8,7 +8,10 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 import uuid
 import asyncio
+import re
+import json
 from log import logger
+from config.settings import settings
 from core.knowledge.document_parser import DocumentParser, ParsedDocument
 from core.knowledge.chunker import Chunker
 from core.knowledge.knowledge_base_store import KnowledgeBaseStore
@@ -56,6 +59,7 @@ class KnowledgeBaseIndexer:
         doc_id: str,
         file_path: Path,
         doc_type: Optional[str] = None,
+        version_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         索引文档（完整流程）
@@ -75,7 +79,15 @@ class KnowledgeBaseIndexer:
         except RuntimeError as e:
             if "no running event loop" not in str(e).lower():
                 raise
-        return asyncio.run(self.index_document_async(kb_id=kb_id, doc_id=doc_id, file_path=file_path, doc_type=doc_type))
+        return asyncio.run(
+            self.index_document_async(
+                kb_id=kb_id,
+                doc_id=doc_id,
+                file_path=file_path,
+                doc_type=doc_type,
+                version_id=version_id,
+            )
+        )
 
     async def index_document_async(
         self,
@@ -83,6 +95,7 @@ class KnowledgeBaseIndexer:
         doc_id: str,
         file_path: Path,
         doc_type: Optional[str] = None,
+        version_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """异步索引文档（Embed 通过 Inference Gateway）"""
         result = {
@@ -165,6 +178,7 @@ class KnowledgeBaseIndexer:
                     self.kb_store._ensure_vec_table_dimension(kb_id, actual_dim)
             
             # 存储到 sqlite-vec
+            resolved_version_id = version_id or self.kb_store.ensure_default_kb_version(kb_id)
             for chunk, embedding in zip(chunks, embeddings):
                 try:
                     self.kb_store.insert_chunk(
@@ -173,10 +187,21 @@ class KnowledgeBaseIndexer:
                         chunk_id=chunk.chunk_id,
                         content=chunk.text,
                         embedding=embedding,
+                        version_id=resolved_version_id,
                     )
                 except Exception as e:
                     logger.error(f"[Indexer] Failed to insert chunk {chunk.chunk_id}: {e}", exc_info=True)
                     raise
+
+            # 5. 抽取知识图谱关系（轻量规则版）
+            triples = await self._extract_triples([chunk.text for chunk in chunks])
+            if triples:
+                self.kb_store.upsert_graph_triples(
+                    kb_id=kb_id,
+                    triples=triples,
+                    source_doc_id=doc_id,
+                    version_id=resolved_version_id,
+                )
             
             result["status"] = DocumentStatus.INDEXED
             logger.info(f"[Indexer] Successfully indexed document {doc_id}: {len(chunks)} chunks")
@@ -190,3 +215,89 @@ class KnowledgeBaseIndexer:
                 result["status"] = DocumentStatus.FAILED_EMBED
         
         return result
+
+    async def _extract_triples(self, chunk_texts: list[str]) -> list[dict[str, Any]]:
+        llm_triples = await self._extract_triples_with_llm(chunk_texts=chunk_texts)
+        if llm_triples:
+            return llm_triples
+        return self._extract_triples_from_chunks(chunk_texts)
+
+    async def _extract_triples_with_llm(self, chunk_texts: list[str]) -> list[dict[str, Any]]:
+        if not chunk_texts:
+            return []
+        try:
+            sample_text = "\n".join(chunk_texts[:3])[:2500]
+            prompt = (
+                "请从以下文本中抽取知识三元组，返回 JSON 数组，每项格式为 "
+                "{\"source\":\"实体A\",\"relation\":\"关系\",\"target\":\"实体B\",\"confidence\":0.0-1.0}。"
+                "只返回 JSON，不要解释。\n\n"
+                f"文本：\n{sample_text}"
+            )
+            client = get_inference_client()
+            resp = await client.generate(
+                model=settings.default_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=500,
+                metadata={"caller": "KnowledgeBaseIndexer.extract_triples"},
+            )
+            text = resp.text
+            if not isinstance(text, str) or not text.strip():
+                return []
+            parsed = json.loads(text.strip())
+            if isinstance(parsed, list):
+                out = []
+                for item in parsed:
+                    if not isinstance(item, dict):
+                        continue
+                    s = str(item.get("source", "")).strip()
+                    r = str(item.get("relation", "")).strip()
+                    t = str(item.get("target", "")).strip()
+                    if s and r and t:
+                        out.append(
+                            {
+                                "source": s,
+                                "relation": r,
+                                "target": t,
+                                "confidence": float(item.get("confidence", 0.6)),
+                            }
+                        )
+                return out
+        except Exception:
+            return []
+        return []
+
+    def _extract_triples_from_chunks(self, chunk_texts: list[str]) -> list[dict[str, Any]]:
+        triples: list[dict[str, Any]] = []
+        # 模式示例：OpenVINO 是 Intel 开发的 AI 推理框架
+        pattern_is_developed = re.compile(
+            r"(?P<subject>[\w\u4e00-\u9fff-]{2,})\s*是\s*(?P<object>[\w\u4e00-\u9fff-]{2,})\s*开发的",
+            re.IGNORECASE,
+        )
+        # 模式示例：X 属于 Y
+        pattern_belongs = re.compile(
+            r"(?P<subject>[\w\u4e00-\u9fff-]{2,})\s*属于\s*(?P<object>[\w\u4e00-\u9fff-]{2,})",
+            re.IGNORECASE,
+        )
+        for text in chunk_texts:
+            if not text:
+                continue
+            for match in pattern_is_developed.finditer(text):
+                triples.append(
+                    {
+                        "source": match.group("object"),
+                        "relation": "开发",
+                        "target": match.group("subject"),
+                        "confidence": 0.72,
+                    }
+                )
+            for match in pattern_belongs.finditer(text):
+                triples.append(
+                    {
+                        "source": match.group("subject"),
+                        "relation": "属于",
+                        "target": match.group("object"),
+                        "confidence": 0.68,
+                    }
+                )
+        return triples

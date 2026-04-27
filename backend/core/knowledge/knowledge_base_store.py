@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -134,6 +135,8 @@ class KnowledgeBaseStore:
                         chunks_count INTEGER DEFAULT 0,
                         file_path TEXT,
                         error_message TEXT,
+                        content_hash TEXT,
+                        current_version_id TEXT,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         user_id TEXT DEFAULT 'default',
@@ -165,7 +168,20 @@ class KnowledgeBaseStore:
                 except sqlite3.OperationalError:
                     pass
                 try:
+                    conn.execute("ALTER TABLE document ADD COLUMN content_hash TEXT")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE document ADD COLUMN current_version_id TEXT")
+                except sqlite3.OperationalError:
+                    pass
+                try:
                     conn.execute("ALTER TABLE document ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+                except sqlite3.OperationalError:
+                    pass
+                # 若统一表已存在，尽量补齐 version_id 字段用于按版本检索隔离
+                try:
+                    conn.execute(f"ALTER TABLE {UNIFIED_CHUNKS_TABLE} ADD COLUMN version_id TEXT")
                 except sqlite3.OperationalError:
                     pass
 
@@ -173,6 +189,72 @@ class KnowledgeBaseStore:
                 conn.execute("""
                     CREATE INDEX IF NOT EXISTS idx_document_kb_id 
                     ON document(knowledge_base_id);
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS knowledge_base_version (
+                        id TEXT PRIMARY KEY,
+                        knowledge_base_id TEXT NOT NULL,
+                        version_label TEXT NOT NULL,
+                        status TEXT DEFAULT 'ACTIVE',
+                        notes TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_base(id)
+                    );
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_kb_version_kb_id
+                    ON knowledge_base_version(knowledge_base_id, created_at DESC);
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS document_version (
+                        id TEXT PRIMARY KEY,
+                        document_id TEXT NOT NULL,
+                        knowledge_base_id TEXT NOT NULL,
+                        version_id TEXT NOT NULL,
+                        content_hash TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (document_id) REFERENCES document(id),
+                        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_base(id),
+                        FOREIGN KEY (version_id) REFERENCES knowledge_base_version(id)
+                    );
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_doc_version_doc
+                    ON document_version(document_id, created_at DESC);
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS kb_graph_entity (
+                        id TEXT PRIMARY KEY,
+                        knowledge_base_id TEXT NOT NULL,
+                        version_id TEXT,
+                        name TEXT NOT NULL,
+                        entity_type TEXT DEFAULT 'generic',
+                        source_doc_id TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_base(id)
+                    );
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_kb_graph_entity_kb
+                    ON kb_graph_entity(knowledge_base_id, version_id, name);
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS kb_graph_relation (
+                        id TEXT PRIMARY KEY,
+                        knowledge_base_id TEXT NOT NULL,
+                        version_id TEXT,
+                        source_entity TEXT NOT NULL,
+                        relation TEXT NOT NULL,
+                        target_entity TEXT NOT NULL,
+                        confidence REAL DEFAULT 0.5,
+                        source_doc_id TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_base(id)
+                    );
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_kb_graph_rel_kb
+                    ON kb_graph_relation(knowledge_base_id, version_id, source_entity, relation);
                 """)
 
                 # 4. 尝试启用 sqlite-vec（不再创建全局表，改为按知识库创建独立表）
@@ -546,6 +628,7 @@ class KnowledgeBaseStore:
         file_path: Optional[str] = None,
         status: str = "UPLOADED",
         user_id: str = "default",
+        content_hash: Optional[str] = None,
     ) -> str:
         """
         创建文档记录
@@ -567,9 +650,9 @@ class KnowledgeBaseStore:
 
         with self._connect() as conn:
             conn.execute("""
-                INSERT INTO document (id, knowledge_base_id, source, doc_type, status, file_path, user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (doc_id, knowledge_base_id, source, doc_type, status, file_path, user_id))
+                INSERT INTO document (id, knowledge_base_id, source, doc_type, status, file_path, user_id, content_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (doc_id, knowledge_base_id, source, doc_type, status, file_path, user_id, content_hash))
             conn.commit()
 
         logger.debug(f"[KnowledgeBaseStore] Created document: {doc_id} with status {status}")
@@ -793,6 +876,17 @@ class KnowledgeBaseStore:
         except Exception:
             return False
 
+    def _unified_table_has_version_id(self) -> bool:
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM pragma_table_info(?) WHERE name = ?",
+                    (UNIFIED_CHUNKS_TABLE, "version_id"),
+                ).fetchone()
+                return row is not None
+        except Exception:
+            return False
+
     def insert_chunk(
         self,
         knowledge_base_id: str,
@@ -801,6 +895,7 @@ class KnowledgeBaseStore:
         content: str,
         embedding: List[float],
         metadata: Optional[Dict[str, Any]] = None,
+        version_id: Optional[str] = None,
     ) -> None:
         """
         插入 embedding chunk（优先使用统一表 embedding_chunks + kb_chunks_vec）。
@@ -815,7 +910,18 @@ class KnowledgeBaseStore:
                 if not provider.is_available():
                     raise RuntimeError("Vector search provider is not available")
                 with self._connect() as conn:
-                    if self._unified_table_has_metadata_json() and metadata is not None:
+                    has_meta = self._unified_table_has_metadata_json()
+                    has_version_id = self._unified_table_has_version_id()
+                    if has_meta and metadata is not None and has_version_id:
+                        conn.execute(
+                            f"""
+                            INSERT INTO {UNIFIED_CHUNKS_TABLE}
+                            (knowledge_base_id, document_id, chunk_id, content, metadata_json, version_id)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (knowledge_base_id, document_id, chunk_id, content, json.dumps(metadata), version_id),
+                        )
+                    elif has_meta and metadata is not None:
                         conn.execute(
                             f"""
                             INSERT INTO {UNIFIED_CHUNKS_TABLE}
@@ -823,6 +929,15 @@ class KnowledgeBaseStore:
                             VALUES (?, ?, ?, ?, ?)
                             """,
                             (knowledge_base_id, document_id, chunk_id, content, json.dumps(metadata)),
+                        )
+                    elif has_version_id:
+                        conn.execute(
+                            f"""
+                            INSERT INTO {UNIFIED_CHUNKS_TABLE}
+                            (knowledge_base_id, document_id, chunk_id, content, version_id)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (knowledge_base_id, document_id, chunk_id, content, version_id),
                         )
                     else:
                         conn.execute(
@@ -869,6 +984,7 @@ class KnowledgeBaseStore:
         query_embedding: List[float],
         limit: int = 5,
         max_distance: Optional[float] = None,
+        version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         向量检索（Top-K）。优先使用统一表 + VectorSearchProvider。
@@ -882,7 +998,10 @@ class KnowledgeBaseStore:
                         table_name=UNIFIED_VEC_TABLE,
                         query_vector=query_embedding,
                         limit=limit,
-                        filters={"knowledge_base_id": knowledge_base_id},
+                        filters={
+                            **({"knowledge_base_id": knowledge_base_id}),
+                            **({"version_id": version_id} if version_id and self._unified_table_has_version_id() else {}),
+                        },
                         business_table=UNIFIED_CHUNKS_TABLE,
                     )
                     if not results:
@@ -890,17 +1009,20 @@ class KnowledgeBaseStore:
                     rowids = [int(r) for _, r in results]
                     placeholders = ",".join(["?"] * len(rowids))
                     has_meta = self._unified_table_has_metadata_json()
+                    has_ver_col = self._unified_table_has_version_id()
                     meta_col = ", c.metadata_json" if has_meta else ""
+                    ver_col = ", c.version_id" if has_ver_col else ""
+                    ver_where = " AND c.version_id = ?" if version_id and has_ver_col else ""
                     with self._connect() as conn:
                         rows = conn.execute(
                             f"""
-                            SELECT c.id, c.content, c.document_id, c.chunk_id, c.knowledge_base_id{meta_col},
+                            SELECT c.id, c.content, c.document_id, c.chunk_id, c.knowledge_base_id{meta_col}{ver_col},
                                    d.source as doc_source, d.doc_type
                             FROM {UNIFIED_CHUNKS_TABLE} c
                             LEFT JOIN document d ON d.id = c.document_id
-                            WHERE c.id IN ({placeholders}) AND c.knowledge_base_id = ?
+                            WHERE c.id IN ({placeholders}) AND c.knowledge_base_id = ? {ver_where}
                             """,
-                            tuple(rowids) + (knowledge_base_id,),
+                            tuple(rowids) + ((knowledge_base_id, version_id) if version_id and has_ver_col else (knowledge_base_id,)),
                         ).fetchall()
                     rowid_to_row = {r["id"]: r for r in rows}
                     out = []
@@ -912,6 +1034,7 @@ class KnowledgeBaseStore:
                                 "distance": float(distance),
                                 "document_id": r["document_id"],
                                 "chunk_id": r["chunk_id"],
+                                "version_id": (r["version_id"] if has_ver_col else None),
                                 "doc_source": r["doc_source"],
                                 "doc_type": r["doc_type"],
                             }
@@ -971,6 +1094,7 @@ class KnowledgeBaseStore:
         query_embedding: List[float],
         limit: int = 5,
         max_distance: Optional[float] = None,
+        version_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """多知识库向量检索。统一表下按 kb 分别检索后合并排序取 top limit。"""
         if not knowledge_base_ids:
@@ -986,6 +1110,7 @@ class KnowledgeBaseStore:
                         query_embedding=query_embedding,
                         limit=per_kb,
                         max_distance=max_distance,
+                        version_id=version_id,
                     )
                     for r in part:
                         r["knowledge_base_id"] = kb_id
@@ -1091,6 +1216,185 @@ class KnowledgeBaseStore:
                 results = [r for r in results if r["distance"] <= max_distance]
             
             return results
+
+    def search_chunks_keyword_multi_kb(
+        self,
+        knowledge_base_ids: List[str],
+        query_text: str,
+        limit: int = 10,
+        version_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        关键词检索（轻量 BM25-like）。优先走统一表，按 token 命中数与覆盖率排序。
+        该实现不依赖 sqlite FTS，避免环境差异导致不可用。
+        """
+        if not knowledge_base_ids:
+            return []
+        tokens = self._tokenize_query(query_text)
+        if not tokens:
+            return []
+
+        if self._use_unified_chunks_table():
+            placeholders_kb = ",".join(["?"] * len(knowledge_base_ids))
+            like_clauses = " OR ".join(["LOWER(c.content) LIKE ?" for _ in tokens])
+            has_ver_col = self._unified_table_has_version_id()
+            ver_where = " AND c.version_id = ?" if version_id and has_ver_col else ""
+            sql = f"""
+                SELECT
+                    c.id,
+                    c.content,
+                    c.document_id,
+                    c.chunk_id,
+                    c.knowledge_base_id,
+                    d.source as doc_source,
+                    d.doc_type
+                FROM {UNIFIED_CHUNKS_TABLE} c
+                LEFT JOIN document d ON d.id = c.document_id
+                WHERE c.knowledge_base_id IN ({placeholders_kb})
+                  AND ({like_clauses})
+                  {ver_where}
+                LIMIT ?
+            """
+            params: List[Any] = list(knowledge_base_ids) + [f"%{t}%" for t in tokens]
+            if version_id and has_ver_col:
+                params.append(version_id)
+            params.append(max(limit * 8, 50))
+            with self._connect() as conn:
+                rows = conn.execute(sql, params).fetchall()
+            scored = []
+            for row in rows:
+                text = row["content"] or ""
+                score = self._keyword_score(tokens, text)
+                if score <= 0:
+                    continue
+                scored.append(
+                    {
+                        "content": text,
+                        "distance": max(0.0, 1.0 - score),
+                        "keyword_score": score,
+                        "document_id": row["document_id"],
+                        "chunk_id": row["chunk_id"],
+                        "knowledge_base_id": row["knowledge_base_id"],
+                        "version_id": version_id,
+                        "doc_source": row["doc_source"],
+                        "doc_type": row["doc_type"],
+                    }
+                )
+            scored.sort(key=lambda x: x["keyword_score"], reverse=True)
+            return scored[:limit]
+        return []
+
+    def hybrid_search_chunks_multi_kb(
+        self,
+        knowledge_base_ids: List[str],
+        query_text: str,
+        query_embedding: List[float],
+        keyword_limit: int = 20,
+        vector_limit: int = 20,
+        rerank_limit: int = 10,
+        min_relevance_score: float = 0.5,
+        max_distance: Optional[float] = None,
+        version_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        多阶段检索：
+        1) keyword stage 取精确匹配候选
+        2) vector stage 取语义候选
+        3) 融合重排并阈值过滤
+        """
+        keyword_results = self.search_chunks_keyword_multi_kb(
+            knowledge_base_ids=knowledge_base_ids,
+            query_text=query_text,
+            limit=keyword_limit,
+            version_id=version_id,
+        )
+        vector_results: List[Dict[str, Any]] = []
+        if self._vec_available:
+            vector_results = self.search_chunks_multi_kb(
+                knowledge_base_ids=knowledge_base_ids,
+                query_embedding=query_embedding,
+                limit=vector_limit,
+                max_distance=max_distance,
+                version_id=version_id,
+            )
+
+        merged: Dict[str, Dict[str, Any]] = {}
+        for item in keyword_results:
+            key = self._chunk_dedup_key(item)
+            merged[key] = dict(item)
+        for item in vector_results:
+            key = self._chunk_dedup_key(item)
+            if key not in merged:
+                merged[key] = dict(item)
+            else:
+                # 保留更小 distance，同时叠加 keyword_score
+                old = merged[key]
+                old["distance"] = min(float(old.get("distance", 1.0)), float(item.get("distance", 1.0)))
+                if "keyword_score" in item and "keyword_score" not in old:
+                    old["keyword_score"] = item["keyword_score"]
+                merged[key] = old
+
+        tokens = self._tokenize_query(query_text)
+        reranked: List[Dict[str, Any]] = []
+        for item in merged.values():
+            text = item.get("content", "") or ""
+            lexical = float(item.get("keyword_score", self._keyword_score(tokens, text)))
+            vec_rel = max(0.0, 1.0 - float(item.get("distance", 1.0)))
+            # 轻量重排：模拟 cross-encoder 的“词面 + 语义”综合相关性
+            relevance = min(1.0, 0.55 * lexical + 0.45 * vec_rel)
+            item["keyword_score"] = lexical
+            item["vector_relevance"] = vec_rel
+            item["relevance_score"] = relevance
+            if relevance >= min_relevance_score:
+                reranked.append(item)
+
+        reranked.sort(key=lambda x: x.get("relevance_score", 0.0), reverse=True)
+        return reranked[:rerank_limit]
+
+    def _tokenize_query(self, query_text: str) -> List[str]:
+        text = (query_text or "").strip().lower()
+        if not text:
+            return []
+        # 中英混合：英文按词切分，中文按 2-gram 粗分
+        en_tokens = re.findall(r"[a-z0-9_]{2,}", text)
+        zh_chars = re.findall(r"[\u4e00-\u9fff]", text)
+        zh_tokens = ["".join(zh_chars[i:i + 2]) for i in range(max(0, len(zh_chars) - 1))]
+        tokens = en_tokens + zh_tokens
+        # 去重并限制长度，避免 SQL LIKE 子句过长
+        seen = set()
+        out: List[str] = []
+        for t in tokens:
+            if t in seen:
+                continue
+            seen.add(t)
+            out.append(t)
+            if len(out) >= 8:
+                break
+        return out
+
+    def _keyword_score(self, tokens: List[str], content: str) -> float:
+        if not tokens:
+            return 0.0
+        text = (content or "").lower()
+        hits = 0
+        freq = 0
+        for token in tokens:
+            c = text.count(token)
+            if c > 0:
+                hits += 1
+                freq += c
+        if hits == 0:
+            return 0.0
+        coverage = hits / max(len(tokens), 1)
+        freq_score = min(1.0, freq / max(len(tokens) * 2, 1))
+        return min(1.0, 0.7 * coverage + 0.3 * freq_score)
+
+    def _chunk_dedup_key(self, item: Dict[str, Any]) -> str:
+        return (
+            f'{item.get("knowledge_base_id", "")}::'
+            f'{item.get("document_id", "")}::'
+            f'{item.get("chunk_id", "")}'
+        )
 
     def get_chunk_count(self, knowledge_base_id: Optional[str] = None) -> int:
         """获取 chunk 数量。优先使用统一表。"""
@@ -1403,3 +1707,224 @@ class KnowledgeBaseStore:
             "vec_available": self._vec_available,
             "embedding_dim": self.config.embedding_dim,
         }
+
+    # =========================
+    # Versioning & Incremental Indexing
+    # =========================
+
+    def create_kb_version(
+        self,
+        kb_id: str,
+        version_label: str,
+        notes: Optional[str] = None,
+        status: str = "ACTIVE",
+    ) -> str:
+        version_id = f"kbv_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO knowledge_base_version (id, knowledge_base_id, version_label, status, notes)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (version_id, kb_id, version_label, status, notes),
+            )
+            conn.commit()
+        return version_id
+
+    def list_kb_versions(self, kb_id: str) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM knowledge_base_version WHERE knowledge_base_id = ? ORDER BY created_at DESC",
+                (kb_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def resolve_kb_version_id(
+        self,
+        kb_id: str,
+        version_id: Optional[str] = None,
+        version_label: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        解析版本标识：
+        - 优先使用显式 version_id
+        - 其次按 version_label 查询
+        - 均为空则返回最新版本
+        """
+        if version_id:
+            return version_id
+        with self._connect() as conn:
+            if version_label:
+                row = conn.execute(
+                    """
+                    SELECT id FROM knowledge_base_version
+                    WHERE knowledge_base_id = ? AND version_label = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (kb_id, version_label),
+                ).fetchone()
+                if row:
+                    return str(row["id"])
+            latest = conn.execute(
+                """
+                SELECT id FROM knowledge_base_version
+                WHERE knowledge_base_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (kb_id,),
+            ).fetchone()
+            return str(latest["id"]) if latest else None
+
+    def get_latest_kb_version(self, kb_id: str) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM knowledge_base_version
+                WHERE knowledge_base_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (kb_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def ensure_default_kb_version(self, kb_id: str) -> str:
+        latest = self.get_latest_kb_version(kb_id)
+        if latest:
+            return str(latest["id"])
+        return self.create_kb_version(kb_id=kb_id, version_label="v1", notes="Initial version")
+
+    def add_document_version(
+        self,
+        document_id: str,
+        knowledge_base_id: str,
+        version_id: str,
+        content_hash: Optional[str] = None,
+    ) -> str:
+        record_id = f"docv_{uuid.uuid4().hex[:12]}"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO document_version (id, document_id, knowledge_base_id, version_id, content_hash)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (record_id, document_id, knowledge_base_id, version_id, content_hash),
+            )
+            conn.execute(
+                "UPDATE document SET current_version_id = ?, content_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (version_id, content_hash, document_id),
+            )
+            conn.commit()
+        return record_id
+
+    def get_latest_document_hash(self, doc_id: str) -> Optional[str]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT content_hash FROM document_version
+                WHERE document_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (doc_id,),
+            ).fetchone()
+            if row and row["content_hash"]:
+                return str(row["content_hash"])
+        with self._connect() as conn:
+            row = conn.execute("SELECT content_hash FROM document WHERE id = ?", (doc_id,)).fetchone()
+            if row and row["content_hash"]:
+                return str(row["content_hash"])
+        return None
+
+    def should_reindex_document(self, doc_id: str, new_content_hash: Optional[str]) -> bool:
+        if not new_content_hash:
+            return True
+        latest_hash = self.get_latest_document_hash(doc_id)
+        if not latest_hash:
+            return True
+        return latest_hash != new_content_hash
+
+    def update_document_content_hash(self, doc_id: str, content_hash: Optional[str]) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE document SET content_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (content_hash, doc_id),
+            )
+            conn.commit()
+
+    # =========================
+    # Knowledge Graph
+    # =========================
+
+    def upsert_graph_triples(
+        self,
+        kb_id: str,
+        triples: List[Dict[str, Any]],
+        source_doc_id: Optional[str] = None,
+        version_id: Optional[str] = None,
+    ) -> int:
+        if not triples:
+            return 0
+        inserted = 0
+        with self._connect() as conn:
+            for t in triples:
+                source_entity = (t.get("source") or "").strip()
+                relation = (t.get("relation") or "").strip()
+                target_entity = (t.get("target") or "").strip()
+                if not source_entity or not relation or not target_entity:
+                    continue
+                confidence = float(t.get("confidence", 0.6))
+                rel_id = f"rel_{uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    """
+                    INSERT INTO kb_graph_relation
+                    (id, knowledge_base_id, version_id, source_entity, relation, target_entity, confidence, source_doc_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (rel_id, kb_id, version_id, source_entity, relation, target_entity, confidence, source_doc_id),
+                )
+                inserted += 1
+            conn.commit()
+        return inserted
+
+    def search_graph_relations(
+        self,
+        kb_id: str,
+        query_text: str,
+        limit: int = 10,
+        version_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        tokens = self._tokenize_query(query_text)
+        if not tokens:
+            return []
+        token_like = [f"%{t}%" for t in tokens]
+        where_token = " OR ".join(
+            ["LOWER(source_entity) LIKE ? OR LOWER(target_entity) LIKE ? OR LOWER(relation) LIKE ?" for _ in tokens]
+        )
+        params: List[Any] = [kb_id]
+        if version_id:
+            sql = f"""
+                SELECT * FROM kb_graph_relation
+                WHERE knowledge_base_id = ?
+                  AND version_id = ?
+                  AND ({where_token})
+                ORDER BY confidence DESC, created_at DESC
+                LIMIT ?
+            """
+            params.append(version_id)
+        else:
+            sql = f"""
+                SELECT * FROM kb_graph_relation
+                WHERE knowledge_base_id = ?
+                  AND ({where_token})
+                ORDER BY confidence DESC, created_at DESC
+                LIMIT ?
+            """
+        for like in token_like:
+            params.extend([like, like, like])
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]

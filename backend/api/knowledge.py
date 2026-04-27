@@ -8,6 +8,7 @@ from pathlib import Path
 import uuid
 import shutil
 import json
+import hashlib
 from log import logger
 from api.errors import APIException, raise_api_error
 from config.settings import settings
@@ -53,6 +54,19 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
     score_threshold: Optional[float] = None
+    version_id: Optional[str] = None
+    version_label: Optional[str] = None
+
+
+class CreateKnowledgeBaseVersionRequest(BaseModel):
+    version_label: str
+    notes: Optional[str] = None
+
+
+class GraphSearchRequest(BaseModel):
+    query: str
+    top_k: int = 10
+    version_id: Optional[str] = None
 
 
 @router.post("/knowledge-bases")
@@ -388,6 +402,8 @@ def index_document_background(
     doc_id: str,
     file_path: Path,
     doc_type: Optional[str],
+    content_hash: Optional[str] = None,
+    version_id: Optional[str] = None,
 ) -> None:
     """后台索引任务（同步函数，由 BackgroundTasks 调用）"""
     try:
@@ -432,6 +448,7 @@ def index_document_background(
             doc_id=doc_id,
             file_path=file_path,
             doc_type=doc_type,
+            version_id=version_id,
         )
         
         # 更新文档状态
@@ -441,6 +458,16 @@ def index_document_background(
             chunks_count=result.get("chunks_created", 0),
             error_message=result.get("error"),
         )
+        if result["status"] == DocumentStatus.INDEXED:
+            if content_hash:
+                _kb_store.update_document_content_hash(doc_id, content_hash)
+            resolved_version_id = version_id or _kb_store.ensure_default_kb_version(kb_id)
+            _kb_store.add_document_version(
+                document_id=doc_id,
+                knowledge_base_id=kb_id,
+                version_id=resolved_version_id,
+                content_hash=content_hash,
+            )
         logger.info(f"Background indexing completed for {doc_id}: {result['status']}")
     except Exception as e:
         logger.error(f"Background indexing failed for {doc_id}: {e}", exc_info=True)
@@ -500,12 +527,15 @@ async def upload_document(
             )
         
         # 创建文档记录
+        content_hash = hashlib.sha256(content).hexdigest()
+        version_id = _kb_store.ensure_default_kb_version(kb_id)
         doc_id = _kb_store.create_document(
             knowledge_base_id=kb_id,
             source=filename,
             doc_type=file_ext[1:] if file_ext else None,
             status=DocumentStatus.UPLOADED,
             user_id=user_id,
+            content_hash=content_hash,
         )
         
         # 保存文件到本地存储
@@ -521,6 +551,8 @@ async def upload_document(
             doc_id=doc_id,
             file_path=file_path,
             doc_type=file_ext[1:] if file_ext else None,
+            content_hash=content_hash,
+            version_id=version_id,
         )
         
         logger.info(f"Document uploaded: {doc_id} to KB {kb_id}, indexing started")
@@ -620,6 +652,7 @@ async def reindex_document(
     doc_id: str,
     background_tasks: BackgroundTasks,
     request: Request,
+    force: bool = False,
 ) -> JSONDict:
     """重新索引文档"""
     try:
@@ -672,6 +705,16 @@ async def reindex_document(
                 message=f"Document file not found: {file_path}",
                 details={"document_id": doc_id, "path": str(file_path)},
             )
+
+        # 增量更新：hash 未变化则跳过（除非 force=true）
+        content_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+        if not force and not _kb_store.should_reindex_document(doc_id, content_hash):
+            return {
+                "id": doc_id,
+                "knowledge_base_id": kb_id,
+                "status": doc.get("status", DocumentStatus.INDEXED),
+                "message": "Skipped re-indexing: no content change detected",
+            }
         
         # 1. 删除旧的 chunks
         logger.info(f"Deleting old chunks for document {doc_id}")
@@ -692,6 +735,8 @@ async def reindex_document(
             doc_id=doc_id,
             file_path=file_path,
             doc_type=doc.get("doc_type"),
+            content_hash=content_hash,
+            version_id=_kb_store.ensure_default_kb_version(kb_id),
         )
         
         logger.info(f"Re-indexing started for document {doc_id}")
@@ -844,23 +889,34 @@ async def search_knowledge_base(
                 },
             )
         
+        resolved_version_id = kb_store.resolve_kb_version_id(
+            kb_id=kb_id,
+            version_id=req.version_id,
+            version_label=req.version_label,
+        )
+
         # 向量检索
         results = kb_store.search_chunks(
             knowledge_base_id=kb_id,
             query_embedding=query_embedding,
             limit=req.top_k,
             max_distance=req.score_threshold,
+            version_id=resolved_version_id,
         )
         
         return {
             "object": "list",
             "data": [
                 {
-                    "content": content,
-                    "distance": distance,
-                    "score": 1.0 - cast(float, distance),  # 转换为相似度分数
+                    "content": item.get("content", ""),
+                    "distance": item.get("distance"),
+                    "score": 1.0 - float(item.get("distance", 1.0)),
+                    "version_id": item.get("version_id"),
+                    "document_id": item.get("document_id"),
+                    "chunk_id": item.get("chunk_id"),
+                    "doc_source": item.get("doc_source"),
                 }
-                for content, distance in results
+                for item in results
             ],
         }
     except APIException:
@@ -869,3 +925,51 @@ async def search_knowledge_base(
         logger.error(f"Failed to search knowledge base: {e}", exc_info=True)
         raise_api_error(status_code=500, code="knowledge_internal_error", message=str(e))
         raise AssertionError("unreachable")
+
+
+@router.post("/knowledge-bases/{kb_id}/versions")
+async def create_kb_version(
+    kb_id: str,
+    req: CreateKnowledgeBaseVersionRequest,
+    request: Request,
+) -> JSONDict:
+    user_id = get_user_id(request)
+    kb = _kb_store.get_knowledge_base(kb_id, user_id=user_id)
+    if not kb:
+        raise_api_error(status_code=404, code="knowledge_base_not_found", message=MSG_KB_NOT_FOUND)
+    version_id = _kb_store.create_kb_version(
+        kb_id=kb_id,
+        version_label=req.version_label,
+        notes=req.notes,
+        status="ACTIVE",
+    )
+    return {"id": version_id, "knowledge_base_id": kb_id, "version_label": req.version_label, "notes": req.notes}
+
+
+@router.get("/knowledge-bases/{kb_id}/versions")
+async def list_kb_versions(kb_id: str, request: Request) -> JSONDict:
+    user_id = get_user_id(request)
+    kb = _kb_store.get_knowledge_base(kb_id, user_id=user_id)
+    if not kb:
+        raise_api_error(status_code=404, code="knowledge_base_not_found", message=MSG_KB_NOT_FOUND)
+    versions = _kb_store.list_kb_versions(kb_id)
+    return {"object": "list", "data": versions}
+
+
+@router.post("/knowledge-bases/{kb_id}/graph/search")
+async def search_kb_graph(
+    kb_id: str,
+    req: GraphSearchRequest,
+    request: Request,
+) -> JSONDict:
+    user_id = get_user_id(request)
+    kb = _kb_store.get_knowledge_base(kb_id, user_id=user_id)
+    if not kb:
+        raise_api_error(status_code=404, code="knowledge_base_not_found", message=MSG_KB_NOT_FOUND)
+    results = _kb_store.search_graph_relations(
+        kb_id=kb_id,
+        query_text=req.query,
+        limit=req.top_k,
+        version_id=req.version_id,
+    )
+    return {"object": "list", "data": results}

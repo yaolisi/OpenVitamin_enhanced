@@ -34,6 +34,16 @@ class RAGConfig(BaseModel):
     knowledge_base_id: Optional[str] = Field(default=None, description="知识库 ID（单个）")
     knowledge_base_ids: Optional[List[str]] = Field(default=None, description="知识库 ID 列表（多个）")
     top_k: int = Field(default=5, ge=1, le=50, description="检索的 chunk 数量")
+    retrieval_mode: Literal["vector", "hybrid"] = Field(
+        default="hybrid",
+        description="检索模式：vector=单阶段向量检索，hybrid=关键词+向量+重排序",
+    )
+    keyword_top_k: int = Field(default=20, ge=1, le=100, description="关键词阶段候选数量")
+    vector_top_k: int = Field(default=20, ge=1, le=100, description="向量阶段候选数量")
+    rerank_top_k: int = Field(default=10, ge=1, le=100, description="重排序后保留数量")
+    min_relevance_score: float = Field(default=0.5, ge=0, le=1, description="重排序相关性阈值")
+    version_id: Optional[str] = Field(default=None, description="可选：按知识库版本检索")
+    version_label: Optional[str] = Field(default=None, description="可选：按版本标签检索（由后端解析为 version_id）")
     # 注意：这里的 score_threshold 实际是“distance 阈值”(max_distance)：distance <= threshold 才保留
     # embedding 默认做了 L2 normalize（单位向量），因此常见距离范围大致在 0~2
     score_threshold: Optional[float] = Field(default=1.2, ge=0, le=2, description="距离阈值（distance<=threshold 才返回；默认1.2，范围0-2）")
