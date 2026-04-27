@@ -1228,6 +1228,10 @@
       "agent_step_default_retries_hint": "0 means no automatic retries. Total attempts = 1 + retries.",
       "agent_step_retry_interval": "Retry interval (s)",
       "agent_step_retry_interval_hint": "Wait between failure retries.",
+      "cache_stats_hit_count": "Hit Count",
+      "cache_stats_miss_count": "Miss Count",
+      "cache_stats_hit_rate": "Hit Rate",
+      "cache_stats_saved_latency": "Cumulative Saved Latency",
       "smart_routing_enabled": "Smart routing",
       "smart_routing_enabled_desc": "When enabled, requests are routed by model load, rollout strategy, and user priority.",
       "smart_routing_group_builder": "Group: Quick Builder",
@@ -1280,7 +1284,25 @@
       "idle_ttl_desc": "Models idle longer than this may be released (30–86400).",
       "min_interval": "Release min interval (seconds)",
       "min_interval_desc": "Minimum time between two auto releases to reduce thrashing (1–3600).",
+      "workflow_governance_title": "Workflow Governance Thresholds",
+      "workflow_governance_desc": "Controls governance maturity levels (Healthy / Warning / Risky) and soft-gating trigger points in the Workflow editor.",
+      "workflow_governance_healthy_label": "Healthy Threshold (0-1)",
+      "workflow_governance_warning_label": "Warning Threshold (0-1)",
+      "workflow_governance_preview_title": "Live Preview Samples",
+      "workflow_governance_preview_thresholds": "Current thresholds: Healthy <= {healthy}%, Warning <= {warning}%, others are Risky",
+      "workflow_governance_preview_sample_ratio": "Sample {index} coverage ratio",
+      "workflow_governance_preview_reset_samples": "Reset sample ratios",
+      "workflow_governance_preview_sample_result": "Coverage {ratio} -> {level}",
+      "workflow_governance_level_healthy": "Healthy",
+      "workflow_governance_level_warning": "Warning",
+      "workflow_governance_level_risky": "Risky",
       "review_note": "This page should stay focused on the four core knobs: auto release, per-type cache limits, idle TTL, and minimum release interval. Splitting TTL or release interval by model type would add complexity without enough operational value right now."
+      ,"priority_slo_panel_title": "Priority SLA Panel Thresholds",
+      "priority_slo_panel_desc": "Controls high-priority SLO alerts and preemption cooldown busy hints in the Optimization Dashboard. Changes apply immediately after saving.",
+      "priority_slo_critical_label": "High SLO Critical Threshold (0-1)",
+      "priority_slo_warning_label": "High SLO Warning Threshold (0-1)",
+      "priority_slo_cooldown_busy_label": "Cooldown Busy Threshold (count)",
+      "priority_slo_judgement": "Current evaluation: Critical < {critical}%, Warning < {warning}%, Cooldown Busy >= {cooldown} times"
     },
     "perception": {
       "title": "Object Detection (YOLO)",
@@ -1724,5 +1746,74 @@
     "run_requires_published": "Only published workflow versions can be executed. Save and publish the workflow before running it.",
     "run_failed": "Execution failed: {message}",
     "deploy_coming_soon": "Deploy functionality coming soon."
+  },
+  "optimization_dashboard": {
+    "header": {
+      "title": "Optimization Dashboard",
+      "subtitle": "V2.7 Optimization Layer Status & Analytics"
+    },
+    "actions": {
+      "rebuild_snapshot": "Rebuild Snapshot",
+      "dismiss": "Dismiss"
+    },
+    "errors": {
+      "fetch_status": "Failed to fetch optimization status",
+      "rebuild_snapshot": "Failed to rebuild snapshot",
+      "update_config": "Failed to update config"
+    },
+    "layer": {
+      "title": "Optimization Layer",
+      "desc": "Enable intelligent scheduling based on historical execution data"
+    },
+    "policy": {
+      "title": "Scheduler Policy",
+      "default_title": "Default Policy",
+      "default_desc": "Topological order, deterministic scheduling",
+      "learned_title": "Learned Policy",
+      "learned_desc": "Weight-based priority, optimization-driven",
+      "default_fallback": "DefaultPolicy"
+    },
+    "impact": {
+      "title": "Optimization Impact",
+      "success_rate": "Success Rate",
+      "vs_baseline": "vs baseline",
+      "avg_latency": "Avg Latency",
+      "reduction": "reduction",
+      "nodes": "Nodes",
+      "tracked_nodes": "tracked nodes",
+      "skills": "Skills",
+      "tracked_skills": "tracked skills"
+    },
+    "status": {
+      "title": "Status",
+      "current_policy": "Current Policy",
+      "policy_version": "Policy Version",
+      "policy_version_fallback": "default_1.0.0",
+      "snapshot_version": "Snapshot Version",
+      "snapshot_version_fallback": "empty_00000000",
+      "snapshot_data": "Snapshot Data",
+      "node_weights": "Node Weights",
+      "skill_weights": "Skill Weights",
+      "optimization": "Optimization",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "units": {
+      "ms_value": "{value}ms"
+    },
+    "priority_slo": {
+      "title": "Priority SLA Panel",
+      "high_p95": "High P95",
+      "target_latency": "target {ms}ms",
+      "high_slo": "High SLO",
+      "high_slo_state_critical": "critical (<{threshold}%)",
+      "high_slo_state_warning": "warning (<{threshold}%)",
+      "high_slo_state_healthy": "healthy",
+      "preemptions": "Preemptions",
+      "total_preemptions": "total preemptions",
+      "anti_thrash": "Anti-thrash",
+      "cooldown_skips_stable": "cooldown skips",
+      "cooldown_skips_busy": "cooldown skips (>={threshold}, consider tuning)"
+    }
   }
 }

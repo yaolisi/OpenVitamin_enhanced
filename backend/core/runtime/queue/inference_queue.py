@@ -5,13 +5,33 @@ Per-model concurrency limit via asyncio.Semaphore.
 """
 import asyncio
 import threading
+import time
+from dataclasses import dataclass
 from typing import Dict, TypeVar, AsyncIterator, Optional, Literal
 from log import logger
 
 from core.runtime.config import get_max_concurrency
+from core.system.runtime_settings import (
+    get_inference_queue_slo_enabled,
+    get_inference_queue_slo_high_ms,
+    get_inference_queue_slo_medium_ms,
+    get_inference_queue_slo_low_ms,
+    get_inference_queue_preemption_enabled,
+    get_inference_queue_preemption_max_per_high_request,
+    get_inference_queue_preemption_max_per_task,
+    get_inference_queue_preemption_cooldown_ms,
+)
 
 T = TypeVar("T")
 QueuePriority = Literal["high", "medium", "low"]
+
+
+@dataclass
+class _RunningTaskInfo:
+    task: asyncio.Task[object]
+    priority: QueuePriority
+    started_at: float
+    preemption_key: str
 
 
 class InferenceQueue:
@@ -29,8 +49,27 @@ class InferenceQueue:
         self._waiting_high = 0
         self._waiting_medium = 0
         self._waiting_low = 0
+        self._waiting_since: Dict[QueuePriority, list[float]] = {"high": [], "medium": [], "low": []}
+        self._running_tasks: Dict[int, _RunningTaskInfo] = {}
+        self._preemption_counts: Dict[str, int] = {}
+        self._preemption_last_ts: Dict[str, float] = {}
+        self._preemptions_total = 0
+        self._preemption_skipped_limit_total = 0
+        self._preemption_skipped_cooldown_total = 0
         self._lock = asyncio.Lock()
         self._cond = asyncio.Condition(self._lock)
+
+    @property
+    def preemptions_total(self) -> int:
+        return self._preemptions_total
+
+    @property
+    def preemption_skipped_limit_total(self) -> int:
+        return self._preemption_skipped_limit_total
+
+    @property
+    def preemption_skipped_cooldown_total(self) -> int:
+        return self._preemption_skipped_cooldown_total
 
     @property
     def max_concurrency(self) -> int:
@@ -81,7 +120,9 @@ class InferenceQueue:
 
     async def _acquire_slot(self, priority: QueuePriority) -> None:
         async with self._cond:
+            enqueued_at = time.monotonic()
             self._waiting += 1
+            self._waiting_since[priority].append(enqueued_at)
             if priority == "high":
                 self._waiting_high += 1
             elif priority == "low":
@@ -90,10 +131,14 @@ class InferenceQueue:
                 self._waiting_medium += 1
             self._notify_queue_size()
             try:
+                if priority == "high":
+                    self._preempt_for_high_locked()
                 await self._cond.wait_for(lambda: self._can_run(priority))
                 self._available_slots -= 1
             finally:
                 self._waiting = max(0, self._waiting - 1)
+                if self._waiting_since[priority]:
+                    self._waiting_since[priority].pop(0)
                 if priority == "high":
                     self._waiting_high = max(0, self._waiting_high - 1)
                 elif priority == "low":
@@ -110,45 +155,138 @@ class InferenceQueue:
     def _can_run(self, priority: QueuePriority) -> bool:
         if self._available_slots <= 0:
             return False
+        if self._is_slo_breached(priority):
+            return True
         if priority == "high":
             return True
         if priority == "medium":
             return self._waiting_high == 0
         return self._waiting_high == 0 and self._waiting_medium == 0
 
+    def _is_slo_breached(self, priority: QueuePriority) -> bool:
+        if not get_inference_queue_slo_enabled():
+            return False
+        queue = self._waiting_since.get(priority) or []
+        if not queue:
+            return False
+        oldest_wait_ms = (time.monotonic() - queue[0]) * 1000.0
+        if priority == "high":
+            slo_ms = get_inference_queue_slo_high_ms()
+        elif priority == "medium":
+            slo_ms = get_inference_queue_slo_medium_ms()
+        else:
+            slo_ms = get_inference_queue_slo_low_ms()
+        return oldest_wait_ms >= float(slo_ms)
+
+    def _preempt_for_high_locked(self) -> None:
+        if not get_inference_queue_preemption_enabled():
+            return
+        if self._available_slots > 0:
+            return
+        now = time.monotonic()
+        cooldown_seconds = max(0.0, float(get_inference_queue_preemption_cooldown_ms()) / 1000.0)
+        max_per_task = max(1, int(get_inference_queue_preemption_max_per_task()))
+        max_victims = max(1, int(get_inference_queue_preemption_max_per_high_request()))
+        base_candidates = [
+            info for info in self._running_tasks.values()
+            if info.priority in {"low", "medium"}
+        ]
+        allowed_candidates = []
+        skipped_limit = 0
+        skipped_cooldown = 0
+        for info in base_candidates:
+            if self._preemption_counts.get(info.preemption_key, 0) >= max_per_task:
+                skipped_limit += 1
+                continue
+            if (
+                cooldown_seconds > 0
+                and now - self._preemption_last_ts.get(info.preemption_key, -10**9) < cooldown_seconds
+            ):
+                skipped_cooldown += 1
+                continue
+            allowed_candidates.append(info)
+        self._preemption_skipped_limit_total += skipped_limit
+        self._preemption_skipped_cooldown_total += skipped_cooldown
+        victims = sorted(
+            allowed_candidates,
+            key=lambda info: (
+                0 if info.priority == "low" else 1,
+                time.monotonic() - info.started_at,
+            ),
+        )
+        selected = victims[:max_victims]
+        for victim in selected:
+            victim.task.cancel("preempted_by_high_priority_request")
+            self._preemption_counts[victim.preemption_key] = self._preemption_counts.get(victim.preemption_key, 0) + 1
+            self._preemption_last_ts[victim.preemption_key] = now
+            self._preemptions_total += 1
+            logger.warning(
+                "[RuntimeStabilization] Preempted task model_id=%s victim_priority=%s",
+                self.model_id,
+                victim.priority,
+            )
+
     def current_usage(self) -> int:
         """Best-effort: in-flight count (waiting not tracked atomically)."""
         return self._in_flight
 
-    async def run(self, coro, priority: str = "medium"):
+    async def run(self, coro, priority: str = "medium", preemption_key: str | None = None):
         """
         Run coroutine with concurrency limit.
         Returns the result of the coroutine.
         """
         normalized_priority = self._normalize_priority(priority)
         acquired = False
+        current_task = asyncio.current_task()
+        normalized_preemption_key = (preemption_key or "").strip() or f"task:{id(current_task)}"
         try:
             await self._acquire_slot(normalized_priority)
             acquired = True
+            if current_task is not None:
+                async with self._lock:
+                    self._running_tasks[id(current_task)] = _RunningTaskInfo(
+                        task=current_task,
+                        priority=normalized_priority,
+                        started_at=time.monotonic(),
+                        preemption_key=normalized_preemption_key,
+                    )
             await self._inc_usage()
             try:
                 return await coro
             finally:
                 await self._dec_usage()
         finally:
+            if current_task is not None:
+                async with self._lock:
+                    self._running_tasks.pop(id(current_task), None)
             if acquired:
                 await self._release_slot()
 
-    async def run_stream(self, agen: AsyncIterator[T], priority: str = "medium") -> AsyncIterator[T]:
+    async def run_stream(
+        self,
+        agen: AsyncIterator[T],
+        priority: str = "medium",
+        preemption_key: str | None = None,
+    ) -> AsyncIterator[T]:
         """
         Run async generator under the semaphore.
         Semaphore is held for the entire consumption of the stream.
         """
         normalized_priority = self._normalize_priority(priority)
         acquired = False
+        current_task = asyncio.current_task()
+        normalized_preemption_key = (preemption_key or "").strip() or f"task:{id(current_task)}"
         try:
             await self._acquire_slot(normalized_priority)
             acquired = True
+            if current_task is not None:
+                async with self._lock:
+                    self._running_tasks[id(current_task)] = _RunningTaskInfo(
+                        task=current_task,
+                        priority=normalized_priority,
+                        started_at=time.monotonic(),
+                        preemption_key=normalized_preemption_key,
+                    )
             await self._inc_usage()
             try:
                 async for item in agen:
@@ -156,6 +294,9 @@ class InferenceQueue:
             finally:
                 await self._dec_usage()
         finally:
+            if current_task is not None:
+                async with self._lock:
+                    self._running_tasks.pop(id(current_task), None)
             if acquired:
                 await self._release_slot()
 

@@ -341,7 +341,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-general' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/general')"
           >
-            <span v-if="!navCollapsed">General</span>
+            <span v-if="!navCollapsed">{{ t('settings.general_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <Sliders class="w-4 h-4" />
             </span>
@@ -371,7 +371,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-backend' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/backend')"
           >
-            <span v-if="!navCollapsed">Backend</span>
+            <span v-if="!navCollapsed">{{ t('settings.backend_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <Cpu class="w-4 h-4" />
             </span>
@@ -391,7 +391,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-object-detection' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/object-detection')"
           >
-            <span v-if="!navCollapsed">Object Detection</span>
+            <span v-if="!navCollapsed">{{ t('settings.object_detection_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <ScanSearch class="w-4 h-4" />
             </span>
@@ -411,7 +411,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-asr' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/asr')"
           >
-            <span v-if="!navCollapsed">ASR</span>
+            <span v-if="!navCollapsed">{{ t('settings.asr_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <Mic class="w-4 h-4" />
             </span>
@@ -482,8 +482,11 @@ onMounted(() => {
               <div class="border-t border-border pt-6 space-y-6">
                 <!-- Backup Frequency -->
                 <div class="space-y-3">
-                  <label class="text-sm font-medium text-foreground">{{ t('settings.backup.frequency') }}</label>
-                  <Select 
+                  <label for="backup-frequency" class="text-sm font-medium text-foreground">
+                    {{ t('settings.backup.frequency') }}
+                  </label>
+                    <Select
+                      id="backup-frequency"
                     v-model="backupFrequency" 
                     @update:modelValue="isEditing = true"
                   >
@@ -502,10 +505,13 @@ onMounted(() => {
                 <!-- Retention Policy -->
                 <div class="grid grid-cols-2 gap-6">
                   <div class="space-y-3">
-                    <label class="text-sm font-medium text-foreground">{{ t('settings.backup.retention_title') }}</label>
+                    <label for="backup-retention-count" class="text-sm font-medium text-foreground">
+                      {{ t('settings.backup.retention_title') }}
+                    </label>
                     <div class="flex items-center gap-3">
                       <span class="text-sm text-muted-foreground whitespace-nowrap">{{ t('settings.backup.keep_last') }}</span>
                       <Input 
+                        id="backup-retention-count"
                         v-model.number="retentionCount"
                         type="number"
                         min="1"
@@ -516,9 +522,12 @@ onMounted(() => {
                     </div>
                   </div>
                   <div class="space-y-3">
-                    <label class="text-sm font-medium text-foreground">{{ t('settings.backup.auto_delete') }}</label>
+                    <label for="backup-auto-delete" class="text-sm font-medium text-foreground">
+                      {{ t('settings.backup.auto_delete') }}
+                    </label>
                     <div class="flex items-center gap-3 pt-8">
                       <Switch 
+                        id="backup-auto-delete"
                         :checked="autoDelete" 
                         @update:checked="(val: boolean) => { autoDelete = val; isEditing = true }"
                       />
@@ -529,11 +538,14 @@ onMounted(() => {
 
                 <!-- Backup Location -->
                 <div class="space-y-3">
-                  <label class="text-sm font-medium text-foreground">{{ t('settings.backup.location') }}</label>
+                  <label for="backup-location" class="text-sm font-medium text-foreground">
+                    {{ t('settings.backup.location') }}
+                  </label>
                   <div class="flex gap-3">
                     <div class="relative flex-1">
                       <FolderOpen class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input 
+                        id="backup-location"
                         v-model="backupLocation"
                         placeholder="~/.local-ai/backups/"
                         class="pl-12 h-12 bg-background border-border text-foreground rounded-xl"

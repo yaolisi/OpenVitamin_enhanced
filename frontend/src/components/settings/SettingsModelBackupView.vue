@@ -302,7 +302,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-general' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/general')"
           >
-            <span v-if="!navCollapsed">General</span>
+            <span v-if="!navCollapsed">{{ t('settings.general_nav') }}</span>
             <span v-else class="flex items-center justify-center"><Sliders class="w-4 h-4" /></span>
           </button>
           <button
@@ -326,7 +326,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-backend' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/backend')"
           >
-            <span v-if="!navCollapsed">Backend</span>
+            <span v-if="!navCollapsed">{{ t('settings.backend_nav') }}</span>
             <span v-else class="flex items-center justify-center"><Cpu class="w-4 h-4" /></span>
           </button>
           <button
@@ -342,7 +342,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-object-detection' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/object-detection')"
           >
-            <span v-if="!navCollapsed">Object Detection</span>
+            <span v-if="!navCollapsed">{{ t('settings.object_detection_nav') }}</span>
             <span v-else class="flex items-center justify-center"><ScanSearch class="w-4 h-4" /></span>
           </button>
           <button
@@ -360,7 +360,7 @@ onMounted(() => {
             :class="settingsSection === 'settings-asr' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/asr')"
           >
-            <span v-if="!navCollapsed">ASR</span>
+            <span v-if="!navCollapsed">{{ t('settings.asr_nav') }}</span>
             <span v-else class="flex items-center justify-center"><Mic class="w-4 h-4" /></span>
           </button>
         </div>
@@ -462,9 +462,16 @@ onMounted(() => {
               </div>
               <div class="flex flex-wrap items-end gap-4 pt-4 border-t border-border">
                 <div class="space-y-1">
-                  <label class="text-sm font-medium">{{ t('settings.model_backup.batch_restore_label') }}</label>
+                  <label for="model-backup-batch-restore-date" class="text-sm font-medium">
+                    {{ t('settings.model_backup.batch_restore_label') }}
+                  </label>
                   <div class="flex gap-2">
-                    <Input v-model="batchRestoreDate" type="date" class="h-11 rounded-xl w-48" />
+                    <Input
+                      id="model-backup-batch-restore-date"
+                      v-model="batchRestoreDate"
+                      type="date"
+                      class="h-11 rounded-xl w-48"
+                    />
                     <Button variant="outline" size="sm" class="h-11" @click="batchRestoreDryRun = !batchRestoreDryRun">
                       {{ batchRestoreDryRun ? t('settings.model_backup.dry_run_only') : t('settings.model_backup.execute') }}
                     </Button>

@@ -15,6 +15,7 @@ import {
   Mic,
   Zap,
   Search,
+  Target,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -62,9 +63,9 @@ const governanceThresholdPreview = computed(() => {
   const healthy = Math.max(0, Math.min(1, Number(workflowGovernanceHealthyThreshold.value || 0.1)))
   const warning = Math.max(healthy, Math.min(1, Number(workflowGovernanceWarningThreshold.value || 0.3)))
   const classify = (ratio: number) => {
-    if (ratio <= healthy) return 'Healthy'
-    if (ratio <= warning) return 'Warning'
-    return 'Risky'
+    if (ratio <= healthy) return 'healthy'
+    if (ratio <= warning) return 'warning'
+    return 'risky'
   }
   const normalizedSamples = governanceSampleRatios.value.map((ratio) =>
     Math.max(0, Math.min(1, Number(ratio) || 0)),
@@ -100,6 +101,9 @@ const {
   agentStepDefaultRetryIntervalSeconds,
   workflowGovernanceHealthyThreshold,
   workflowGovernanceWarningThreshold,
+  inferencePriorityPanelHighSloCriticalRate,
+  inferencePriorityPanelHighSloWarningRate,
+  inferencePriorityPanelPreemptionCooldownBusyThreshold,
   fillSmartRoutingTemplate,
   clearSmartRoutingPolicies,
   upsertCanaryPolicy,
@@ -372,7 +376,7 @@ watch(
             :class="settingsSection === 'settings-general' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/general')"
           >
-            <span v-if="!navCollapsed">General</span>
+            <span v-if="!navCollapsed">{{ t('settings.general_nav') }}</span>
             <span v-else class="flex items-center justify-center"><Sliders class="w-4 h-4" /></span>
           </button>
           <button
@@ -396,7 +400,7 @@ watch(
             :class="settingsSection === 'settings-backend' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/backend')"
           >
-            <span v-if="!navCollapsed">Backend</span>
+            <span v-if="!navCollapsed">{{ t('settings.backend_nav') }}</span>
             <span v-else class="flex items-center justify-center"><Cpu class="w-4 h-4" /></span>
           </button>
           <button
@@ -412,7 +416,7 @@ watch(
             :class="settingsSection === 'settings-object-detection' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/object-detection')"
           >
-            <span v-if="!navCollapsed">Object Detection</span>
+            <span v-if="!navCollapsed">{{ t('settings.object_detection_nav') }}</span>
             <span v-else class="flex items-center justify-center"><ScanSearch class="w-4 h-4" /></span>
           </button>
           <button
@@ -430,7 +434,7 @@ watch(
             :class="settingsSection === 'settings-asr' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/asr')"
           >
-            <span v-if="!navCollapsed">ASR</span>
+            <span v-if="!navCollapsed">{{ t('settings.asr_nav') }}</span>
             <span v-else class="flex items-center justify-center"><Mic class="w-4 h-4" /></span>
           </button>
         </div>
@@ -719,10 +723,16 @@ watch(
                   </div>
                 </div>
                 <div class="rounded-xl border border-border/60 bg-background/60 p-3 space-y-2">
-                  <p class="text-xs font-semibold text-foreground">实时预览样例</p>
+                  <p class="text-xs font-semibold text-foreground">
+                    {{ t('settings.runtime.workflow_governance_preview_title') }}
+                  </p>
                   <p class="text-xs text-muted-foreground">
-                    当前阈值：Healthy ≤ {{ (governanceThresholdPreview.healthy * 100).toFixed(0) }}%，
-                    Warning ≤ {{ (governanceThresholdPreview.warning * 100).toFixed(0) }}%，其余为 Risky
+                    {{
+                      t('settings.runtime.workflow_governance_preview_thresholds', {
+                        healthy: (governanceThresholdPreview.healthy * 100).toFixed(0),
+                        warning: (governanceThresholdPreview.warning * 100).toFixed(0),
+                      })
+                    }}
                   </p>
                   <div class="grid gap-2 md:grid-cols-3">
                     <div
@@ -730,7 +740,9 @@ watch(
                       :key="`sample-input-${idx}`"
                       class="space-y-1"
                     >
-                      <div class="text-[11px] text-muted-foreground">样例 {{ idx + 1 }} 覆盖比例</div>
+                      <div class="text-[11px] text-muted-foreground">
+                        {{ t('settings.runtime.workflow_governance_preview_sample_ratio', { index: idx + 1 }) }}
+                      </div>
                       <Input
                         v-model.number="governanceSampleRatios[idx]"
                         type="number"
@@ -743,7 +755,7 @@ watch(
                   </div>
                   <div class="flex justify-end">
                     <Button variant="outline" size="sm" class="h-8" @click="resetGovernanceSampleRatios">
-                      重置样例比例
+                      {{ t('settings.runtime.workflow_governance_preview_reset_samples') }}
                     </Button>
                   </div>
                   <div class="flex flex-wrap gap-2">
@@ -752,7 +764,12 @@ watch(
                       :key="item.label"
                       class="inline-flex items-center rounded border border-border px-2 py-1 text-xs text-muted-foreground"
                     >
-                      覆盖 {{ item.label }} → {{ item.level }}
+                      {{
+                        t('settings.runtime.workflow_governance_preview_sample_result', {
+                          ratio: item.label,
+                          level: t(`settings.runtime.workflow_governance_level_${item.level}`),
+                        })
+                      }}
                     </span>
                   </div>
                 </div>
@@ -761,16 +778,16 @@ watch(
                 <div class="flex items-center gap-2">
                   <Sliders class="w-4 h-4 text-emerald-500" />
                   <h3 class="text-sm font-semibold text-foreground">
-                    工作流治理阈值
+                    {{ t('settings.runtime.workflow_governance_title') }}
                   </h3>
                 </div>
                 <p class="text-xs text-muted-foreground leading-relaxed">
-                  控制 Workflow 编辑器中的治理成熟度分级（Healthy / Warning / Risky）与软门禁触发点。
+                  {{ t('settings.runtime.workflow_governance_desc') }}
                 </p>
                 <div class="grid gap-4 md:grid-cols-2">
                   <div class="space-y-2">
                     <label for="workflow-governance-healthy-threshold" class="text-sm font-medium text-foreground">
-                      Healthy 阈值（0-1）
+                      {{ t('settings.runtime.workflow_governance_healthy_label') }}
                     </label>
                     <Input
                       id="workflow-governance-healthy-threshold"
@@ -785,7 +802,7 @@ watch(
                   </div>
                   <div class="space-y-2">
                     <label for="workflow-governance-warning-threshold" class="text-sm font-medium text-foreground">
-                      Warning 阈值（0-1）
+                      {{ t('settings.runtime.workflow_governance_warning_label') }}
                     </label>
                     <Input
                       id="workflow-governance-warning-threshold"
@@ -798,6 +815,81 @@ watch(
                       @update:modelValue="isEditing = true"
                     />
                   </div>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-5">
+                <div class="flex items-center gap-2">
+                  <Target class="w-4 h-4 text-blue-500" />
+                  <h3 class="text-sm font-semibold text-foreground">
+                    {{ t('settings.runtime.priority_slo_panel_title') }}
+                  </h3>
+                </div>
+                <p class="text-xs text-muted-foreground leading-relaxed">
+                  {{ t('settings.runtime.priority_slo_panel_desc') }}
+                </p>
+                <div class="grid gap-4 md:grid-cols-3">
+                  <div class="space-y-2">
+                    <label for="priority-slo-critical-rate" class="text-sm font-medium text-foreground">
+                      {{ t('settings.runtime.priority_slo_critical_label') }}
+                    </label>
+                    <Input
+                      id="priority-slo-critical-rate"
+                      v-model.number="inferencePriorityPanelHighSloCriticalRate"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                  </div>
+                  <div class="space-y-2">
+                    <label for="priority-slo-warning-rate" class="text-sm font-medium text-foreground">
+                      {{ t('settings.runtime.priority_slo_warning_label') }}
+                    </label>
+                    <Input
+                      id="priority-slo-warning-rate"
+                      v-model.number="inferencePriorityPanelHighSloWarningRate"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                  </div>
+                  <div class="space-y-2">
+                    <label for="priority-preemption-busy-threshold" class="text-sm font-medium text-foreground">
+                      {{ t('settings.runtime.priority_slo_cooldown_busy_label') }}
+                    </label>
+                    <Input
+                      id="priority-preemption-busy-threshold"
+                      v-model.number="inferencePriorityPanelPreemptionCooldownBusyThreshold"
+                      type="number"
+                      min="0"
+                      max="100000"
+                      step="1"
+                      class="w-full h-12 bg-background border-border text-foreground rounded-xl px-4"
+                      @update:modelValue="isEditing = true"
+                    />
+                  </div>
+                </div>
+                <div class="rounded-xl border border-border/60 bg-background/60 p-3 text-xs text-muted-foreground">
+                  {{
+                    t('settings.runtime.priority_slo_judgement', {
+                      critical: (Number(inferencePriorityPanelHighSloCriticalRate || 0.95) * 100).toFixed(1),
+                      warning: (
+                        Math.max(
+                          Number(inferencePriorityPanelHighSloCriticalRate || 0.95),
+                          Number(inferencePriorityPanelHighSloWarningRate || 0.99),
+                        ) * 100
+                      ).toFixed(1),
+                      cooldown: Math.max(
+                        0,
+                        Math.floor(Number(inferencePriorityPanelPreemptionCooldownBusyThreshold) || 10),
+                      ),
+                    })
+                  }}
                 </div>
               </div>
               <div class="rounded-2xl border border-border/60 bg-background/40 p-5 space-y-5">
@@ -1078,19 +1170,27 @@ watch(
                 />
                 <div class="grid gap-3 md:grid-cols-4">
                   <div class="rounded-xl border border-border/60 bg-background/60 p-3">
-                    <div class="text-xs text-muted-foreground">命中次数</div>
+                    <div class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.cache_stats_hit_count') }}
+                    </div>
                     <div class="mt-1 text-lg font-semibold">{{ cacheStats?.cache_hits ?? 0 }}</div>
                   </div>
                   <div class="rounded-xl border border-border/60 bg-background/60 p-3">
-                    <div class="text-xs text-muted-foreground">未命中次数</div>
+                    <div class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.cache_stats_miss_count') }}
+                    </div>
                     <div class="mt-1 text-lg font-semibold">{{ cacheStats?.cache_misses ?? 0 }}</div>
                   </div>
                   <div class="rounded-xl border border-border/60 bg-background/60 p-3">
-                    <div class="text-xs text-muted-foreground">命中率</div>
+                    <div class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.cache_stats_hit_rate') }}
+                    </div>
                     <div class="mt-1 text-lg font-semibold">{{ ((cacheStats?.cache_hit_rate ?? 0) * 100).toFixed(1) }}%</div>
                   </div>
                   <div class="rounded-xl border border-border/60 bg-background/60 p-3">
-                    <div class="text-xs text-muted-foreground">累计节省时延</div>
+                    <div class="text-xs text-muted-foreground">
+                      {{ t('settings.runtime.cache_stats_saved_latency') }}
+                    </div>
                     <div class="mt-1 text-lg font-semibold">{{ cacheStats?.cache_saved_latency_ms ?? 0 }} ms</div>
                   </div>
                 </div>

@@ -228,6 +228,19 @@ class Settings(BaseSettings):
     # 示例：
     # {"reasoning-model":{"strategy":"blue_green","stable":"deepseek-r1","candidate":"deepseek-r1-v2","candidate_percent":10}}
     inference_smart_routing_policies_json: str = ""
+    # 推理队列 SLO 感知调度与抢占策略
+    inference_queue_slo_enabled: bool = True
+    inference_queue_slo_high_ms: int = 3000
+    inference_queue_slo_medium_ms: int = 6000
+    inference_queue_slo_low_ms: int = 10000
+    inference_queue_preemption_enabled: bool = True
+    inference_queue_preemption_max_per_high_request: int = 1
+    inference_queue_preemption_max_per_task: int = 2
+    inference_queue_preemption_cooldown_ms: int = 300
+    # 前端 SLO 看板阈值（可在系统设置中动态调整）
+    inference_priority_panel_high_slo_critical_rate: float = 0.95
+    inference_priority_panel_high_slo_warning_rate: float = 0.99
+    inference_priority_panel_preemption_cooldown_busy_threshold: int = 10
     # 按模型类型覆盖 TTL（JSON），例如 {"llm":900,"vlm":300}
     inference_cache_ttl_by_model_type_json: str = "{\"llm\":900,\"vlm\":300,\"embedding\":86400}"
     # 全量清理挑战码有效期（秒）

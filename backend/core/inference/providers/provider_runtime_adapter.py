@@ -29,6 +29,11 @@ from core.runtime import (
     get_inference_queue_manager,
     get_runtime_metrics,
 )
+from core.system.runtime_settings import (
+    get_inference_queue_slo_high_ms,
+    get_inference_queue_slo_medium_ms,
+    get_inference_queue_slo_low_ms,
+)
 
 
 @dataclass
@@ -140,6 +145,67 @@ class ProviderRuntimeAdapter:
         self.model_registry = get_model_registry()
 
     @staticmethod
+    def _is_preempted_cancel(error: BaseException) -> bool:
+        return isinstance(error, asyncio.CancelledError) and str(error) == "preempted_by_high_priority_request"
+
+    @staticmethod
+    def _slo_target_ms_for_priority(priority: str) -> int:
+        p = (priority or "medium").strip().lower()
+        if p == "high":
+            return int(get_inference_queue_slo_high_ms())
+        if p == "low":
+            return int(get_inference_queue_slo_low_ms())
+        return int(get_inference_queue_slo_medium_ms())
+
+    @staticmethod
+    def _preemption_key_from_metadata(meta: dict[str, Any]) -> str:
+        for key in ("request_id", "idempotency_key", "trace_id", "session_id"):
+            value = str(meta.get(key) or "").strip()
+            if value:
+                return f"{key}:{value}"
+        return "req:anonymous"
+
+    @staticmethod
+    async def _run_with_preemption_retry(
+        queue_coro_factory,
+        *,
+        retries: int = 1,
+        retry_backoff_seconds: float = 0.05,
+    ):
+        attempt = 0
+        while True:
+            try:
+                return await queue_coro_factory()
+            except asyncio.CancelledError as e:
+                if not ProviderRuntimeAdapter._is_preempted_cancel(e):
+                    raise
+                if attempt >= retries:
+                    raise
+                await asyncio.sleep(retry_backoff_seconds * (2 ** attempt))
+                attempt += 1
+
+    @staticmethod
+    async def _iterate_with_preemption_retry(
+        queue_stream_factory,
+        *,
+        retries: int = 1,
+        retry_backoff_seconds: float = 0.05,
+    ) -> AsyncIterator[str]:
+        attempt = 0
+        while True:
+            try:
+                async for token in queue_stream_factory():
+                    yield token
+                return
+            except asyncio.CancelledError as e:
+                if not ProviderRuntimeAdapter._is_preempted_cancel(e):
+                    raise
+                if attempt >= retries:
+                    raise
+                await asyncio.sleep(retry_backoff_seconds * (2 ** attempt))
+                attempt += 1
+
+    @staticmethod
     def _request_has_image(messages: List[Message]) -> bool:
         try:
             for m in messages or []:
@@ -248,12 +314,19 @@ class ProviderRuntimeAdapter:
             model_id=model_id_key,
             runtime=runtime_type,
         )
-        metrics.record_request(model_id_key)
+        req_priority = str(request.priority or "medium")
+        metrics.record_request(model_id_key, priority=req_priority)
 
         try:
-            text = await queue.run(runtime.chat(descriptor, cc_request), priority=request.priority)
+            text = await self._run_with_preemption_retry(
+                lambda: queue.run(
+                    runtime.chat(descriptor, cc_request),
+                    priority=request.priority,
+                    preemption_key=self._preemption_key_from_metadata(meta),
+                )
+            )
         except Exception as e:
-            metrics.record_request_failed(model_id_key)
+            metrics.record_request_failed(model_id_key, priority=req_priority)
             log_structured(
                 "RuntimeStabilization",
                 "inference_error",
@@ -271,7 +344,12 @@ class ProviderRuntimeAdapter:
             raise RuntimeError(f"Inference failed for {descriptor.id}: {e}") from e
 
         latency_ms = (time.time() - start_time) * 1000
-        metrics.record_latency(model_id_key, latency_ms)
+        metrics.record_latency(
+            model_id_key,
+            latency_ms,
+            priority=req_priority,
+            slo_target_ms=self._slo_target_ms_for_priority(req_priority),
+        )
         estimated_tokens = estimate_tokens(text)
         metrics.record_tokens(model_id_key, estimated_tokens)
         record_inference(
@@ -365,7 +443,8 @@ class ProviderRuntimeAdapter:
             model_id=model_id_key,
             runtime=runtime_type,
         )
-        metrics.record_request(model_id_key)
+        req_priority = str(request.priority or "medium")
+        metrics.record_request(model_id_key, priority=req_priority)
 
         completed_normally = False
         try:
@@ -376,11 +455,17 @@ class ProviderRuntimeAdapter:
                         output_chars += len(token)
                     yield token
 
-            async for token in queue.run_stream(_stream(), priority=request.priority):
+            async for token in self._iterate_with_preemption_retry(
+                lambda: queue.run_stream(
+                    _stream(),
+                    priority=request.priority,
+                    preemption_key=self._preemption_key_from_metadata(meta),
+                )
+            ):
                 yield token
             completed_normally = True
         except Exception as e:
-            metrics.record_request_failed(model_id_key)
+            metrics.record_request_failed(model_id_key, priority=req_priority)
             log_structured(
                 "RuntimeStabilization",
                 "inference_error",
@@ -391,7 +476,12 @@ class ProviderRuntimeAdapter:
             raise
         finally:
             latency_ms = (time.time() - start_time) * 1000
-            metrics.record_latency(model_id_key, latency_ms)
+            metrics.record_latency(
+                model_id_key,
+                latency_ms,
+                priority=req_priority,
+                slo_target_ms=self._slo_target_ms_for_priority(req_priority),
+            )
             if output_chars > 0:
                 tokens_est = max(1, output_chars // 4)
                 metrics.record_tokens(model_id_key, tokens_est)
@@ -448,18 +538,30 @@ class ProviderRuntimeAdapter:
             meta.get("agent_id"),
         )
 
-        metrics.record_request(model_id_key)
+        req_priority = str(request.priority or "medium")
+        metrics.record_request(model_id_key, priority=req_priority)
         start_embed = time.time()
         try:
             loop = asyncio.get_running_loop()
             async def _embed_coro() -> Any:
                 return await loop.run_in_executor(None, lambda: rt.embed(texts))
-            embeddings = await queue.run(_embed_coro(), priority=request.priority)
-        except Exception as e:
-            metrics.record_request_failed(model_id_key)
+            embeddings = await self._run_with_preemption_retry(
+                lambda: queue.run(
+                    _embed_coro(),
+                    priority=request.priority,
+                    preemption_key=self._preemption_key_from_metadata(meta),
+                )
+            )
+        except Exception:
+            metrics.record_request_failed(model_id_key, priority=req_priority)
             raise
         latency_ms = (time.time() - start_embed) * 1000
-        metrics.record_latency(model_id_key, latency_ms)
+        metrics.record_latency(
+            model_id_key,
+            latency_ms,
+            priority=req_priority,
+            slo_target_ms=self._slo_target_ms_for_priority(req_priority),
+        )
 
         return EmbeddingResponse(
             embeddings=embeddings,
@@ -505,7 +607,8 @@ class ProviderRuntimeAdapter:
 
         runtime = await instance_manager.get_instance(model_id_key)
         queue = queue_manager.get_queue(model_id_key, runtime_type)
-        metrics.record_request(model_id_key)
+        req_priority = str(request.priority or "medium")
+        metrics.record_request(model_id_key, priority=req_priority)
         start_transcribe = time.time()
 
         audio = request.audio.strip()
@@ -557,12 +660,23 @@ class ProviderRuntimeAdapter:
             async def _transcribe_coro() -> Any:
                 return await runtime.transcribe(audio_path, options=request.options or {})
             try:
-                result = await queue.run(_transcribe_coro(), priority=request.priority)
+                result = await self._run_with_preemption_retry(
+                    lambda: queue.run(
+                        _transcribe_coro(),
+                        priority=request.priority,
+                        preemption_key=self._preemption_key_from_metadata(meta),
+                    )
+                )
             except Exception:
-                metrics.record_request_failed(model_id_key)
+                metrics.record_request_failed(model_id_key, priority=req_priority)
                 raise
             latency_ms = (time.time() - start_transcribe) * 1000
-            metrics.record_latency(model_id_key, latency_ms)
+            metrics.record_latency(
+                model_id_key,
+                latency_ms,
+                priority=req_priority,
+                slo_target_ms=self._slo_target_ms_for_priority(req_priority),
+            )
             return ASRResponse(
                 text=str(result.get("text", "") or ""),
                 language=str(result.get("language", "unknown") or "unknown"),

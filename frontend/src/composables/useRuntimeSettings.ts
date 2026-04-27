@@ -85,6 +85,9 @@ export function useRuntimeSettings() {
   const agentStepDefaultRetryIntervalSeconds = ref(1)
   const workflowGovernanceHealthyThreshold = ref(0.1)
   const workflowGovernanceWarningThreshold = ref(0.3)
+  const inferencePriorityPanelHighSloCriticalRate = ref(0.95)
+  const inferencePriorityPanelHighSloWarningRate = ref(0.99)
+  const inferencePriorityPanelPreemptionCooldownBusyThreshold = ref(10)
   const DEFAULT_SMART_ROUTING_POLICIES_TEMPLATE = `{
   "reasoning-model": {
     "strategy": "blue_green",
@@ -195,6 +198,18 @@ export function useRuntimeSettings() {
         workflowGovernanceHealthyThreshold.value,
         parseFloat01(s.workflowGovernanceWarningThreshold, 0.3),
       )
+      inferencePriorityPanelHighSloCriticalRate.value = parseFloat01(
+        s.inferencePriorityPanelHighSloCriticalRate,
+        0.95,
+      )
+      inferencePriorityPanelHighSloWarningRate.value = Math.max(
+        inferencePriorityPanelHighSloCriticalRate.value,
+        parseFloat01(s.inferencePriorityPanelHighSloWarningRate, 0.99),
+      )
+      inferencePriorityPanelPreemptionCooldownBusyThreshold.value = Math.max(
+        0,
+        Math.floor(Number(s.inferencePriorityPanelPreemptionCooldownBusyThreshold) || 10),
+      )
       smartRoutingJsonError.value = ''
       refreshSmartRoutingPreview()
       isEditing.value = false
@@ -248,6 +263,18 @@ export function useRuntimeSettings() {
         workflowGovernanceWarningThreshold: Math.max(
           parseFloat01(workflowGovernanceHealthyThreshold.value, 0.1),
           parseFloat01(workflowGovernanceWarningThreshold.value, 0.3),
+        ),
+        inferencePriorityPanelHighSloCriticalRate: parseFloat01(
+          inferencePriorityPanelHighSloCriticalRate.value,
+          0.95,
+        ),
+        inferencePriorityPanelHighSloWarningRate: Math.max(
+          parseFloat01(inferencePriorityPanelHighSloCriticalRate.value, 0.95),
+          parseFloat01(inferencePriorityPanelHighSloWarningRate.value, 0.99),
+        ),
+        inferencePriorityPanelPreemptionCooldownBusyThreshold: Math.max(
+          0,
+          Math.floor(Number(inferencePriorityPanelPreemptionCooldownBusyThreshold.value) || 10),
         ),
       })
       await loadConfig()
@@ -745,6 +772,9 @@ export function useRuntimeSettings() {
     agentStepDefaultRetryIntervalSeconds,
     workflowGovernanceHealthyThreshold,
     workflowGovernanceWarningThreshold,
+    inferencePriorityPanelHighSloCriticalRate,
+    inferencePriorityPanelHighSloWarningRate,
+    inferencePriorityPanelPreemptionCooldownBusyThreshold,
     fillSmartRoutingTemplate,
     clearSmartRoutingPolicies,
     config,

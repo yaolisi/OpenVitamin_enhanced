@@ -254,7 +254,7 @@ watch(theme, (newTheme) => {
     <!-- Header -->
     <header class="pt-10 pb-6 px-10 flex items-start justify-between shrink-0">
       <div class="space-y-2">
-        <h1 class="text-4xl font-bold tracking-tight">General Settings</h1>
+        <h1 class="text-4xl font-bold tracking-tight">{{ t('settings.general_nav') }}</h1>
         <p class="text-muted-foreground text-lg">{{ t('settings.subtitle') }}</p>
       </div>
       <div class="flex items-center gap-3 pt-2">
@@ -298,7 +298,7 @@ watch(theme, (newTheme) => {
             :class="settingsSection === 'settings-general' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/general')"
           >
-            <span v-if="!navCollapsed">General</span>
+            <span v-if="!navCollapsed">{{ t('settings.general_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <Sliders class="w-4 h-4" />
             </span>
@@ -328,7 +328,7 @@ watch(theme, (newTheme) => {
             :class="settingsSection === 'settings-backend' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/backend')"
           >
-            <span v-if="!navCollapsed">Backend</span>
+            <span v-if="!navCollapsed">{{ t('settings.backend_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <Cpu class="w-4 h-4" />
             </span>
@@ -348,7 +348,7 @@ watch(theme, (newTheme) => {
             :class="settingsSection === 'settings-object-detection' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/object-detection')"
           >
-            <span v-if="!navCollapsed">Object Detection</span>
+            <span v-if="!navCollapsed">{{ t('settings.object_detection_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <ScanSearch class="w-4 h-4" />
             </span>
@@ -368,7 +368,7 @@ watch(theme, (newTheme) => {
             :class="settingsSection === 'settings-asr' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/asr')"
           >
-            <span v-if="!navCollapsed">ASR</span>
+            <span v-if="!navCollapsed">{{ t('settings.asr_nav') }}</span>
             <span v-else class="flex items-center justify-center">
               <Mic class="w-4 h-4" />
             </span>
@@ -636,7 +636,7 @@ watch(theme, (newTheme) => {
                 </div>
               </div>
               <Button variant="outline" size="sm" @click="reloadEngine">
-                <span class="sr-only">Reload engine</span>
+                <span class="sr-only">{{ t('settings.monitor.reload') }}</span>
                 {{ t('settings.monitor.reload') }}
               </Button>
             </div>

@@ -161,6 +161,62 @@ def test_inference_cache_stats_endpoint(monkeypatch):
     assert body.get("cache_misses") == 1
 
 
+def test_runtime_metrics_endpoint_includes_priority_slo_panel(monkeypatch):
+    client = _build_client()
+
+    class _FakeRuntimeMetrics:
+        def get_metrics(self):
+            return {
+                "summary": {"total_requests": 5, "total_requests_failed": 1, "total_latency_ms": 1000.0, "total_tokens_generated": 200, "models_count": 1},
+                "by_priority_summary": {
+                    "high": {
+                        "requests": 3,
+                        "requests_failed": 0,
+                        "avg_latency_ms": 120.0,
+                        "p95_latency_ms": 210.0,
+                        "slo_target_ms": 3000,
+                        "slo_met_count": 3,
+                        "slo_met_rate": 1.0,
+                    }
+                },
+                "by_model": {},
+            }
+
+    class _FakeQueue:
+        preemptions_total = 2
+        preemption_skipped_limit_total = 1
+        preemption_skipped_cooldown_total = 4
+
+    class _FakeQueueManager:
+        def list_queues(self):
+            return {"model-a": _FakeQueue()}
+
+    monkeypatch.setattr("core.runtime.get_runtime_metrics", lambda: _FakeRuntimeMetrics())
+    monkeypatch.setattr("core.runtime.get_inference_queue_manager", lambda: _FakeQueueManager())
+    monkeypatch.setattr(system_api, "get_inference_priority_panel_high_slo_critical_rate", lambda: 0.95)
+    monkeypatch.setattr(system_api, "get_inference_priority_panel_high_slo_warning_rate", lambda: 0.99)
+    monkeypatch.setattr(
+        system_api,
+        "get_inference_priority_panel_preemption_cooldown_busy_threshold",
+        lambda: 10,
+    )
+    resp = client.get("/api/system/runtime-metrics")
+    assert resp.status_code == 200
+    body = resp.json()
+    panel = body.get("priority_slo_panel", {})
+    assert panel.get("high_priority", {}).get("p95_latency_ms") == pytest.approx(210.0)
+    assert panel.get("high_priority", {}).get("slo_met_rate") == pytest.approx(1.0)
+    preemption = panel.get("queue_preemption", {})
+    assert preemption.get("preemptions_total") == 2
+    assert preemption.get("preemption_skipped_limit_total") == 1
+    assert preemption.get("preemption_skipped_cooldown_total") == 4
+    assert preemption.get("by_model", {}).get("model-a", {}).get("preemptions_total") == 2
+    thresholds = panel.get("thresholds", {})
+    assert thresholds.get("high_slo_critical_rate") == pytest.approx(0.95)
+    assert thresholds.get("high_slo_warning_rate") == pytest.approx(0.99)
+    assert thresholds.get("preemption_cooldown_busy_threshold") == 10
+
+
 def test_inference_cache_clear_endpoint_passes_model_alias(monkeypatch):
     client = _build_client()
     captured: dict[str, object] = {}

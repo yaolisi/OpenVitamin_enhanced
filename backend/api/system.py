@@ -25,6 +25,11 @@ from core.inference.gateway import get_inference_gateway
 from core.cache import get_redis_cache_client
 from core.security.deps import require_authenticated_platform_admin, require_platform_admin
 from middleware.api_key_scope import get_revoked_api_keys, revoke_api_key, unrevoke_api_key
+from core.system.runtime_settings import (
+    get_inference_priority_panel_high_slo_critical_rate,
+    get_inference_priority_panel_high_slo_warning_rate,
+    get_inference_priority_panel_preemption_cooldown_busy_threshold,
+)
 
 router = APIRouter(
     prefix="/api/system",
@@ -68,6 +73,17 @@ ALLOWED_SYSTEM_CONFIG_KEYS = {
     "runtimeReleaseMinIntervalSeconds",
     "inferenceSmartRoutingEnabled",
     "inferenceSmartRoutingPoliciesJson",
+    "inferenceQueueSloEnabled",
+    "inferenceQueueSloHighMs",
+    "inferenceQueueSloMediumMs",
+    "inferenceQueueSloLowMs",
+    "inferenceQueuePreemptionEnabled",
+    "inferenceQueuePreemptionMaxPerHighRequest",
+    "inferenceQueuePreemptionMaxPerTask",
+    "inferenceQueuePreemptionCooldownMs",
+    "inferencePriorityPanelHighSloCriticalRate",
+    "inferencePriorityPanelHighSloWarningRate",
+    "inferencePriorityPanelPreemptionCooldownBusyThreshold",
     "skillDiscoveryTagMatchWeight",
     "skillDiscoveryMinSemanticSimilarity",
     "skillDiscoveryMinHybridScore",
@@ -181,6 +197,17 @@ class SystemConfigUpdate(BaseModel):
     runtimeReleaseMinIntervalSeconds: Optional[int] = Field(default=None, ge=1, le=3600)
     inferenceSmartRoutingEnabled: Optional[bool] = None
     inferenceSmartRoutingPoliciesJson: Optional[str] = Field(default=None, max_length=65535)
+    inferenceQueueSloEnabled: Optional[bool] = None
+    inferenceQueueSloHighMs: Optional[int] = Field(default=None, ge=200, le=120000)
+    inferenceQueueSloMediumMs: Optional[int] = Field(default=None, ge=200, le=120000)
+    inferenceQueueSloLowMs: Optional[int] = Field(default=None, ge=200, le=120000)
+    inferenceQueuePreemptionEnabled: Optional[bool] = None
+    inferenceQueuePreemptionMaxPerHighRequest: Optional[int] = Field(default=None, ge=1, le=8)
+    inferenceQueuePreemptionMaxPerTask: Optional[int] = Field(default=None, ge=1, le=20)
+    inferenceQueuePreemptionCooldownMs: Optional[int] = Field(default=None, ge=0, le=60000)
+    inferencePriorityPanelHighSloCriticalRate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    inferencePriorityPanelHighSloWarningRate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    inferencePriorityPanelPreemptionCooldownBusyThreshold: Optional[int] = Field(default=None, ge=0, le=100000)
     skillDiscoveryTagMatchWeight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     skillDiscoveryMinSemanticSimilarity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     skillDiscoveryMinHybridScore: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -748,8 +775,46 @@ def get_gpu_metrics() -> Dict[str, Any]:
 @router.get("/runtime-metrics")
 async def get_runtime_metrics_api() -> Dict[str, Any]:
     """V2.9 运行时稳定层指标：按模型的请求数、延迟、队列、tokens"""
-    from core.runtime import get_runtime_metrics
-    return cast(Dict[str, Any], get_runtime_metrics().get_metrics())
+    from core.runtime import get_runtime_metrics, get_inference_queue_manager
+
+    metrics = cast(Dict[str, Any], get_runtime_metrics().get_metrics())
+    priority_summary = cast(Dict[str, Any], metrics.get("by_priority_summary") or {})
+    high_priority = cast(Dict[str, Any], priority_summary.get("high") or {})
+    queue_manager = get_inference_queue_manager()
+    queue_preemption_summary = {
+        "preemptions_total": 0,
+        "preemption_skipped_limit_total": 0,
+        "preemption_skipped_cooldown_total": 0,
+        "by_model": {},
+    }
+    for model_id, queue in queue_manager.list_queues().items():
+        model_stats = {
+            "preemptions_total": int(getattr(queue, "preemptions_total", 0)),
+            "preemption_skipped_limit_total": int(getattr(queue, "preemption_skipped_limit_total", 0)),
+            "preemption_skipped_cooldown_total": int(getattr(queue, "preemption_skipped_cooldown_total", 0)),
+        }
+        queue_preemption_summary["by_model"][model_id] = model_stats
+        queue_preemption_summary["preemptions_total"] += model_stats["preemptions_total"]
+        queue_preemption_summary["preemption_skipped_limit_total"] += model_stats["preemption_skipped_limit_total"]
+        queue_preemption_summary["preemption_skipped_cooldown_total"] += model_stats["preemption_skipped_cooldown_total"]
+
+    metrics["priority_slo_panel"] = {
+        "high_priority": {
+            "requests": int(high_priority.get("requests") or 0),
+            "p95_latency_ms": float(high_priority.get("p95_latency_ms") or 0.0),
+            "slo_target_ms": int(high_priority.get("slo_target_ms") or 0),
+            "slo_met_rate": float(high_priority.get("slo_met_rate") or 0.0),
+        },
+        "queue_preemption": queue_preemption_summary,
+        "thresholds": {
+            "high_slo_critical_rate": float(get_inference_priority_panel_high_slo_critical_rate()),
+            "high_slo_warning_rate": float(get_inference_priority_panel_high_slo_warning_rate()),
+            "preemption_cooldown_busy_threshold": int(
+                get_inference_priority_panel_preemption_cooldown_busy_threshold()
+            ),
+        },
+    }
+    return metrics
 
 
 @router.get("/observability-summary")

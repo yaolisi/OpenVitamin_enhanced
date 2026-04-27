@@ -1228,6 +1228,10 @@
       "agent_step_default_retries_hint": "含首次共 max_retries+1 次。0 表示不自动重试。",
       "agent_step_retry_interval": "重试间隔（秒）",
       "agent_step_retry_interval_hint": "两次重试之间等待。",
+      "cache_stats_hit_count": "命中次数",
+      "cache_stats_miss_count": "未命中次数",
+      "cache_stats_hit_rate": "命中率",
+      "cache_stats_saved_latency": "累计节省时延",
       "smart_routing_enabled": "智能路由开关",
       "smart_routing_enabled_desc": "开启后根据模型负载、灰度策略和用户优先级自动分配模型实例。",
       "smart_routing_group_builder": "分组：快速生成器",
@@ -1280,7 +1284,25 @@
       "idle_ttl_desc": "模型空闲超过该秒数后可能被回收（30–86400）。",
       "min_interval": "回收最小间隔（秒）",
       "min_interval_desc": "两次自动回收之间的最小间隔，用于抑制抖动（1–3600）。",
+      "workflow_governance_title": "工作流治理阈值",
+      "workflow_governance_desc": "控制 Workflow 编辑器中的治理成熟度分级（Healthy / Warning / Risky）与软门禁触发点。",
+      "workflow_governance_healthy_label": "Healthy 阈值（0-1）",
+      "workflow_governance_warning_label": "Warning 阈值（0-1）",
+      "workflow_governance_preview_title": "实时预览样例",
+      "workflow_governance_preview_thresholds": "当前阈值：Healthy <= {healthy}%，Warning <= {warning}%，其余为 Risky",
+      "workflow_governance_preview_sample_ratio": "样例 {index} 覆盖比例",
+      "workflow_governance_preview_reset_samples": "重置样例比例",
+      "workflow_governance_preview_sample_result": "覆盖 {ratio} -> {level}",
+      "workflow_governance_level_healthy": "Healthy",
+      "workflow_governance_level_warning": "Warning",
+      "workflow_governance_level_risky": "Risky",
       "review_note": "当前页面建议保留“自动回收开关 + 按类型缓存上限 + 空闲 TTL + 最小间隔”这四类核心配置即可。更细的每类型 TTL / 每类型最小间隔暂时没有必要，否则会把策略面板做得过重。"
+      ,"priority_slo_panel_title": "Priority SLA Panel 阈值",
+      "priority_slo_panel_desc": "用于 Optimization Dashboard 的高优 SLO 告警与抢占冷却忙碌提示，保存后立即生效。",
+      "priority_slo_critical_label": "High SLO Critical 阈值（0-1）",
+      "priority_slo_warning_label": "High SLO Warning 阈值（0-1）",
+      "priority_slo_cooldown_busy_label": "Cooldown Busy 阈值（次数）",
+      "priority_slo_judgement": "当前判定：Critical < {critical}%，Warning < {warning}%，Cooldown Busy >= {cooldown} 次"
     },
     "perception": {
       "title": "目标检测 (YOLO)",
@@ -1724,5 +1746,74 @@
     "run_requires_published": "仅允许执行已发布版本，请先保存并发布工作流后再运行。",
     "run_failed": "执行失败：{message}",
     "deploy_coming_soon": "部署功能即将上线。"
+  },
+  "optimization_dashboard": {
+    "header": {
+      "title": "Optimization Dashboard",
+      "subtitle": "V2.7 优化层状态与分析"
+    },
+    "actions": {
+      "rebuild_snapshot": "重建快照",
+      "dismiss": "关闭"
+    },
+    "errors": {
+      "fetch_status": "获取优化状态失败",
+      "rebuild_snapshot": "重建快照失败",
+      "update_config": "更新配置失败"
+    },
+    "layer": {
+      "title": "优化层",
+      "desc": "基于历史执行数据启用智能调度"
+    },
+    "policy": {
+      "title": "调度策略",
+      "default_title": "默认策略",
+      "default_desc": "拓扑顺序，确定性调度",
+      "learned_title": "学习策略",
+      "learned_desc": "基于权重优先级，优化驱动",
+      "default_fallback": "DefaultPolicy"
+    },
+    "impact": {
+      "title": "优化效果",
+      "success_rate": "成功率",
+      "vs_baseline": "对比基线",
+      "avg_latency": "平均延迟",
+      "reduction": "下降",
+      "nodes": "节点",
+      "tracked_nodes": "已跟踪节点",
+      "skills": "技能",
+      "tracked_skills": "已跟踪技能"
+    },
+    "status": {
+      "title": "状态",
+      "current_policy": "当前策略",
+      "policy_version": "策略版本",
+      "policy_version_fallback": "default_1.0.0",
+      "snapshot_version": "快照版本",
+      "snapshot_version_fallback": "empty_00000000",
+      "snapshot_data": "快照数据",
+      "node_weights": "节点权重",
+      "skill_weights": "技能权重",
+      "optimization": "优化",
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "units": {
+      "ms_value": "{value}ms"
+    },
+    "priority_slo": {
+      "title": "Priority SLA Panel",
+      "high_p95": "High P95",
+      "target_latency": "目标 {ms}ms",
+      "high_slo": "High SLO",
+      "high_slo_state_critical": "critical (<{threshold}%)",
+      "high_slo_state_warning": "warning (<{threshold}%)",
+      "high_slo_state_healthy": "healthy",
+      "preemptions": "Preemptions",
+      "total_preemptions": "总抢占次数",
+      "anti_thrash": "Anti-thrash",
+      "cooldown_skips_stable": "cooldown skips",
+      "cooldown_skips_busy": "cooldown skips (>={threshold}, 建议调参)"
+    }
   }
 }

@@ -96,6 +96,83 @@ def get_inference_smart_routing_policies_json() -> str:
     return str(value or "")
 
 
+def get_inference_queue_slo_enabled() -> bool:
+    return _get_bool("inferenceQueueSloEnabled", getattr(settings, "inference_queue_slo_enabled", True))
+
+
+def get_inference_queue_slo_high_ms() -> int:
+    return _get_int("inferenceQueueSloHighMs", getattr(settings, "inference_queue_slo_high_ms", 3000), 200, 120000)
+
+
+def get_inference_queue_slo_medium_ms() -> int:
+    return _get_int("inferenceQueueSloMediumMs", getattr(settings, "inference_queue_slo_medium_ms", 6000), 200, 120000)
+
+
+def get_inference_queue_slo_low_ms() -> int:
+    return _get_int("inferenceQueueSloLowMs", getattr(settings, "inference_queue_slo_low_ms", 10000), 200, 120000)
+
+
+def get_inference_queue_preemption_enabled() -> bool:
+    return _get_bool(
+        "inferenceQueuePreemptionEnabled",
+        getattr(settings, "inference_queue_preemption_enabled", True),
+    )
+
+
+def get_inference_queue_preemption_max_per_high_request() -> int:
+    return _get_int(
+        "inferenceQueuePreemptionMaxPerHighRequest",
+        getattr(settings, "inference_queue_preemption_max_per_high_request", 1),
+        1,
+        8,
+    )
+
+
+def get_inference_queue_preemption_max_per_task() -> int:
+    return _get_int(
+        "inferenceQueuePreemptionMaxPerTask",
+        getattr(settings, "inference_queue_preemption_max_per_task", 2),
+        1,
+        20,
+    )
+
+
+def get_inference_queue_preemption_cooldown_ms() -> int:
+    return _get_int(
+        "inferenceQueuePreemptionCooldownMs",
+        getattr(settings, "inference_queue_preemption_cooldown_ms", 300),
+        0,
+        60000,
+    )
+
+
+def get_inference_priority_panel_high_slo_critical_rate() -> float:
+    return _get_float(
+        "inferencePriorityPanelHighSloCriticalRate",
+        float(getattr(settings, "inference_priority_panel_high_slo_critical_rate", 0.95)),
+        0.0,
+        1.0,
+    )
+
+
+def get_inference_priority_panel_high_slo_warning_rate() -> float:
+    return _get_float(
+        "inferencePriorityPanelHighSloWarningRate",
+        float(getattr(settings, "inference_priority_panel_high_slo_warning_rate", 0.99)),
+        0.0,
+        1.0,
+    )
+
+
+def get_inference_priority_panel_preemption_cooldown_busy_threshold() -> int:
+    return _get_int(
+        "inferencePriorityPanelPreemptionCooldownBusyThreshold",
+        int(getattr(settings, "inference_priority_panel_preemption_cooldown_busy_threshold", 10)),
+        0,
+        100000,
+    )
+
+
 def get_skill_discovery_tag_match_weight() -> float:
     """技能语义检索：标签匹配项在混合分中的权重（0–1），语义为 1 减该值。"""
     return _get_float(
