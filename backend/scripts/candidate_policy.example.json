@@ -1,0 +1,47 @@
+{
+  "ollama:deepseek-r1:32b": {
+    "strategy": "device_aware",
+    "fallback": "ollama:llama3.3:latest",
+    "candidates": [
+      {
+        "target": "ollama:deepseek-r1:32b",
+        "device": "gpu",
+        "weight": 3,
+        "max_queue_size": 4,
+        "max_avg_latency_ms": 1500,
+        "max_error_rate": 0.08,
+        "min_input_tokens": 1024
+      },
+      {
+        "target": "ollama:llama3.3:latest",
+        "device": "cpu",
+        "weight": 1,
+        "max_queue_size": 10,
+        "max_avg_latency_ms": 3000,
+        "max_error_rate": 0.12
+      }
+    ]
+  },
+  "ollama:bge-m3:latest": {
+    "strategy": "device_aware",
+    "fallback": "ollama:llama3.3:latest",
+    "candidates": [
+      {
+        "target": "ollama:bge-m3:latest",
+        "device": "cpu",
+        "weight": 2,
+        "max_queue_size": 16,
+        "max_avg_latency_ms": 1200,
+        "max_error_rate": 0.08
+      },
+      {
+        "target": "ollama:deepseek-r1:32b",
+        "device": "gpu",
+        "weight": 1,
+        "max_queue_size": 6,
+        "max_avg_latency_ms": 2000,
+        "max_error_rate": 0.1
+      }
+    ]
+  }
+}

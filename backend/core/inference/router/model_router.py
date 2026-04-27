@@ -87,6 +87,23 @@ class ModelRouter:
         except Exception:
             return 0
 
+    @staticmethod
+    def _model_metrics(model_id: str) -> dict[str, Any]:
+        metrics = get_runtime_metrics().get_model_metrics(model_id) or {}
+        return metrics if isinstance(metrics, dict) else {}
+
+    @staticmethod
+    def _error_rate(model_id: str) -> float:
+        metrics = ModelRouter._model_metrics(model_id)
+        try:
+            requests = max(0, int(metrics.get("requests", 0) or 0))
+            failed = max(0, int(metrics.get("requests_failed", 0) or 0))
+        except Exception:
+            return 0.0
+        if requests <= 0:
+            return 0.0
+        return max(0.0, min(1.0, failed / requests))
+
     def _load_policy(self, model_alias: str) -> Optional[dict[str, Any]]:
         if not get_inference_smart_routing_enabled():
             return None
@@ -138,6 +155,8 @@ class ModelRouter:
             return self._route_least_loaded(policy)
         if strategy == "least_loaded_prefer_candidate":
             return self._route_least_loaded_prefer_candidate(policy, is_admin)
+        if strategy == "device_aware":
+            return self._route_device_aware(policy, request_metadata)
 
         return None
 
@@ -239,6 +258,179 @@ class ModelRouter:
             return stable_r
         candidate_r.resolved_via = f"{candidate_r.resolved_via}+least_loaded_prefer_candidate"
         return candidate_r
+
+    @staticmethod
+    def _request_profile(request_metadata: Optional[dict[str, Any]]) -> str:
+        raw = (
+            (request_metadata or {}).get("inference_profile")
+            or (request_metadata or {}).get("workload_profile")
+            or (request_metadata or {}).get("model_profile")
+            or ""
+        )
+        return str(raw).strip().lower()
+
+    @staticmethod
+    def _request_input_tokens(request_metadata: Optional[dict[str, Any]]) -> Optional[int]:
+        for key in ("input_tokens", "prompt_tokens", "estimated_tokens", "token_count"):
+            val = (request_metadata or {}).get(key)
+            if val is None:
+                continue
+            try:
+                return max(0, int(val))
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _profile_prefers_device(profile: str, device: str) -> bool:
+        normalized = profile.strip().lower()
+        dev = device.strip().lower()
+        if not normalized or not dev:
+            return False
+        profile_map = {
+            "large": {"gpu"},
+            "reasoning": {"gpu"},
+            "small": {"cpu"},
+            "light": {"cpu"},
+            "embedding": {"vpu", "cpu"},
+            "vision": {"gpu", "vpu"},
+            "edge": {"vpu", "cpu"},
+        }
+        return dev in profile_map.get(normalized, set())
+
+    @staticmethod
+    def _safe_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+        try:
+            return int(value)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+        try:
+            return float(value)
+        except Exception:
+            return default
+
+    @classmethod
+    def _exceeds_limit_int(cls, value: int, limit: Any, minimum: int = 0) -> bool:
+        parsed = cls._safe_int(limit, None)
+        if parsed is None:
+            return False
+        return value > max(minimum, parsed)
+
+    @classmethod
+    def _exceeds_limit_float(cls, value: float, limit: Any, minimum: float = 0.0) -> bool:
+        parsed = cls._safe_float(limit, None)
+        if parsed is None:
+            return False
+        return value > max(minimum, parsed)
+
+    def _candidate_eligible(
+        self,
+        candidate: dict[str, Any],
+        resolved: RoutingResult,
+        request_metadata: Optional[dict[str, Any]],
+    ) -> bool:
+        metrics = self._model_metrics(resolved.model_id)
+        queue_size = max(0, int(metrics.get("queue_size", 0) or 0))
+        avg_latency_ms = max(0.0, float(metrics.get("avg_latency_ms", 0.0) or 0.0))
+        error_rate = self._error_rate(resolved.model_id)
+
+        if self._exceeds_limit_int(queue_size, candidate.get("max_queue_size"), minimum=0):
+            return False
+        if self._exceeds_limit_float(avg_latency_ms, candidate.get("max_avg_latency_ms"), minimum=0.0):
+            return False
+
+        max_error_rate = self._safe_float(candidate.get("max_error_rate"), None)
+        if max_error_rate is not None and error_rate > max(0.0, min(1.0, max_error_rate)):
+            return False
+
+        input_tokens = self._request_input_tokens(request_metadata)
+        min_tokens = self._safe_int(candidate.get("min_input_tokens"), None)
+        max_tokens = self._safe_int(candidate.get("max_input_tokens"), None)
+        if input_tokens is not None and min_tokens is not None and input_tokens < min_tokens:
+            return False
+        if input_tokens is not None and max_tokens is not None and input_tokens > max_tokens:
+            return False
+
+        return True
+
+    def _candidate_score(
+        self,
+        candidate: dict[str, Any],
+        resolved: RoutingResult,
+        request_metadata: Optional[dict[str, Any]],
+    ) -> float:
+        metrics = self._model_metrics(resolved.model_id)
+        queue_size = max(0, int(metrics.get("queue_size", 0) or 0))
+        avg_latency_ms = max(0.0, float(metrics.get("avg_latency_ms", 0.0) or 0.0))
+        error_rate = self._error_rate(resolved.model_id)
+
+        try:
+            weight = float(candidate.get("weight", 1.0))
+        except Exception:
+            weight = 1.0
+        base = max(0.1, weight)
+
+        preferred_device = str((request_metadata or {}).get("preferred_device") or "").strip().lower()
+        device = str(candidate.get("device") or "").strip().lower()
+        profile = self._request_profile(request_metadata)
+
+        if preferred_device and device and preferred_device == device:
+            base += 2.0
+        if profile and device and self._profile_prefers_device(profile, device):
+            base += 1.0
+
+        base -= (queue_size * 0.2)
+        base -= (avg_latency_ms / 500.0)
+        base -= (error_rate * 3.0)
+        return base
+
+    def _route_device_aware(
+        self,
+        policy: dict[str, Any],
+        request_metadata: Optional[dict[str, Any]],
+    ) -> Optional[RoutingResult]:
+        candidates = policy.get("candidates")
+        if not isinstance(candidates, list) or not candidates:
+            return None
+
+        eligible: list[tuple[float, RoutingResult]] = []
+        best_effort: list[RoutingResult] = []
+
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            target = str(item.get("target") or item.get("model_id") or "").strip()
+            if not target:
+                continue
+            resolved = self._resolve_alias_or_direct(target)
+            best_effort.append(resolved)
+            if not self._candidate_eligible(item, resolved, request_metadata):
+                continue
+            score = self._candidate_score(item, resolved, request_metadata)
+            eligible.append((score, resolved))
+
+        if eligible:
+            eligible.sort(key=lambda x: x[0], reverse=True)
+            chosen = eligible[0][1]
+            chosen.resolved_via = f"{chosen.resolved_via}+device_aware"
+            return chosen
+
+        fallback = str(policy.get("fallback") or "").strip()
+        if fallback:
+            chosen = self._resolve_alias_or_direct(fallback)
+            chosen.resolved_via = f"{chosen.resolved_via}+device_aware+fallback"
+            return chosen
+
+        if best_effort:
+            best_effort.sort(key=lambda x: self._queue_size(x.model_id))
+            chosen = best_effort[0]
+            chosen.resolved_via = f"{chosen.resolved_via}+device_aware+fallback"
+            return chosen
+
+        return None
 
     def resolve(
         self,

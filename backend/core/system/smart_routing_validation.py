@@ -9,6 +9,7 @@ _ALLOWED_STRATEGY = {
     "weighted",
     "least_loaded",
     "least_loaded_prefer_candidate",
+    "device_aware",
 }
 
 
@@ -71,6 +72,37 @@ def _validate_candidates_list(alias: str, policy: dict) -> None:
     )
 
 
+def _validate_device_aware_candidates(alias: str, policy: dict) -> None:
+    candidates = policy.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        _raise_smart_routing_policy_error(
+            alias,
+            "candidates",
+            f"policy for alias '{alias}' requires non-empty candidates list",
+        )
+    for idx, item in enumerate(candidates):
+        if not isinstance(item, dict):
+            _raise_smart_routing_policy_error(
+                alias,
+                "candidates",
+                f"policy for alias '{alias}' candidate[{idx}] must be an object",
+            )
+        target = item.get("target") or item.get("model_id")
+        if not isinstance(target, str) or not target.strip():
+            _raise_smart_routing_policy_error(
+                alias,
+                "candidates",
+                f"policy for alias '{alias}' candidate[{idx}] requires non-empty target/model_id",
+            )
+    fallback = policy.get("fallback")
+    if fallback is not None and (not isinstance(fallback, str) or not fallback.strip()):
+        _raise_smart_routing_policy_error(
+            alias,
+            "fallback",
+            f"policy for alias '{alias}' fallback must be non-empty string when provided",
+        )
+
+
 def _raise_smart_routing_policy_error(alias: str, field: str, message: str) -> None:
     raise_api_error(
         status_code=400,
@@ -111,3 +143,5 @@ def validate_smart_routing_policies_json(raw: str) -> None:
             _validate_stable_candidate(alias, policy, strategy)
         if strategy in {"weighted", "least_loaded"}:
             _validate_candidates_list(alias, policy)
+        if strategy == "device_aware":
+            _validate_device_aware_candidates(alias, policy)

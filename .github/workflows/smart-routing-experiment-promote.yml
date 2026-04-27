@@ -1,0 +1,136 @@
+name: smart-routing-experiment-promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode: smoke | experiment | scan | load-test | full"
+        required: true
+        default: "experiment"
+      model:
+        description: "Model alias/id for experiment"
+        required: true
+        default: "ollama:deepseek-r1:32b"
+      candidate_policy_file:
+        description: "Path to candidate policy JSON"
+        required: true
+        default: "backend/scripts/candidate_policy.example.json"
+      duration_seconds:
+        description: "Load test duration (seconds)"
+        required: true
+        default: "60"
+      rps:
+        description: "Requests per second"
+        required: true
+        default: "8"
+      concurrency:
+        description: "Concurrent workers"
+        required: true
+        default: "16"
+      top_k:
+        description: "Top K results for scan mode"
+        required: true
+        default: "10"
+      pass_only:
+        description: "Scan only PASS combos (true/false)"
+        required: true
+        default: "true"
+      dry_run:
+        description: "Scan dry-run without applying policy (true/false)"
+        required: true
+        default: "true"
+      gpu_weights:
+        description: "Scan grid for GPU weights (comma-separated)"
+        required: true
+        default: "2,3,4"
+      gpu_max_queues:
+        description: "Scan grid for GPU max queue (comma-separated)"
+        required: true
+        default: "3,4,5,6"
+      cpu_weights:
+        description: "Scan grid for CPU weights (comma-separated)"
+        required: true
+        default: "1,1.5,2"
+      max_scan_combos:
+        description: "Safety cap for scan combination count"
+        required: true
+        default: "100"
+      max_estimated_minutes:
+        description: "Safety cap for estimated scan runtime minutes"
+        required: true
+        default: "45"
+      estimated_warn_ratio:
+        description: "Warn threshold ratio for estimated scan runtime"
+        required: true
+        default: "0.7"
+      estimated_fail_ratio:
+        description: "Fail threshold ratio for estimated scan runtime"
+        required: true
+        default: "1.0"
+
+jobs:
+  promote-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: ${{ vars.SMART_ROUTING_BASE_URL != '' && secrets.SMART_ROUTING_ADMIN_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run smart routing experiment gate
+        env:
+          MODE: ${{ inputs.mode }}
+          BASE_URL: ${{ vars.SMART_ROUTING_BASE_URL }}
+          MODEL: ${{ inputs.model }}
+          CANDIDATE: ${{ github.workspace }}/${{ inputs.candidate_policy_file }}
+          DURATION: ${{ inputs.duration_seconds }}
+          RPS: ${{ inputs.rps }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          API_KEY: ${{ secrets.SMART_ROUTING_ADMIN_KEY }}
+          PROMOTE_REPORT: ${{ github.workspace }}/backend/tmp/smart-routing-exp/promote-decision.json
+          TOP_K: ${{ inputs.top_k }}
+          PASS_ONLY: ${{ inputs.pass_only }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GPU_WEIGHTS: ${{ inputs.gpu_weights }}
+          GPU_MAX_QUEUES: ${{ inputs.gpu_max_queues }}
+          CPU_WEIGHTS: ${{ inputs.cpu_weights }}
+          MAX_SCAN_COMBOS: ${{ inputs.max_scan_combos }}
+          MAX_ESTIMATED_MINUTES: ${{ inputs.max_estimated_minutes }}
+          ESTIMATED_WARN_RATIO: ${{ inputs.estimated_warn_ratio }}
+          ESTIMATED_FAIL_RATIO: ${{ inputs.estimated_fail_ratio }}
+        run: |
+          SCAN_FLAGS=""
+          if [ "$PASS_ONLY" = "true" ]; then
+            SCAN_FLAGS="$SCAN_FLAGS PASS_ONLY=1"
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            SCAN_FLAGS="$SCAN_FLAGS DRY_RUN=1"
+          fi
+          if [ "$MODE" = "smoke" ]; then
+            make smart-routing-all-checks
+          elif [ "$MODE" = "full" ]; then
+            make smart-routing-all-checks
+            make smart-routing-experiment BASE_URL="$BASE_URL" MODEL="$MODEL" CANDIDATE="$CANDIDATE" DURATION="$DURATION" RPS="$RPS" CONCURRENCY="$CONCURRENCY" API_KEY="$API_KEY" FAIL_ON_NO_PROMOTE=1 PROMOTE_REPORT="$PROMOTE_REPORT" OUTPUT="./backend/tmp/smart-routing-exp"
+            make smart-routing-param-scan BASE_URL="$BASE_URL" MODEL="$MODEL" CANDIDATE="$CANDIDATE" DURATION="$DURATION" RPS="$RPS" CONCURRENCY="$CONCURRENCY" API_KEY="$API_KEY" TOP_K="$TOP_K" GPU_WEIGHTS="$GPU_WEIGHTS" GPU_MAX_QUEUES="$GPU_MAX_QUEUES" CPU_WEIGHTS="$CPU_WEIGHTS" MAX_SCAN_COMBOS="$MAX_SCAN_COMBOS" MAX_ESTIMATED_MINUTES="$MAX_ESTIMATED_MINUTES" ESTIMATED_WARN_RATIO="$ESTIMATED_WARN_RATIO" ESTIMATED_FAIL_RATIO="$ESTIMATED_FAIL_RATIO" OUTPUT="./backend/tmp/smart-routing-scan" $SCAN_FLAGS
+          elif [ "$MODE" = "load-test" ]; then
+            make smart-routing-load-test BASE_URL="$BASE_URL" MODEL="$MODEL" DURATION="$DURATION" RPS="$RPS" CONCURRENCY="$CONCURRENCY" API_KEY="$API_KEY" REPORT="./backend/tmp/smart-routing-exp/load-test-report.json"
+          elif [ "$MODE" = "scan" ]; then
+            make smart-routing-param-scan BASE_URL="$BASE_URL" MODEL="$MODEL" CANDIDATE="$CANDIDATE" DURATION="$DURATION" RPS="$RPS" CONCURRENCY="$CONCURRENCY" API_KEY="$API_KEY" TOP_K="$TOP_K" GPU_WEIGHTS="$GPU_WEIGHTS" GPU_MAX_QUEUES="$GPU_MAX_QUEUES" CPU_WEIGHTS="$CPU_WEIGHTS" MAX_SCAN_COMBOS="$MAX_SCAN_COMBOS" MAX_ESTIMATED_MINUTES="$MAX_ESTIMATED_MINUTES" ESTIMATED_WARN_RATIO="$ESTIMATED_WARN_RATIO" ESTIMATED_FAIL_RATIO="$ESTIMATED_FAIL_RATIO" OUTPUT="./backend/tmp/smart-routing-scan" $SCAN_FLAGS
+          else
+            make smart-routing-experiment BASE_URL="$BASE_URL" MODEL="$MODEL" CANDIDATE="$CANDIDATE" DURATION="$DURATION" RPS="$RPS" CONCURRENCY="$CONCURRENCY" API_KEY="$API_KEY" FAIL_ON_NO_PROMOTE=1 PROMOTE_REPORT="$PROMOTE_REPORT" OUTPUT="./backend/tmp/smart-routing-exp"
+          fi
+
+      - name: Upload experiment artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-routing-exp
+          path: |
+            backend/tmp/smart-routing-exp
+            backend/tmp/smart-routing-scan
+          if-no-files-found: warn
