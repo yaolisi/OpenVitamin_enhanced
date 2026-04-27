@@ -174,6 +174,132 @@ class TestKnowledgeBaseUnifiedChunks:
         kb_id = store_with_unified.create_knowledge_base("KB", None, "emb:1")
         assert store_with_unified.get_chunk_count(knowledge_base_id=kb_id) == 0
 
+    def test_keyword_search_multi_kb(self, store_with_unified: KnowledgeBaseStore) -> None:
+        kb_id = store_with_unified.create_knowledge_base("KB", None, "emb:1")
+        doc_id = store_with_unified.create_document(kb_id, "openvino_gpu.md", "md")
+        with store_with_unified._connect() as conn:
+            conn.execute(
+                f"""
+                INSERT INTO {UNIFIED_CHUNKS_TABLE}
+                (knowledge_base_id, document_id, chunk_id, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                (kb_id, doc_id, "chunk_gpu", "如何配置 OpenVINO 的 GPU 设备：设置 device=GPU。"),
+            )
+            conn.execute(
+                f"""
+                INSERT INTO {UNIFIED_CHUNKS_TABLE}
+                (knowledge_base_id, document_id, chunk_id, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                (kb_id, doc_id, "chunk_cpu", "OpenVINO CPU 配置指南，适用于 CPU 推理。"),
+            )
+            conn.commit()
+        results = store_with_unified.search_chunks_keyword_multi_kb(
+            knowledge_base_ids=[kb_id],
+            query_text="如何配置 OpenVINO 的 GPU 设备",
+            limit=5,
+        )
+        assert results
+        assert results[0]["chunk_id"] == "chunk_gpu"
+        assert results[0]["keyword_score"] >= results[-1]["keyword_score"]
+
+    def test_hybrid_search_fallback_without_vector(self, store_with_unified: KnowledgeBaseStore) -> None:
+        kb_id = store_with_unified.create_knowledge_base("KB", None, "emb:1")
+        doc_id = store_with_unified.create_document(kb_id, "openvino_gpu.md", "md")
+        with store_with_unified._connect() as conn:
+            conn.execute(
+                f"""
+                INSERT INTO {UNIFIED_CHUNKS_TABLE}
+                (knowledge_base_id, document_id, chunk_id, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                (kb_id, doc_id, "chunk_gpu", "OpenVINO GPU 配置步骤，设置推理设备为 GPU。"),
+            )
+            conn.commit()
+
+        results = store_with_unified.hybrid_search_chunks_multi_kb(
+            knowledge_base_ids=[kb_id],
+            query_text="OpenVINO GPU 配置",
+            query_embedding=[0.0] * 16,
+            keyword_limit=10,
+            vector_limit=10,
+            rerank_limit=5,
+            min_relevance_score=0.1,
+        )
+        assert results
+        assert results[0]["chunk_id"] == "chunk_gpu"
+        assert "relevance_score" in results[0]
+
+    def test_kb_version_and_incremental_hash(self, store_with_unified: KnowledgeBaseStore) -> None:
+        kb_id = store_with_unified.create_knowledge_base("KB", None, "emb:1")
+        version_id = store_with_unified.create_kb_version(kb_id, "v2")
+        versions = store_with_unified.list_kb_versions(kb_id)
+        assert versions
+        assert any(v["id"] == version_id for v in versions)
+        resolved = store_with_unified.resolve_kb_version_id(kb_id=kb_id, version_label="v2")
+        assert resolved == version_id
+
+        doc_id = store_with_unified.create_document(kb_id, "a.txt", "txt", content_hash="h1")
+        store_with_unified.add_document_version(doc_id, kb_id, version_id, "h1")
+        assert store_with_unified.should_reindex_document(doc_id, "h1") is False
+        assert store_with_unified.should_reindex_document(doc_id, "h2") is True
+
+    def test_graph_upsert_and_search(self, store_with_unified: KnowledgeBaseStore) -> None:
+        kb_id = store_with_unified.create_knowledge_base("KB", None, "emb:1")
+        version_id = store_with_unified.create_kb_version(kb_id, "v1")
+        inserted = store_with_unified.upsert_graph_triples(
+            kb_id=kb_id,
+            version_id=version_id,
+            source_doc_id="doc_a",
+            triples=[
+                {"source": "Intel", "relation": "开发", "target": "OpenVINO", "confidence": 0.9},
+                {"source": "OpenVINO", "relation": "属于", "target": "AI框架", "confidence": 0.7},
+            ],
+        )
+        assert inserted == 2
+        results = store_with_unified.search_graph_relations(
+            kb_id=kb_id,
+            query_text="Intel 开发了什么",
+            limit=5,
+        )
+        assert results
+        assert any(r["target_entity"] == "OpenVINO" for r in results)
+
+    def test_keyword_search_with_version_filter(self, store_with_unified: KnowledgeBaseStore) -> None:
+        kb_id = store_with_unified.create_knowledge_base("KB", None, "emb:1")
+        doc_id = store_with_unified.create_document(kb_id, "vdoc.md", "md")
+        with store_with_unified._connect() as conn:
+            try:
+                conn.execute(f"ALTER TABLE {UNIFIED_CHUNKS_TABLE} ADD COLUMN version_id TEXT")
+            except Exception:
+                pass
+            conn.execute(
+                f"""
+                INSERT INTO {UNIFIED_CHUNKS_TABLE}
+                (knowledge_base_id, document_id, chunk_id, content, version_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (kb_id, doc_id, "chunk_v1", "OpenVINO GPU 配置 v1", "v1"),
+            )
+            conn.execute(
+                f"""
+                INSERT INTO {UNIFIED_CHUNKS_TABLE}
+                (knowledge_base_id, document_id, chunk_id, content, version_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (kb_id, doc_id, "chunk_v2", "OpenVINO GPU 配置 v2", "v2"),
+            )
+            conn.commit()
+        v1 = store_with_unified.search_chunks_keyword_multi_kb(
+            knowledge_base_ids=[kb_id],
+            query_text="OpenVINO GPU 配置",
+            limit=10,
+            version_id="v1",
+        )
+        assert v1
+        assert all((x.get("version_id") in ("v1", None)) for x in v1)
+
 
 def _vec_available(store: KnowledgeBaseStore) -> bool:
     return getattr(store, "_vec_available", False)
