@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 # 与多数 MCP Server 兼容；握手时可由服务端协商更新
 DEFAULT_PROTOCOL_VERSION = "2024-11-05"
 
-CLIENT_NAME = "openvitamin-mcp"
+CLIENT_NAME = "perilla-mcp"
 CLIENT_VERSION = "1.0.0"
 
 

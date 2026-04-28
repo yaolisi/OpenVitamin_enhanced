@@ -142,7 +142,7 @@ def test_stream_without_gzip_no_gzip_marker(chat_stream_client_mock: TestClient)
     assert body.lstrip().startswith("data:") or raw_b[:5] == b"data:"
 
 
-def test_stream_format_jsonl_openvitamin_payload(chat_stream_client_mock: TestClient) -> None:
+def test_stream_format_jsonl_perilla_payload(chat_stream_client_mock: TestClient) -> None:
     client = chat_stream_client_mock
     token = chat_prime_csrf(client)
     r = client.post(
@@ -158,12 +158,12 @@ def test_stream_format_jsonl_openvitamin_payload(chat_stream_client_mock: TestCl
     )
     assert r.status_code == 200, r.text
     body = _sse_text(r)
-    assert "openvitamin.stream.jsonl" in body
+    assert "perilla.stream.jsonl" in body
     assert "Zz" in body
     assert "chat.completion.chunk" not in body
 
 
-def test_stream_format_markdown_openvitamin_payload(chat_stream_client_mock: TestClient) -> None:
+def test_stream_format_markdown_perilla_payload(chat_stream_client_mock: TestClient) -> None:
     client = chat_stream_client_mock
     token = chat_prime_csrf(client)
     r = client.post(
@@ -179,6 +179,6 @@ def test_stream_format_markdown_openvitamin_payload(chat_stream_client_mock: Tes
     )
     assert r.status_code == 200, r.text
     body = _sse_text(r)
-    assert "openvitamin.stream.md" in body
+    assert "perilla.stream.md" in body
     assert "Zz" in body
     assert "chat.completion.chunk" not in body

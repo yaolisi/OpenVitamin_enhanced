@@ -656,7 +656,7 @@ def _stream_delta_event(
     if stream_format == "jsonl":
         return _stream_sse_data(
             {
-                "object": "openvitamin.stream.jsonl",
+                "object": "perilla.stream.jsonl",
                 "i": cidx,
                 "o": char_off,
                 "c": content,
@@ -666,7 +666,7 @@ def _stream_delta_event(
     if stream_format == "markdown":
         return _stream_sse_data(
             {
-                "object": "openvitamin.stream.md",
+                "object": "perilla.stream.md",
                 "i": cidx,
                 "o": char_off,
                 "c": content,
@@ -678,7 +678,7 @@ def _stream_delta_event(
         "created": created_time,
         "model": model_id,
         "choices": [{"index": 0, "delta": {"content": content}}],
-        "openvitamin": {"cidx": cidx, "char_off": char_off, "char_len": len(content or "")},
+        "perilla": {"cidx": cidx, "char_off": char_off, "char_len": len(content or "")},
     }
     return _stream_sse_data(chunk)
 
@@ -965,7 +965,7 @@ async def _stream_event_generator(
         rsess.use_gzip = use_gzip
         rsess.stream_format = stream_format
         meta = {
-            "object": "openvitamin.stream.meta",
+            "object": "perilla.stream.meta",
             "stream_id": stream_id,
             "completion_id": completion_id,
             "format": stream_format,
@@ -1027,7 +1027,7 @@ async def _stream_event_generator(
             elif stream_format == "jsonl":
                 final_sse = _stream_sse_data(
                     {
-                        "object": "openvitamin.stream.jsonl",
+                        "object": "perilla.stream.jsonl",
                         "d": True,
                         "metadata": routing_meta,
                         "finish_reason": "stop",
@@ -1036,7 +1036,7 @@ async def _stream_event_generator(
             else:
                 final_sse = _stream_sse_data(
                     {
-                        "object": "openvitamin.stream.md",
+                        "object": "perilla.stream.md",
                         "d": True,
                         "metadata": routing_meta,
                     }
@@ -1345,7 +1345,7 @@ async def chat_completions(
 
     流式（stream=true）增强：
     - stream_gzip：对 SSE body 做 GZip（中间件不压缩 text/event-stream）
-    - stream_format：openai | jsonl | markdown；首包 openvitamin.stream.meta 含 format 与续传信息
+    - stream_format：openai | jsonl | markdown；首包 perilla.stream.meta 含 format 与续传信息
     - 断点续传：POST /v1/chat/completions/stream/resume，与首流同 gzip/格式
 
     Auto 模式智能选择：

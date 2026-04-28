@@ -1,11 +1,11 @@
-name: openvitamin-docker
+name: perilla-docker
 
 services:
   backend:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
-    container_name: openvitamin-backend
+    container_name: perilla-backend
     restart: unless-stopped
     environment:
       DEBUG: "${DEBUG:-true}"
@@ -32,7 +32,7 @@ services:
       retries: 10
       start_period: 30s
     networks:
-      - openvitamin-net
+      - perilla-net
 
   frontend:
     build:
@@ -40,7 +40,7 @@ services:
       dockerfile: docker/frontend.Dockerfile
       args:
         VITE_API_URL: "${VITE_API_URL:-http://localhost:5173}"
-    container_name: openvitamin-frontend
+    container_name: perilla-frontend
     restart: unless-stopped
     depends_on:
       backend:
@@ -48,10 +48,10 @@ services:
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     networks:
-      - openvitamin-net
+      - perilla-net
 
 networks:
-  openvitamin-net:
+  perilla-net:
     driver: bridge
 
 volumes:

@@ -28,7 +28,7 @@ def _check(url: str, expect_status: int = 200) -> tuple[bool, str]:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="OpenVitamin monitoring smoke checks")
+    p = argparse.ArgumentParser(description="perilla monitoring smoke checks")
     p.add_argument("--prometheus-url", default="http://127.0.0.1:9090")
     p.add_argument("--alertmanager-url", default="http://127.0.0.1:9093")
     p.add_argument("--grafana-url", default="http://127.0.0.1:3000")

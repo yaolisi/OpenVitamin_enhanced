@@ -392,7 +392,7 @@ router.beforeEach((to, from, next) => {
 router.afterEach((to) => {
   // 路由变化后，更新页面标题
   if (to.meta.title) {
-    document.title = `${to.meta.title} - OpenVitamin大模型与智能体应用平台`
+    document.title = `${to.meta.title} - perilla大模型与智能体应用平台`
   }
 })
 

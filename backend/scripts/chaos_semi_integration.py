@@ -214,7 +214,7 @@ def _resolve_report_file(args: argparse.Namespace) -> Optional[Path]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="OpenVitamin semi-integration chaos test")
+    p = argparse.ArgumentParser(description="perilla semi-integration chaos test")
     p.add_argument("--base-url", default="http://127.0.0.1:8000")
     p.add_argument("--user-id", default="chaos-user")
     p.add_argument("--total-requests", type=int, default=40)

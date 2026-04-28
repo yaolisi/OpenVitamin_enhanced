@@ -61,12 +61,12 @@ const isEditing = ref(false)
 const isInitialLoad = ref(true)
 
 const displayAppName = computed(() => {
-  const raw = config.value?.app_name?.trim() || 'OpenVitamin'
+  const raw = config.value?.app_name?.trim() || 'perilla'
   const match = raw.match(/^[A-Za-z0-9._-]+(?:\s+[A-Za-z0-9._-]+)*/)
-  return (match?.[0] || raw).trim() || 'OpenVitamin'
+  return (match?.[0] || raw).trim() || 'perilla'
 })
 
-const fullAppName = computed(() => config.value?.app_name?.trim() || 'OpenVitamin')
+const fullAppName = computed(() => config.value?.app_name?.trim() || 'perilla')
 const chaosFailRateWarnDisplay = computed(() => {
   const v = Number(config.value?.settings?.chaosFailRateWarn)
   return Number.isFinite(v) ? v : 0.05

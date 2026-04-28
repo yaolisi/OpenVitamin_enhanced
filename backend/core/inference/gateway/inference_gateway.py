@@ -77,7 +77,7 @@ class InferenceGateway:
 
     @staticmethod
     def _cache_prefix() -> str:
-        return str(getattr(settings, "inference_cache_prefix", "openvitamin:inference") or "openvitamin:inference").strip()
+        return str(getattr(settings, "inference_cache_prefix", "perilla:inference") or "perilla:inference").strip()
 
     @staticmethod
     def _safe_key_segment(value: str) -> str:

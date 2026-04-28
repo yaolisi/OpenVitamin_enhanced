@@ -590,7 +590,7 @@ _configure_prometheus_metrics(app)
 async def root():
     """根端点"""
     return {
-        "message": "Welcome to OpenVitamin大模型与智能体应用平台",
+        "message": "Welcome to perilla大模型与智能体应用平台",
         "version": settings.version,
     }
 

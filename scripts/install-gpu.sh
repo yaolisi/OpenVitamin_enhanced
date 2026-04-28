@@ -38,7 +38,7 @@ echo "Starting services (gpu profile)..."
 docker compose --env-file .env -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 echo ""
-echo "OpenVitamin Docker GPU profile is ready."
+echo "perilla Docker GPU profile is ready."
 echo "Frontend: http://localhost:${FRONTEND_PORT:-5173}"
 echo "Backend:  http://localhost:${BACKEND_PORT:-8000}"
 echo ""

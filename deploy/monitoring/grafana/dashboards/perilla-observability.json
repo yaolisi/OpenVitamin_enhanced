@@ -87,7 +87,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(openvitamin_inference_latency_seconds_count[$__rate_interval])) by (operation)",
+          "expr": "sum(rate(perilla_inference_latency_seconds_count[$__rate_interval])) by (operation)",
           "legendFormat": "{{operation}}",
           "range": true,
           "refId": "A"
@@ -132,14 +132,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(openvitamin_inference_latency_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(perilla_inference_latency_seconds_bucket[$__rate_interval])))",
           "legendFormat": "p95 {{operation}}",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(openvitamin_inference_latency_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(perilla_inference_latency_seconds_bucket[$__rate_interval])))",
           "legendFormat": "p99 {{operation}}",
           "range": true,
           "refId": "B"
@@ -184,14 +184,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(openvitamin_inference_errors_total[$__rate_interval])) / clamp_min(sum(rate(openvitamin_inference_latency_seconds_count[$__rate_interval])), 1)",
+          "expr": "sum(rate(perilla_inference_errors_total[$__rate_interval])) / clamp_min(sum(rate(perilla_inference_latency_seconds_count[$__rate_interval])), 1)",
           "legendFormat": "inference_error_rate",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum(rate(openvitamin_agent_run_failures_total[$__rate_interval])) / clamp_min(sum(rate(openvitamin_agent_runs_total[$__rate_interval])), 1)",
+          "expr": "sum(rate(perilla_agent_run_failures_total[$__rate_interval])) / clamp_min(sum(rate(perilla_agent_runs_total[$__rate_interval])), 1)",
           "legendFormat": "agent_failure_rate",
           "range": true,
           "refId": "B"
@@ -236,7 +236,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(openvitamin_inference_requests_in_flight) by (operation)",
+          "expr": "sum(perilla_inference_requests_in_flight) by (operation)",
           "legendFormat": "{{operation}}",
           "range": true,
           "refId": "A"
@@ -250,7 +250,7 @@
   "schemaVersion": 39,
   "style": "dark",
   "tags": [
-    "openvitamin",
+    "perilla",
     "observability"
   ],
   "templating": {
@@ -262,8 +262,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "OpenVitamin Observability",
-  "uid": "openvitamin-observability",
+  "title": "perilla Observability",
+  "uid": "perilla-observability",
   "version": 1,
   "weekStart": ""
 }

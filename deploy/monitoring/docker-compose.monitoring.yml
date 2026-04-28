@@ -1,7 +1,7 @@
 services:
   prometheus:
     image: prom/prometheus:v2.54.1
-    container_name: openvitamin-prometheus
+    container_name: perilla-prometheus
     restart: unless-stopped
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -19,35 +19,35 @@ services:
       alertmanager:
         condition: service_started
     networks:
-      - openvitamin-net
+      - perilla-net
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
-    container_name: openvitamin-alertmanager
+    container_name: perilla-alertmanager
     restart: unless-stopped
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
     environment:
       SMTP_SMARTHOST: "${SMTP_SMARTHOST:-smtp.example.com:587}"
-      SMTP_FROM: "${SMTP_FROM:-openvitamin-alerts@example.com}"
+      SMTP_FROM: "${SMTP_FROM:-perilla-alerts@example.com}"
       SMTP_AUTH_USERNAME: "${SMTP_AUTH_USERNAME:-}"
       SMTP_AUTH_PASSWORD: "${SMTP_AUTH_PASSWORD:-}"
       ALERT_EMAIL_TO: "${ALERT_EMAIL_TO:-ops@example.com}"
       ALERT_CRITICAL_EMAIL_TO: "${ALERT_CRITICAL_EMAIL_TO:-ops-critical@example.com}"
       SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/REPLACE/ME}"
-      SLACK_ALERT_CHANNEL: "${SLACK_ALERT_CHANNEL:-#openvitamin-alerts}"
+      SLACK_ALERT_CHANNEL: "${SLACK_ALERT_CHANNEL:-#perilla-alerts}"
     volumes:
       - ./deploy/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
     ports:
       - "9093:9093"
     networks:
-      - openvitamin-net
+      - perilla-net
 
   grafana:
     image: grafana/grafana:11.1.4
-    container_name: openvitamin-grafana
+    container_name: perilla-grafana
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
@@ -61,7 +61,7 @@ services:
     depends_on:
       - prometheus
     networks:
-      - openvitamin-net
+      - perilla-net
 
 volumes:
   prometheus_data:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Alerting drill script for OpenVitamin monitoring stack.
+Alerting drill script for perilla monitoring stack.
 
 Goals:
 1. Generate controlled inference failures to raise error-rate signals.
@@ -79,7 +79,7 @@ def _check_alertmanager(alertmanager_url: str) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="OpenVitamin 告警演练脚本")
+    parser = argparse.ArgumentParser(description="perilla 告警演练脚本")
     parser.add_argument("--backend-url", default="http://localhost:8000", help="后端地址")
     parser.add_argument("--alertmanager-url", default="http://localhost:9093", help="Alertmanager 地址")
     parser.add_argument("--rounds", type=int, default=30, help="压测轮数")
@@ -91,10 +91,10 @@ def main() -> int:
     backend = args.backend_url.rstrip("/")
     print(f"[1/4] 读取演练前指标: {backend}/metrics")
     before = _fetch_metrics(backend)
-    err_before = _metric_value(before, "openvitamin_inference_errors_total") or 0.0
-    cnt_before = _metric_value(before, "openvitamin_inference_latency_seconds_count") or 0.0
-    print(f"  - openvitamin_inference_errors_total = {err_before}")
-    print(f"  - openvitamin_inference_latency_seconds_count = {cnt_before}")
+    err_before = _metric_value(before, "perilla_inference_errors_total") or 0.0
+    cnt_before = _metric_value(before, "perilla_inference_latency_seconds_count") or 0.0
+    print(f"  - perilla_inference_errors_total = {err_before}")
+    print(f"  - perilla_inference_latency_seconds_count = {cnt_before}")
 
     print(f"[2/4] 注入错误请求: rounds={args.rounds}, concurrency={args.concurrency}")
     sent, failed_http = _inject_inference_errors(backend, args.rounds, args.concurrency)
@@ -103,12 +103,12 @@ def main() -> int:
     print(f"[3/4] 等待 {args.wait_seconds}s 让 Prometheus 抓取新样本")
     time.sleep(max(1, args.wait_seconds))
     after = _fetch_metrics(backend)
-    err_after = _metric_value(after, "openvitamin_inference_errors_total") or 0.0
-    cnt_after = _metric_value(after, "openvitamin_inference_latency_seconds_count") or 0.0
+    err_after = _metric_value(after, "perilla_inference_errors_total") or 0.0
+    cnt_after = _metric_value(after, "perilla_inference_latency_seconds_count") or 0.0
     err_delta = err_after - err_before
     cnt_delta = cnt_after - cnt_before
-    print(f"  - openvitamin_inference_errors_total = {err_after} (delta={err_delta})")
-    print(f"  - openvitamin_inference_latency_seconds_count = {cnt_after} (delta={cnt_delta})")
+    print(f"  - perilla_inference_errors_total = {err_after} (delta={err_delta})")
+    print(f"  - perilla_inference_latency_seconds_count = {cnt_after} (delta={cnt_delta})")
 
     ok = err_delta > 0 and cnt_delta > 0
     if not ok:

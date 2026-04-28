@@ -4,7 +4,7 @@ import { streamChunkDeltaText, type ChatStreamChunk } from '@/services/api'
 describe('streamChunkDeltaText', () => {
   it('returns null for meta', () => {
     const c: ChatStreamChunk = {
-      object: 'openvitamin.stream.meta',
+      object: 'perilla.stream.meta',
       stream_id: 's1',
       completion_id: 'c1',
     }
@@ -24,7 +24,7 @@ describe('streamChunkDeltaText', () => {
 
   it('reads jsonl c when not done', () => {
     const c: ChatStreamChunk = {
-      object: 'openvitamin.stream.jsonl',
+      object: 'perilla.stream.jsonl',
       i: 0,
       c: 'a',
       d: false,
@@ -34,7 +34,7 @@ describe('streamChunkDeltaText', () => {
 
   it('returns null for jsonl d:true', () => {
     const c: ChatStreamChunk = {
-      object: 'openvitamin.stream.jsonl',
+      object: 'perilla.stream.jsonl',
       d: true,
     }
     expect(streamChunkDeltaText(c)).toBeNull()
@@ -42,7 +42,7 @@ describe('streamChunkDeltaText', () => {
 
   it('reads md chunk', () => {
     const c: ChatStreamChunk = {
-      object: 'openvitamin.stream.md',
+      object: 'perilla.stream.md',
       c: 'x',
     }
     expect(streamChunkDeltaText(c)).toBe('x')

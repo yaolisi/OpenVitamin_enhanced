@@ -575,7 +575,7 @@ def get_event_bus() -> EventBus:
             buses.append(
                 RedisEventBus(
                     redis_url=str(getattr(settings, "event_bus_redis_url", "redis://127.0.0.1:6379/1")),
-                    channel_prefix=str(getattr(settings, "event_bus_channel_prefix", "openvitamin:event")),
+                    channel_prefix=str(getattr(settings, "event_bus_channel_prefix", "perilla:event")),
                 )
             )
     _event_bus = CompositeEventBus(*buses)

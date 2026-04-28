@@ -227,7 +227,7 @@ def test_inference_cache_clear_endpoint_passes_model_alias(monkeypatch):
             captured.update(kwargs)
             return {
                 "cache_kind": kwargs.get("cache_kind", "generate"),
-                "prefix": "openvitamin:inference:generate:u:u1",
+                "prefix": "perilla:inference:generate:u:u1",
                 "memory_deleted": 1,
                 "redis_deleted": 2,
                 "total_deleted": 3,
@@ -272,7 +272,7 @@ def test_inference_cache_clear_force_all_with_challenge(monkeypatch):
             await asyncio.sleep(0)
             return {
                 "cache_kind": kwargs.get("cache_kind", "generate"),
-                "prefix": "openvitamin:inference:generate",
+                "prefix": "perilla:inference:generate",
                 "memory_deleted": 2,
                 "redis_deleted": 3,
                 "total_deleted": 5,

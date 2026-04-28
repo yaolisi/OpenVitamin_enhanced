@@ -38,7 +38,7 @@ echo "Starting services..."
 docker compose --env-file .env up -d
 
 echo ""
-echo "OpenVitamin Docker deployment is ready."
+echo "perilla Docker deployment is ready."
 echo "Frontend: http://localhost:${FRONTEND_PORT:-5173}"
 echo "Backend:  http://localhost:${BACKEND_PORT:-8000}"
 echo ""

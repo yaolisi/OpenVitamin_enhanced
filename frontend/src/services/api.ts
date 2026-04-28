@@ -302,16 +302,16 @@ export interface ChatStreamResponse {
 
 /** 首包元数据：断点续传 stream_id */
 export interface ChatStreamMetaChunk {
-  object: 'openvitamin.stream.meta'
+  object: 'perilla.stream.meta'
   stream_id: string
   completion_id: string
   format?: ChatStreamFormat
   content_encoding?: 'identity' | 'gzip'
 }
 
-/** 紧凑 JSONL 流式帧（与后端 openvitamin.stream.jsonl 对齐） */
+/** 紧凑 JSONL 流式帧（与后端 perilla.stream.jsonl 对齐） */
 export interface ChatStreamJsonlChunk {
-  object: 'openvitamin.stream.jsonl'
+  object: 'perilla.stream.jsonl'
   i?: number
   o?: number
   c?: string
@@ -322,7 +322,7 @@ export interface ChatStreamJsonlChunk {
 
 /** 偏文档/Markdown 的流式帧 */
 export interface ChatStreamMarkdownChunk {
-  object: 'openvitamin.stream.md'
+  object: 'perilla.stream.md'
   i?: number
   o?: number
   c?: string
@@ -340,17 +340,17 @@ export type ChatStreamChunk =
  * 从流式 chunk 中取出本帧文本增量；meta / 结束元信息帧返回 null。
  */
 export function streamChunkDeltaText(chunk: ChatStreamChunk): string | null {
-  if (chunk.object === 'openvitamin.stream.meta') {
+  if (chunk.object === 'perilla.stream.meta') {
     return null
   }
-  if (chunk.object === 'openvitamin.stream.jsonl') {
+  if (chunk.object === 'perilla.stream.jsonl') {
     const j = chunk as ChatStreamJsonlChunk
     if (j.d) {
       return null
     }
     return j.c ?? null
   }
-  if (chunk.object === 'openvitamin.stream.md') {
+  if (chunk.object === 'perilla.stream.md') {
     const m = chunk as ChatStreamMarkdownChunk
     if (m.d) {
       return null
@@ -642,7 +642,7 @@ export async function streamChatCompletion(
   let activeStreamId: string | null = null
 
   const handleChunk = (chunk: ChatStreamChunk) => {
-    if (chunk.object === 'openvitamin.stream.meta') {
+    if (chunk.object === 'perilla.stream.meta') {
       activeStreamId = (chunk as ChatStreamMetaChunk).stream_id
     }
     onChunk(chunk)

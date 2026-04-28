@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "f3a7d4ae-35f8-4ec6-9230-3d3d2b6e1f02",
-    "name": "OpenVitamin EventBus DLQ Verification",
+    "name": "perilla EventBus DLQ Verification",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "EventBus DLQ status, query, replay(dry-run/real), rate-limit and clear verification."
   },

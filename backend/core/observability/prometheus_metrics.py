@@ -37,27 +37,27 @@ class PrometheusBusinessMetrics:
             return
 
         self.inference_latency_seconds = Histogram(
-            "openvitamin_inference_latency_seconds",
+            "perilla_inference_latency_seconds",
             "Inference latency in seconds",
             labelnames=("operation", "provider", "model"),
         )
         self.inference_requests_in_flight = Gauge(
-            "openvitamin_inference_requests_in_flight",
+            "perilla_inference_requests_in_flight",
             "Current in-flight inference requests",
             labelnames=("operation",),
         )
         self.inference_errors_total = Counter(
-            "openvitamin_inference_errors_total",
+            "perilla_inference_errors_total",
             "Total inference errors",
             labelnames=("operation", "provider"),
         )
         self.agent_runs_total = Counter(
-            "openvitamin_agent_runs_total",
+            "perilla_agent_runs_total",
             "Total agent runtime runs",
             labelnames=("mode", "engine"),
         )
         self.agent_run_failures_total = Counter(
-            "openvitamin_agent_run_failures_total",
+            "perilla_agent_run_failures_total",
             "Total failed agent runtime runs",
             labelnames=("mode", "engine"),
         )

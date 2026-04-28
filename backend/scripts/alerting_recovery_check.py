@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Alert recovery checker for OpenVitamin.
+Alert recovery checker for perilla.
 
 Use this after running alerting_drill.py to verify alerts return to resolved state.
 """
@@ -54,11 +54,11 @@ def _wait_until_resolved(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="OpenVitamin 告警恢复检查脚本")
+    parser = argparse.ArgumentParser(description="perilla 告警恢复检查脚本")
     parser.add_argument("--alertmanager-url", default="http://localhost:9093", help="Alertmanager 地址")
     parser.add_argument(
         "--alerts",
-        default="OpenVitaminInferenceErrorRateHigh,OpenVitaminAgentFailureRateHigh,OpenVitaminInferenceP95TooHigh",
+        default="perillaInferenceErrorRateHigh,perillaAgentFailureRateHigh,perillaInferenceP95TooHigh",
         help="要观察恢复的告警名（逗号分隔）",
     )
     parser.add_argument("--timeout-seconds", type=int, default=900, help="最长等待秒数（默认 15 分钟）")

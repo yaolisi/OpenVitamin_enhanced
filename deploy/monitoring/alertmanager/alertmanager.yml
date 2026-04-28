@@ -1,7 +1,7 @@
 global:
   resolve_timeout: 5m
   smtp_smarthost: '${SMTP_SMARTHOST:smtp.example.com:587}'
-  smtp_from: '${SMTP_FROM:openvitamin-alerts@example.com}'
+  smtp_from: '${SMTP_FROM:perilla-alerts@example.com}'
   smtp_auth_username: '${SMTP_AUTH_USERNAME:}'
   smtp_auth_password: '${SMTP_AUTH_PASSWORD:}'
   smtp_require_tls: true
@@ -35,7 +35,7 @@ receivers:
   - name: 'critical-slack'
     slack_configs:
       - api_url: '${SLACK_WEBHOOK_URL:https://hooks.slack.com/services/REPLACE/ME}'
-        channel: '${SLACK_ALERT_CHANNEL:#openvitamin-alerts}'
+        channel: '${SLACK_ALERT_CHANNEL:#perilla-alerts}'
         send_resolved: true
         title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
         text: >

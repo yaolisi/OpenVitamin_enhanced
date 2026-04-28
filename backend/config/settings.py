@@ -28,7 +28,7 @@ def bootstrap_env_files(backend_dir: Path) -> None:
         if file_path.is_file():
             load_dotenv(file_path, override=False)
 
-    encryption_key = os.environ.get("OPENVITAMIN_ENV_ENCRYPTION_KEY", "").strip()
+    encryption_key = os.environ.get("PERILLA_ENV_ENCRYPTION_KEY", "").strip()
     encrypted_candidates = [
         backend_dir / ".env.encrypted",
         backend_dir.parent / ".env.encrypted",
@@ -38,7 +38,7 @@ def bootstrap_env_files(backend_dir: Path) -> None:
             continue
         if not encryption_key:
             raise RuntimeError(
-                f"Found encrypted env file but OPENVITAMIN_ENV_ENCRYPTION_KEY is empty: {encrypted_file}"
+                f"Found encrypted env file but PERILLA_ENV_ENCRYPTION_KEY is empty: {encrypted_file}"
             )
         try:
             from cryptography.fernet import Fernet
@@ -127,7 +127,7 @@ def validate_production_security_guardrails(s: "Settings") -> list[str]:
 
 class Settings(BaseSettings):
     """应用配置"""
-    app_name: str = "OpenVitamin大模型与智能体应用平台"
+    app_name: str = "perilla大模型与智能体应用平台"
     version: str = "1.0.0"
     api_prefix: str = "/api/v1"
     debug: bool = True
@@ -187,7 +187,7 @@ class Settings(BaseSettings):
     web_search_serper_api_key_vault_env: str = "VAULT_WEB_SEARCH_SERPER_API_KEY"
     # 可选：从文件加载密钥（例如 /vault/secrets/serper_api_key）
     web_search_serper_api_key_file: str = ""
-    # 可选：密文 token（Fernet），运行时用 OPENVITAMIN_ENV_ENCRYPTION_KEY 解密
+    # 可选：密文 token（Fernet），运行时用 PERILLA_ENV_ENCRYPTION_KEY 解密
     web_search_serper_api_key_encrypted: str = ""
 
     # system.env tool is sensitive (may leak secrets): default disabled.
@@ -222,7 +222,7 @@ class Settings(BaseSettings):
     # Redis 推理缓存
     inference_cache_enabled: bool = True
     inference_cache_redis_url: str = "redis://127.0.0.1:6379/0"
-    inference_cache_prefix: str = "openvitamin:inference"
+    inference_cache_prefix: str = "perilla:inference"
     # L1: 内存缓存（优先读）+ Redis（次级回源）
     inference_cache_memory_enabled: bool = True
     inference_cache_memory_max_entries: int = 2048
@@ -259,7 +259,7 @@ class Settings(BaseSettings):
     event_bus_enabled: bool = False
     event_bus_backend: str = "redis"  # redis | inprocess
     event_bus_redis_url: str = "redis://127.0.0.1:6379/1"
-    event_bus_channel_prefix: str = "openvitamin:event"
+    event_bus_channel_prefix: str = "perilla:event"
     event_bus_handler_retry_attempts: int = 1
     event_bus_handler_retry_delay_ms: int = 200
     event_bus_dlq_max_items: int = 200
@@ -269,7 +269,7 @@ class Settings(BaseSettings):
     mcp_http_emit_server_push_events: bool = True
     # 知识库向量索引 Redis 快照（用于重启后快速恢复向量表）
     kb_vector_snapshot_redis_enabled: bool = True
-    kb_vector_snapshot_redis_prefix: str = "openvitamin:kbvec"
+    kb_vector_snapshot_redis_prefix: str = "perilla:kbvec"
     # 文档类型分块大小覆盖（JSON），例如 {"pdf":256,"md":512}
     kb_chunk_size_overrides_json: str = "{\"pdf\":256,\"md\":512,\"txt\":256,\"docx\":384}"
     # 空闲回收阈值（秒）
@@ -536,7 +536,7 @@ class Settings(BaseSettings):
                     return
 
         encrypted_token = (self.web_search_serper_api_key_encrypted or "").strip()
-        encryption_key = (os.environ.get("OPENVITAMIN_ENV_ENCRYPTION_KEY") or "").strip()
+        encryption_key = (os.environ.get("PERILLA_ENV_ENCRYPTION_KEY") or "").strip()
         if encrypted_token and encryption_key:
             try:
                 from cryptography.fernet import Fernet

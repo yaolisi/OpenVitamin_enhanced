@@ -98,7 +98,7 @@ jobs:
       - name: Run knowledge acceptance smoke
         working-directory: backend
         env:
-          API_KEY: ${{ secrets.OPENVITAMIN_API_KEY }}
+          API_KEY: ${{ secrets.PERILLA_API_KEY }}
         run: |
           args=(
             --base-url "${{ inputs.base_url }}"

@@ -64,11 +64,11 @@ jobs:
 
       - name: Run continuous batch pipeline with gate
         env:
-          API_KEY: ${{ secrets.OPENVITAMIN_API_KEY }}
+          API_KEY: ${{ secrets.PERILLA_API_KEY }}
           API_KEY_HEADER: X-Api-Key
         run: |
           if [ -z "${API_KEY}" ]; then
-            echo "OPENVITAMIN_API_KEY is required for gate run"
+            echo "PERILLA_API_KEY is required for gate run"
             exit 2
           fi
 

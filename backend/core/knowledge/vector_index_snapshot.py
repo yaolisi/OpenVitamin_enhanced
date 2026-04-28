@@ -19,7 +19,7 @@ class RedisVectorIndexSnapshot:
     def __init__(self) -> None:
         self._enabled = bool(getattr(settings, "kb_vector_snapshot_redis_enabled", False))
         self._redis_url = str(getattr(settings, "inference_cache_redis_url", "") or "").strip()
-        self._prefix = str(getattr(settings, "kb_vector_snapshot_redis_prefix", "openvitamin:kbvec") or "openvitamin:kbvec")
+        self._prefix = str(getattr(settings, "kb_vector_snapshot_redis_prefix", "perilla:kbvec") or "perilla:kbvec")
         self._client = None
         self._init_tried = False
 

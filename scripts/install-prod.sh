@@ -38,7 +38,7 @@ echo "Starting services (prod profile)..."
 docker compose --env-file .env -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 echo ""
-echo "OpenVitamin Docker production profile is ready."
+echo "perilla Docker production profile is ready."
 echo "Frontend: http://localhost:${FRONTEND_PORT:-80}"
 echo "Backend (internal): http://backend:8000"
 echo ""

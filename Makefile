@@ -51,7 +51,7 @@ ALERT_DRILL_CONCURRENCY ?= 4
 ALERT_DRILL_SCRAPE_WAIT_SECONDS ?= 45
 ALERT_DRILL_RECOVERY_TIMEOUT_SECONDS ?= 900
 ALERT_DRILL_POLL_INTERVAL_SECONDS ?= 15
-ALERT_DRILL_ALERTS ?= OpenVitaminInferenceErrorRateHigh,OpenVitaminAgentFailureRateHigh,OpenVitaminInferenceP95TooHigh
+ALERT_DRILL_ALERTS ?= perillaInferenceErrorRateHigh,perillaAgentFailureRateHigh,perillaInferenceP95TooHigh
 MONITORING_PROMETHEUS_URL ?= http://127.0.0.1:9090
 MONITORING_ALERTMANAGER_URL ?= http://127.0.0.1:9093
 MONITORING_GRAFANA_URL ?= http://127.0.0.1:3000
@@ -72,7 +72,7 @@ MONITORING_GRAFANA_URL ?= http://127.0.0.1:3000
 .PHONY: event-bus-smoke-contract-guard-status-json
 
 help:
-	@echo "OpenVitamin Docker helper targets:"
+	@echo "perilla Docker helper targets:"
 	@echo "Quick ref (CI parity): make quick-check | make ci-fast | make npm-scripts"
 	@echo "  npm run help       - Same as make help (requires make in PATH)"
 	@echo "  make npm-scripts   - List root package.json scripts (scripts/npm-scripts.sh; any cwd)"
@@ -444,7 +444,7 @@ monitoring-all:
 	@$(MAKE) monitoring-e2e-clean
 
 ops-drill-guide:
-	@echo "OpenVitamin Monitoring Drill Guide"
+	@echo "perilla Monitoring Drill Guide"
 	@echo ""
 	@echo "[Local quick path]"
 	@echo "  1) make up-monitoring"

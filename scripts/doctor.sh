@@ -32,7 +32,7 @@ check_command() {
   fi
 }
 
-echo "== OpenVitamin Docker Doctor =="
+echo "== perilla Docker Doctor =="
 echo "Working directory: ${ROOT_DIR}"
 
 check_command docker "docker is installed"

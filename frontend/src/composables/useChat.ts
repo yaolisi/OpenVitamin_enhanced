@@ -330,7 +330,7 @@ export function useChat(options: UseChatOptions = {}) {
           await streamChatCompletion(
             streamBody,
             (chunk: ChatStreamChunk) => {
-              if (chunk.object === 'openvitamin.stream.meta') return
+              if (chunk.object === 'perilla.stream.meta') return
               const c = chunk as ChatStreamResponse
               if (c.model) {
                 updateMessageModelName(assistantMsg.id, c.model)
@@ -341,7 +341,7 @@ export function useChat(options: UseChatOptions = {}) {
               }
               const meta =
                 (chunk as ChatStreamResponse).metadata ??
-                (chunk.object === 'openvitamin.stream.jsonl' || chunk.object === 'openvitamin.stream.md'
+                (chunk.object === 'perilla.stream.jsonl' || chunk.object === 'perilla.stream.md'
                   ? (chunk as { metadata?: ChatRoutingMetadata }).metadata
                   : undefined)
               if (meta?.resolved_model && meta?.resolved_via) {

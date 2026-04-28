@@ -44,13 +44,13 @@ def test_stream_delta_event_shapes() -> None:
     payload = s.removeprefix("data: ").split("\n\n", 1)[0].strip()
     d = json.loads(payload)
     assert d["object"] == "chat.completion.chunk"
-    assert d["openvitamin"]["cidx"] == 0
-    assert d["openvitamin"]["char_len"] == 2
+    assert d["perilla"]["cidx"] == 0
+    assert d["perilla"]["char_len"] == 2
     j = _stream_delta_event(
         stream_format="jsonl", completion_id="c1", created_time=1, model_id="m", content="x", cidx=1, char_off=2
     )
     p2 = j.removeprefix("data: ").split("\n\n", 1)[0].strip()
     d2 = json.loads(p2)
-    assert d2["object"] == "openvitamin.stream.jsonl"
+    assert d2["object"] == "perilla.stream.jsonl"
     assert d2["i"] == 1
     assert d2["c"] == "x"

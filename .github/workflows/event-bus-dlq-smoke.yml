@@ -99,10 +99,10 @@ jobs:
 
       - name: Validate required secret
         env:
-          ADMIN_TOKEN: ${{ secrets.OPENVITAMIN_PLATFORM_ADMIN_TOKEN }}
+          ADMIN_TOKEN: ${{ secrets.PERILLA_PLATFORM_ADMIN_TOKEN }}
         run: |
           if [ -z "${ADMIN_TOKEN}" ]; then
-            echo "Missing required secret: OPENVITAMIN_PLATFORM_ADMIN_TOKEN"
+            echo "Missing required secret: PERILLA_PLATFORM_ADMIN_TOKEN"
             exit 2
           fi
 
@@ -175,14 +175,14 @@ jobs:
           EVENT_BUS_SMOKE_EVENT_TYPE: ${{ inputs.event_type }}
           EVENT_BUS_SMOKE_LIMIT: ${{ inputs.limit }}
           EVENT_BUS_SMOKE_SCHEMA_VERSION: ${{ inputs.expected_schema_version }}
-          EVENT_BUS_SMOKE_ADMIN_TOKEN: ${{ secrets.OPENVITAMIN_PLATFORM_ADMIN_TOKEN }}
+          EVENT_BUS_SMOKE_ADMIN_TOKEN: ${{ secrets.PERILLA_PLATFORM_ADMIN_TOKEN }}
         run: |
           make event-bus-smoke-run-validated | tee "${EVENT_BUS_SMOKE_LOG_FILE}"
 
       - name: Run pytest wrapper smoke
         env:
           EVENT_BUS_SMOKE_BASE_URL: ${{ inputs.base_url }}
-          EVENT_BUS_SMOKE_ADMIN_TOKEN: ${{ secrets.OPENVITAMIN_PLATFORM_ADMIN_TOKEN }}
+          EVENT_BUS_SMOKE_ADMIN_TOKEN: ${{ secrets.PERILLA_PLATFORM_ADMIN_TOKEN }}
           EVENT_BUS_SMOKE_EVENT_TYPE: ${{ inputs.event_type }}
           EVENT_BUS_SMOKE_LIMIT: ${{ inputs.limit }}
         run: |

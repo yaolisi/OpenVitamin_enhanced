@@ -23,7 +23,7 @@ def _run(cmd: list[str]) -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="OpenVitamin 一键告警闭环演练")
+    p = argparse.ArgumentParser(description="perilla 一键告警闭环演练")
     p.add_argument("--backend-url", default="http://localhost:8000")
     p.add_argument("--alertmanager-url", default="http://localhost:9093")
     p.add_argument("--rounds", type=int, default=30)
@@ -33,7 +33,7 @@ def main() -> int:
     p.add_argument("--poll-interval-seconds", type=int, default=15)
     p.add_argument(
         "--alerts",
-        default="OpenVitaminInferenceErrorRateHigh,OpenVitaminAgentFailureRateHigh,OpenVitaminInferenceP95TooHigh",
+        default="perillaInferenceErrorRateHigh,perillaAgentFailureRateHigh,perillaInferenceP95TooHigh",
         help="逗号分隔的目标告警名",
     )
     args = p.parse_args()
