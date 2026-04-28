@@ -1,5 +1,6 @@
 {
   "name": "openvitamin-enhanced-docker",
+  "version": "1.0.0",
   "private": true,
   "description": "Workspace root npm helpers (npm run npm-scripts to list; conda+Vite dev via npm run local-* or make local-all / local-backend / local-frontend; bash scripts/npm-scripts.sh from any cwd). Frontend in frontend/.",
   "engines": {
