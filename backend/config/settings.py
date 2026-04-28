@@ -485,7 +485,7 @@ class Settings(BaseSettings):
     # API Key 与租户绑定校验（JSON：{"api-key-1":["tenant-a"],"api-key-2":["*"]}）
     tenant_api_key_binding_enabled: bool = False
     tenant_api_key_tenants_json: str = "{}"
-    # 6) CORS 白名单（逗号分隔）；为空时回退到 ["*"]（开发友好）
+    # 6) CORS 白名单（逗号分隔）。为空时由 main.py 回退到 http://localhost 与 http://127.0.0.1，而非通配 "*"
     cors_allowed_origins: str = ""
     # 7) CSRF（双提交 Cookie）：对非安全方法校验 X-CSRF-Token 与 csrf cookie 一致
     csrf_enabled: bool = True

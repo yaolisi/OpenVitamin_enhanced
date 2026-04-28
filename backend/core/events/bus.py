@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional, cast
 
 from config.settings import settings
 from log import logger
@@ -79,7 +79,7 @@ class RedisEventBus(EventBus):
         self._instance_id = f"bus_{uuid.uuid4().hex[:12]}"
         self._listen_task: Optional[asyncio.Task] = None
 
-    def _client_or_none(self):
+    def _client_or_none(self) -> Any | None:
         if self._client is not None:
             return self._client
         try:
@@ -251,7 +251,10 @@ _last_replay_ts_ms = 0
 
 
 def _event_type_metrics(event_type: str) -> Dict[str, Any]:
-    per = _event_bus_metrics.setdefault("per_event_type", {})
+    per = cast(
+        Dict[str, Dict[str, Any]],
+        _event_bus_metrics.setdefault("per_event_type", {}),
+    )
     if event_type not in per:
         per[event_type] = {
             "published": 0,

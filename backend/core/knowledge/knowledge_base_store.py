@@ -4,6 +4,7 @@ Knowledge Base Store v1
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -23,6 +24,18 @@ from core.knowledge.vector_index_snapshot import get_kb_vector_snapshot_store
 # 统一单表：业务表与向量表名（阶段 4.3）
 UNIFIED_CHUNKS_TABLE = "embedding_chunks"
 UNIFIED_VEC_TABLE = "kb_chunks_vec"
+
+# 与旧版 per-KB 向量表名兼容：仅字母数字、点、连字符、下划线；否则用哈希后缀，避免标识符注入。
+_KB_ID_SAFE_FOR_TABLE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _chunk_table_suffix_for_kb_id(kb_id: str) -> str:
+    raw = kb_id.strip()
+    if not raw:
+        return hashlib.sha256(b"").hexdigest()[:32]
+    if _KB_ID_SAFE_FOR_TABLE_NAME.fullmatch(raw):
+        return raw.replace("-", "_").replace(".", "_")
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
 @dataclass
@@ -285,10 +298,9 @@ class KnowledgeBaseStore:
     def _get_chunk_table_name(self, kb_id: str) -> str:
         """
         获取知识库对应的向量表名（旧版 per-KB 表）
-        表名格式：embedding_chunk_{kb_id}
+        表名格式：embedding_chunk_{suffix}；suffix 与常规 kb_id 的旧规则一致，异常字符时用哈希。
         """
-        safe_kb_id = kb_id.replace("-", "_").replace(".", "_")
-        return f"embedding_chunk_{safe_kb_id}"
+        return f"embedding_chunk_{_chunk_table_suffix_for_kb_id(kb_id)}"
 
     def _use_unified_chunks_table(self) -> bool:
         """是否使用统一单表 embedding_chunks（通过 sqlite_master 检查表是否存在，不依赖表内数据）"""

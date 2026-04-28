@@ -13,4 +13,11 @@ fi
 cd "${ROOT}/backend"
 (command -v ruff >/dev/null || pip install -q ruff mypy)
 ruff check --select=E9 .
-mypy --config-file mypy.ini --follow-imports=skip core/data/base.py execution_kernel/persistence/db.py
+# Mypy merge gate: only append targets below after `mypy --config-file mypy.ini --follow-imports=skip <path>` is clean.
+# Use per-module sections in backend/mypy.ini for targeted suppressions; do not relax global [mypy].
+mypy --config-file mypy.ini --follow-imports=skip \
+  core/data/base.py \
+  execution_kernel/persistence/db.py \
+  core/plan_contract \
+  core/idempotency \
+  core/events
