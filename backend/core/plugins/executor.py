@@ -31,17 +31,19 @@ class PluginExecutor:
         )
         if not decision.allowed:
             logger.warning(
-                "[PluginExecutor] Permission denied for plugin '%s': missing=%s, user_id=%s, session_id=%s",
+                "[PluginExecutor] Permission denied for plugin '%s': missing=%s, risk=%s, user_id=%s, session_id=%s",
                 plugin.name,
                 decision.missing_permissions,
+                decision.risk_level,
                 context.user_id,
                 context.session_id,
             )
         else:
             logger.debug(
-                "[PluginExecutor] Permission granted for plugin '%s': required=%s",
+                "[PluginExecutor] Permission granted for plugin '%s': required=%s risk=%s",
                 plugin.name,
                 getattr(plugin, "permissions", []) or [],
+                decision.risk_level,
             )
         return decision.allowed
 

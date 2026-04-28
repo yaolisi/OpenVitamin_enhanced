@@ -154,6 +154,8 @@ def _initialize_database_tables() -> None:
             ImageGenerationWarmupORM,
             EventDlqORM,
             McpServer,
+            PluginPackageORM,
+            PluginInstallationORM,
         )
         from core.data.models.audit import AuditLogORM  # noqa: F401
         from core.data.models.workflow import WorkflowExecutionQueueORM  # noqa: F401
@@ -428,6 +430,8 @@ async def _startup_scan_models() -> None:
     from core.models.scanner.ollama import OllamaScanner
     from core.models.scanner.lmstudio import LMStudioScanner
     from core.models.scanner.local import LocalScanner
+    from core.models.scanner.localai import LocalAIScanner
+    from core.models.scanner.textgen_webui import TextGenerationWebUIScanner
 
     try:
         await OllamaScanner().scan()
@@ -441,6 +445,14 @@ async def _startup_scan_models() -> None:
         await LocalScanner().scan()
     except Exception as e:
         logger.error(f"Local model scan failed: {e}")
+    try:
+        await LocalAIScanner().scan()
+    except Exception as e:
+        logger.debug(f"LocalAI scan failed: {e}")
+    try:
+        await TextGenerationWebUIScanner().scan()
+    except Exception as e:
+        logger.debug(f"Text Generation WebUI scan failed: {e}")
 
 
 @asynccontextmanager
@@ -768,13 +780,17 @@ async def scan_models(_role: AdminRole = None):
     from core.models.scanner.ollama import OllamaScanner
     from core.models.scanner.lmstudio import LMStudioScanner
     from core.models.scanner.local import LocalScanner
+    from core.models.scanner.localai import LocalAIScanner
+    from core.models.scanner.textgen_webui import TextGenerationWebUIScanner
     from core.models.registry import get_model_registry
     from core.runtimes.factory import get_runtime_factory
     
-    results = {"ollama": 0, "lmstudio": 0, "local": 0, "removed": 0}
+    results = {"ollama": 0, "lmstudio": 0, "localai": 0, "textgen_webui": 0, "local": 0, "removed": 0}
     
     await _scan_model_count(OllamaScanner, "ollama", results)
     await _scan_model_count(LMStudioScanner, "lmstudio", results, log_level="debug")
+    await _scan_model_count(LocalAIScanner, "localai", results, log_level="debug")
+    await _scan_model_count(TextGenerationWebUIScanner, "textgen_webui", results, log_level="debug")
     local_models = await _scan_model_count(LocalScanner, "local", results)
     if local_models:
         await _remove_outdated_local_models(local_models, results)

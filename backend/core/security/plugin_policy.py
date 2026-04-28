@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List
 class PluginPolicyDecision:
     allowed: bool
     missing_permissions: List[str]
+    risk_level: str = "low"
 
 
 def _is_permission_granted(grants: Dict[str, Any], permission: str) -> bool:
@@ -34,8 +35,17 @@ def evaluate_plugin_permissions(
 ) -> PluginPolicyDecision:
     required = [str(p).strip() for p in (required_permissions or []) if str(p).strip()]
     if not required:
-        return PluginPolicyDecision(allowed=True, missing_permissions=[])
+        return PluginPolicyDecision(allowed=True, missing_permissions=[], risk_level="low")
 
     granted = grants or {}
     missing = [perm for perm in required if not _is_permission_granted(granted, perm)]
-    return PluginPolicyDecision(allowed=(len(missing) == 0), missing_permissions=missing)
+    risk_level = "low"
+    if any(perm.startswith(("net.", "file.write", "shell.", "python.")) for perm in required):
+        risk_level = "high"
+    elif any(perm.startswith(("file.", "system.")) for perm in required):
+        risk_level = "medium"
+    return PluginPolicyDecision(
+        allowed=(len(missing) == 0),
+        missing_permissions=missing,
+        risk_level=risk_level,
+    )

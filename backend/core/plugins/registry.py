@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Type
 
 from log import logger
+from config.settings import settings
 
 from core.events import get_event_bus
 from .base import Plugin
@@ -13,6 +14,25 @@ from .manifest import PluginManifest
 
 def _plugin_key(name: str, version: str) -> str:
     return f"{name}@{version}"
+
+
+def _is_gateway_version_compatible(compatible_versions: Optional[List[str]]) -> bool:
+    if not compatible_versions:
+        return True
+    current = str(getattr(settings, "version", "") or "").strip()
+    if not current:
+        return True
+    for item in compatible_versions:
+        expected = str(item or "").strip()
+        if not expected:
+            continue
+        if expected.endswith(".*"):
+            if current.startswith(expected[:-2]):
+                return True
+            continue
+        if current == expected:
+            return True
+    return False
 
 
 class PluginRegistry:
@@ -163,6 +183,15 @@ class PluginRegistry:
             data = json.loads(manifest_raw)
 
             manifest = PluginManifest(**data)
+            if not _is_gateway_version_compatible(manifest.compatible_gateway_versions):
+                logger.warning(
+                    "[PluginRegistry] Plugin '%s@%s' incompatible with gateway version %s: %s",
+                    manifest.name,
+                    manifest.version,
+                    getattr(settings, "version", ""),
+                    manifest.compatible_gateway_versions,
+                )
+                return False
 
             try:
                 module_path, class_name = manifest.entry.split(":")

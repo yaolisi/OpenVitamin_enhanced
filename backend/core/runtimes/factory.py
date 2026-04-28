@@ -30,6 +30,8 @@ class RuntimeFactory:
             "deepseek": OpenAIRuntime(),
             "kimi": OpenAIRuntime(),
             "lmstudio": OpenAIRuntime(), # LM Studio 也是 OpenAI 兼容
+            "localai": OpenAIRuntime(),  # LocalAI 兼容 OpenAI API
+            "textgen_webui": OpenAIRuntime(),  # Text Generation WebUI OpenAI extension
             "llama.cpp": LlamaCppRuntime(),
             "mlx": MLXRuntime(),
             "torch": TorchModelRuntime(), # Torch VLM (InternVL, Qwen-VL)

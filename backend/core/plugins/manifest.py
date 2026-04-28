@@ -17,3 +17,12 @@ class PluginManifest(BaseModel):
     output_schema: Dict[str, Any] = Field(default_factory=dict, description="输出结果 Schema (JSON Schema)")
     permissions: Optional[List[str]] = Field(default=None, description="所需权限列表")
     config_schema: Optional[Dict[str, Any]] = Field(default=None, description="配置项 Schema")
+    compatible_gateway_versions: Optional[List[str]] = Field(
+        default=None, description="兼容的网关版本约束列表（支持 exact 或前缀）"
+    )
+    distribution: Optional[Dict[str, Any]] = Field(
+        default=None, description="插件分发信息（如包路径、来源）"
+    )
+    signature: Optional[Dict[str, Any]] = Field(
+        default=None, description="发布签名信息（签名算法、摘要等）"
+    )

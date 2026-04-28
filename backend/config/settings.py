@@ -142,6 +142,9 @@ class Settings(BaseSettings):
     # Ollama 配置
     ollama_base_url: str = "http://localhost:11434"
     ollama_default_model: str = ""  # 为空则自动使用本地已下载的第一个模型
+    # OpenAI-compatible 本地后端
+    localai_base_url: str = "http://localhost:8080"
+    textgen_webui_base_url: str = "http://localhost:5000"
 
     # 数据库配置 (统一合并管理)
     db_path: str = ""  # 为空则使用默认 backend/data/platform.db

@@ -33,6 +33,8 @@ from core.system.runtime_settings import (
     get_mcp_http_emit_server_push_events,
 )
 from core.plugins import get_plugin_manager
+from core.plugins.market import PluginMarketValidationError, get_plugin_market_service
+from core.plugins.compatibility import build_plugin_compatibility_matrix
 from core.models.registry import get_model_registry
 from core.data.base import SessionLocal
 from core.idempotency.service import (
@@ -481,6 +483,8 @@ async def get_config() -> Dict[str, Any]:
     
     return {
         "ollama_base_url": settings.ollama_base_url,
+        "localai_base_url": settings.localai_base_url,
+        "textgen_webui_base_url": settings.textgen_webui_base_url,
         "app_name": settings.app_name,
         "version": settings.version,
         "local_model_directory": local_model_dir,
@@ -588,6 +592,29 @@ class PluginReloadBody(BaseModel):
 class PluginSetDefaultBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=256)
     version: str = Field(..., min_length=1, max_length=128)
+
+
+class PluginMarketPublishBody(BaseModel):
+    manifest_path: str = Field(..., min_length=1, max_length=4096)
+    package_path: Optional[str] = Field(default=None, max_length=4096)
+    author: Optional[str] = Field(default=None, max_length=256)
+    signature: Optional[str] = Field(default=None, max_length=4096)
+    source: Literal["third_party", "builtin", "enterprise"] = "third_party"
+
+
+class PluginMarketReviewBody(BaseModel):
+    package_id: str = Field(..., min_length=3, max_length=256)
+    approve: bool = True
+    visibility: Literal["public", "private"] = "public"
+
+
+class PluginMarketInstallBody(BaseModel):
+    package_id: str = Field(..., min_length=3, max_length=256)
+
+
+class PluginMarketToggleBody(BaseModel):
+    package_id: str = Field(..., min_length=3, max_length=256)
+    enabled: bool = True
 
 
 class EventBusDlqClearBody(BaseModel):
@@ -808,6 +835,115 @@ async def set_default_plugin_version(
     manager = get_plugin_manager()
     manager.set_default_version(body.name, body.version)
     return {"success": True}
+
+
+@router.get("/plugins/market")
+async def list_plugin_market_packages(
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+    review_status: Annotated[Optional[str], Query(max_length=32)] = None,
+) -> Dict[str, Any]:
+    service = get_plugin_market_service()
+    items = service.list_packages(review_status=review_status)
+    return {"count": len(items), "items": items}
+
+
+@router.post("/plugins/market/publish")
+async def publish_plugin_market_package(
+    body: PluginMarketPublishBody,
+    request: Request,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> Dict[str, Any]:
+    service = get_plugin_market_service()
+    try:
+        result = service.publish(
+            manifest_path=body.manifest_path,
+            package_path=body.package_path,
+            author=body.author or getattr(request.state, "user_id", None),
+            signature=body.signature,
+            source=body.source,
+        )
+    except PluginMarketValidationError as e:
+        raise_api_error(status_code=400, code="plugin_market_publish_invalid", message=str(e))
+    return {"success": True, **result}
+
+
+@router.post("/plugins/market/review")
+async def review_plugin_market_package(
+    body: PluginMarketReviewBody,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> Dict[str, Any]:
+    service = get_plugin_market_service()
+    ok = service.review(package_id=body.package_id, approve=body.approve, visibility=body.visibility)
+    if not ok:
+        raise_api_error(
+            status_code=404,
+            code="plugin_market_package_not_found",
+            message="Plugin package not found",
+            details={"package_id": body.package_id},
+        )
+    return {"success": True, "package_id": body.package_id, "approved": body.approve}
+
+
+@router.post("/plugins/market/install")
+async def install_plugin_market_package(
+    body: PluginMarketInstallBody,
+    request: Request,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> Dict[str, Any]:
+    service = get_plugin_market_service()
+    model_registry, memory = _plugin_init_context()
+    try:
+        result = await service.install(
+            body.package_id,
+            logger=logger,
+            memory=memory,
+            model_registry=model_registry,
+            installed_by=getattr(request.state, "user_id", None),
+        )
+    except PluginMarketValidationError as e:
+        raise_api_error(status_code=400, code="plugin_market_install_failed", message=str(e))
+    return {"success": True, **result}
+
+
+@router.get("/plugins/market/installations")
+async def list_plugin_market_installations(*, _role: Annotated[Any, Depends(require_platform_admin)]) -> Dict[str, Any]:
+    service = get_plugin_market_service()
+    items = service.list_installations()
+    return {"count": len(items), "items": items}
+
+
+@router.post("/plugins/market/toggle")
+async def toggle_plugin_market_installation(
+    body: PluginMarketToggleBody,
+    *,
+    _role: Annotated[Any, Depends(require_platform_admin)],
+) -> Dict[str, Any]:
+    service = get_plugin_market_service()
+    model_registry, memory = _plugin_init_context()
+    ok = await service.set_enabled(
+        body.package_id,
+        body.enabled,
+        logger=logger,
+        memory=memory,
+        model_registry=model_registry,
+    )
+    if not ok:
+        raise_api_error(
+            status_code=404,
+            code="plugin_market_installation_not_found",
+            message="Plugin installation not found",
+            details={"package_id": body.package_id},
+        )
+    return {"success": True, "package_id": body.package_id, "enabled": body.enabled}
+
+
+@router.get("/plugins/compatibility/matrix")
+async def get_plugin_compatibility_matrix(*, _role: Annotated[Any, Depends(require_platform_admin)]) -> Dict[str, Any]:
+    return build_plugin_compatibility_matrix()
 
 
 @router.get("/event-bus/status")
