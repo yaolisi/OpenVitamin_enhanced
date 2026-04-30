@@ -432,6 +432,66 @@ _ERROR_MESSAGES: Dict[str, Dict[str, str]] = {
         "en": "failed to publish rollback workflow version",
         "zh": "发布回滚工作流版本失败",
     },
+    "asr_model_not_found": {
+        "en": "ASR model not found",
+        "zh": "ASR 模型不存在",
+    },
+    "asr_model_not_asr": {
+        "en": "model is not an ASR model",
+        "zh": "模型不是 ASR 模型",
+    },
+    "asr_empty_audio": {
+        "en": "audio content is empty",
+        "zh": "音频内容为空",
+    },
+    "asr_transcribe_failed": {
+        "en": "ASR transcription failed",
+        "zh": "ASR 转写失败",
+    },
+    "vlm_invalid_request_json": {
+        "en": "invalid VLM request json",
+        "zh": "VLM 请求 JSON 不合法",
+    },
+    "vlm_model_resolve_failed": {
+        "en": "failed to resolve VLM model",
+        "zh": "解析 VLM 模型失败",
+    },
+    "vlm_model_not_vlm": {
+        "en": "model is not a VLM model",
+        "zh": "模型不是 VLM 模型",
+    },
+    "vlm_runtime_init_failed": {
+        "en": "failed to initialize VLM runtime",
+        "zh": "初始化 VLM 运行时失败",
+    },
+    "vlm_invalid_image": {
+        "en": "invalid image input",
+        "zh": "图像输入不合法",
+    },
+    "vlm_empty_image": {
+        "en": "image content is empty",
+        "zh": "图像内容为空",
+    },
+    "vlm_inference_failed": {
+        "en": "VLM inference failed",
+        "zh": "VLM 推理失败",
+    },
+    "collaboration_session_not_found": {
+        "en": "collaboration session not found",
+        "zh": "协作会话不存在",
+    },
+    "collaboration_correlation_mismatch": {
+        "en": "collaboration correlation mismatch",
+        "zh": "协作关联 ID 不匹配",
+    },
+    "collaboration_message_persist_failed": {
+        "en": "failed to persist collaboration message",
+        "zh": "保存协作消息失败",
+    },
+    "memory_not_found": {
+        "en": "memory not found",
+        "zh": "记忆不存在",
+    },
 }
 
 

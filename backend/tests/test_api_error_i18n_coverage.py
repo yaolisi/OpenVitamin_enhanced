@@ -9,9 +9,13 @@ from api.error_i18n import _ERROR_MESSAGES
 def test_error_i18n_covers_core_api_error_codes() -> None:
     root = Path(__file__).resolve().parents[1]
     targets = [
+        root / "api" / "asr.py",
         root / "api" / "agents.py",
-        root / "api" / "tools.py",
+        root / "api" / "collaboration.py",
         root / "api" / "events.py",
+        root / "api" / "memory.py",
+        root / "api" / "vlm.py",
+        root / "api" / "tools.py",
         root / "api" / "rag_trace.py",
         root / "api" / "skills.py",
         root / "api" / "mcp.py",
