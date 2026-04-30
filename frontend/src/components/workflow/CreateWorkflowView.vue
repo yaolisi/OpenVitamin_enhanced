@@ -94,7 +94,12 @@ const selectedRecommendationReason = computed(() => {
     | undefined
   const s = (picked?.signals || {}) as Record<string, any>
   if (!s || Object.keys(s).length === 0) return ''
-  return `重叠工具 ${s.overlap ?? 0}，转移信号 ${s.transition_score ?? 0}（置信度 ${(Number(s.transition_confidence || 0) * 100).toFixed(0)}%），用户历史 ${s.user_uses ?? 0} 次`
+  return t('workflow_page.recommend_reason_detail', {
+    overlap: s.overlap ?? 0,
+    transitionScore: s.transition_score ?? 0,
+    confidence: (Number(s.transition_confidence || 0) * 100).toFixed(0),
+    userUses: s.user_uses ?? 0,
+  })
 })
 const selectedRecommendationChips = computed(() => {
   const picked = recommendedTemplates.value.find((x) => x.id === selectedTemplateId.value) as
@@ -111,7 +116,7 @@ const selectedRecommendationChips = computed(() => {
       return {
         key: `${from}->${to}`,
         label: `${from} -> ${to}`,
-        detail: `转移权重 ${w.toFixed(2)}`,
+        detail: t('workflow_page.transition_weight_detail', { weight: w.toFixed(2) }),
         from,
         to,
       }
@@ -512,7 +517,10 @@ async function refreshBackendRecommendations() {
 }
 
 function onRecommendationChipClick(chip: { key: string; label: string; detail: string; from: string; to: string }) {
-  recommendationUiMessage.value = `推荐链路：${chip.label}（${chip.detail}）`
+  recommendationUiMessage.value = t('workflow_page.recommend_path_detail', {
+    label: chip.label,
+    detail: chip.detail,
+  })
   activeRecommendationPairKey.value = chip.key
   const fromNode = editorNodes.value.find((n) => {
     const cfg = (n.data?.config || {}) as Record<string, unknown>
@@ -662,10 +670,10 @@ onUnmounted(() => {
       <div class="flex items-center gap-3 min-w-0 flex-1">
         <Input
           v-model="workflowName"
-          placeholder="Workflow name..."
+          :placeholder="t('workflow_page.workflow_name_placeholder')"
           class="max-w-xs font-semibold"
         />
-        <span class="text-sm text-muted-foreground shrink-0">New workflow</span>
+        <span class="text-sm text-muted-foreground shrink-0">{{ t('workflow_page.new_workflow') }}</span>
       </div>
       <div class="flex items-center gap-2">
         <Button variant="outline" size="sm" class="gap-2" :disabled="undoStack.length === 0" @click="undo">
@@ -677,7 +685,7 @@ onUnmounted(() => {
           Redo
         </Button>
         <Button variant="outline" size="sm" class="gap-2" @click="runPreflightCheck">
-          检查
+          {{ t('workflow_page.preflight_check') }}
         </Button>
         <Button variant="outline" size="sm" class="gap-2" :disabled="isRunning" @click="runWorkflow">
           <Loader2 v-if="isRunning" class="w-4 h-4 animate-spin" />
@@ -689,17 +697,17 @@ onUnmounted(() => {
           <Save v-else class="w-4 h-4" />
           {{ t('workflow_editor.save') }}<span v-if="isDirty" class="ml-1 text-amber-500">*</span>
         </Button>
-        <Button size="sm" class="gap-2" variant="outline" disabled title="功能开发中，敬请期待">
+        <Button size="sm" class="gap-2" variant="outline" disabled :title="t('workflow_page.coming_soon')">
           <Rocket class="w-4 h-4 opacity-50" />
           <span class="opacity-70">{{ t('workflow_editor.deploy') }}</span>
         </Button>
       </div>
     </div>
     <div class="px-6 py-3 border-b border-border/40 bg-muted/20 flex items-center gap-3">
-      <span class="text-sm font-medium">智能推荐模板</span>
+      <span class="text-sm font-medium">{{ t('workflow_page.smart_recommend_templates') }}</span>
       <select
         v-model="selectedTemplateId"
-        aria-label="选择工具组合模板"
+        :aria-label="t('workflow_page.select_template_aria')"
         class="h-8 min-w-[220px] rounded-md border border-input bg-background px-2 text-sm"
       >
         <option
@@ -707,16 +715,16 @@ onUnmounted(() => {
           :key="tpl.id"
           :value="tpl.id"
         >
-          {{ tpl.name }}（推荐分: {{ tpl.score }}）
+          {{ tpl.name }} ({{ t('workflow_page.recommend_score') }}: {{ tpl.score }})
         </option>
       </select>
-      <Button aria-label="一键导入工具组合模板" variant="outline" size="sm" @click="applyTemplate">一键导入模板</Button>
-      <Button variant="ghost" size="sm" @click="refreshBackendRecommendations">刷新推荐</Button>
+      <Button :aria-label="t('workflow_page.one_click_import_aria')" variant="outline" size="sm" @click="applyTemplate">{{ t('workflow_page.one_click_import') }}</Button>
+      <Button variant="ghost" size="sm" @click="refreshBackendRecommendations">{{ t('workflow_page.refresh_recommendations') }}</Button>
       <span class="text-xs text-muted-foreground">
         {{ templates.find((t) => t.id === selectedTemplateId)?.description }}
       </span>
       <span v-if="selectedRecommendationReason" class="text-xs text-muted-foreground">
-        推荐原因：{{ selectedRecommendationReason }}
+        {{ t('workflow_page.recommend_reason') }}: {{ selectedRecommendationReason }}
       </span>
       <button
         v-if="recommendationUiMessage"
@@ -724,7 +732,7 @@ onUnmounted(() => {
         class="text-xs text-muted-foreground underline"
         @click="clearRecommendationMessage"
       >
-        关闭解释
+        {{ t('workflow_page.close_explanation') }}
       </button>
       <div v-if="selectedRecommendationChips.length" class="flex items-center gap-2 flex-wrap">
         <button
@@ -746,7 +754,7 @@ onUnmounted(() => {
 
     <!-- 校验错误面板：点击定位节点 -->
     <div v-if="validationErrors.length" class="mx-6 mb-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
-      <p class="font-medium text-amber-800 dark:text-amber-400 mb-2">校验未通过</p>
+      <p class="font-medium text-amber-800 dark:text-amber-400 mb-2">{{ t('workflow_page.validation_failed') }}</p>
       <ul class="space-y-1">
         <li
           v-for="(e, i) in validationErrors"
@@ -761,16 +769,16 @@ onUnmounted(() => {
 
     <!-- 草稿恢复提示条（非阻断） -->
     <div v-if="draftRestorePending" class="mx-6 mb-2 rounded-lg border border-blue-500/50 bg-blue-500/10 px-4 py-2 flex items-center justify-between text-sm">
-      <span class="text-blue-800 dark:text-blue-200">检测到未保存草稿</span>
+      <span class="text-blue-800 dark:text-blue-200">{{ t('workflow_page.unsaved_draft_detected') }}</span>
       <div class="flex gap-2">
-        <Button variant="outline" size="sm" @click="acceptDraftRestore">恢复</Button>
-        <Button variant="ghost" size="sm" @click="dismissDraftRestore">忽略</Button>
+        <Button variant="outline" size="sm" @click="acceptDraftRestore">{{ t('workflow_page.restore') }}</Button>
+        <Button variant="ghost" size="sm" @click="dismissDraftRestore">{{ t('workflow_page.ignore') }}</Button>
       </div>
     </div>
 
     <!-- Three columns: Node Library | Canvas | Node Config -->
     <div class="flex flex-1 min-h-0">
-      <aside class="w-56 shrink-0 flex flex-col border-r border-border/50" aria-label="节点库面板">
+      <aside class="w-56 shrink-0 flex flex-col border-r border-border/50" :aria-label="t('workflow_page.node_library_panel_aria')">
         <NodeLibrary />
       </aside>
       <main class="flex-1 min-w-0 flex flex-col p-4">
@@ -785,7 +793,7 @@ onUnmounted(() => {
           @select-edge="onSelectEdge"
         />
       </main>
-      <aside class="w-80 shrink-0 flex flex-col border-l border-border/50" aria-label="节点配置面板">
+      <aside class="w-80 shrink-0 flex flex-col border-l border-border/50" :aria-label="t('workflow_page.node_config_panel_aria')">
         <NodeConfigPanel
           :node="selectedNode"
           :edge="selectedEdge"

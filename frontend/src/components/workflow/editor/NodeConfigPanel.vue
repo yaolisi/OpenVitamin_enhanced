@@ -226,7 +226,7 @@ function syncInputFixedInputRaw() {
       inputFixedInputParseError.value = ''
     } catch {
       inputFixedInputRaw.value = ''
-      inputFixedInputParseError.value = 'fixed_input JSON 序列化失败，请重新输入'
+      inputFixedInputParseError.value = t('workflow_editor.fixed_input_serialize_error')
     }
   } else {
     inputFixedInputRaw.value = ''
@@ -525,10 +525,10 @@ watch(
 )
 
 const conditionExprVars = [
-  { label: 'Input Query', expr: '${input.query}' },
-  { label: 'Workflow Query', expr: '${global.input_data.query}' },
-  { label: 'Previous Output', expr: '${prev}' },
-  { label: 'Previous Query', expr: '${prev.query}' },
+  { label: t('workflow_editor.condition_var_input_query'), expr: '${input.query}' },
+  { label: t('workflow_editor.condition_var_workflow_query'), expr: '${global.input_data.query}' },
+  { label: t('workflow_editor.condition_var_previous_output'), expr: '${prev}' },
+  { label: t('workflow_editor.condition_var_previous_query'), expr: '${prev.query}' },
 ]
 
 function insertConditionExpr(token: string) {
@@ -800,10 +800,10 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
       if (!s) continue
       if (isVariableMapping(s) || isExpressionMapping(s)) continue
       if ((schema.type === 'number' || schema.type === 'integer') && Number.isNaN(Number(s))) {
-        errs[fieldName] = '类型不匹配：该字段为数字类型，仅支持数字、{{变量映射}} 或 =表达式'
+        errs[fieldName] = t('workflow_editor.tool_input_number_type_error')
       }
       if (schema.type === 'boolean' && !['true', 'false'].includes(s.toLowerCase())) {
-        errs[fieldName] = '类型不匹配：该字段为布尔类型，仅支持 true/false、{{变量映射}} 或 =表达式'
+        errs[fieldName] = t('workflow_editor.tool_input_boolean_type_error')
       }
     }
   }
@@ -876,7 +876,7 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
           <Input
             v-model="modelSearch"
             class="h-9"
-            :placeholder="'搜索模型（名称 / ID / backend）'"
+            :placeholder="t('workflow_editor.search_models_placeholder')"
           />
           <select
             v-model="displayModelId"
@@ -982,7 +982,7 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
             <Input
               v-model="agentSearch"
               class="h-9"
-              :placeholder="'搜索 Agent（名称 / ID）'"
+              :placeholder="t('workflow_editor.search_agents_placeholder')"
             />
             <select
               v-model="displayAgentId"
@@ -1150,7 +1150,7 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
           <Input
             v-model="toolSearch"
             class="h-9"
-            :placeholder="'搜索工具（展示名 / name）'"
+            :placeholder="t('workflow_editor.search_tools_placeholder')"
           />
           <select
             class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
@@ -1231,7 +1231,7 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
                 @update:model-value="(value) => updateToolInputField(fieldName, parseToolInputValue(String(value ?? ''), schema))"
               />
               <p class="text-[11px] text-muted-foreground">
-                支持静态值、变量映射（如 &#123;&#123;var.path&#125;&#125;）、或 = 表达式计算
+                {{ t('workflow_editor.tool_input_mapping_hint') }}
               </p>
               <p v-if="toolInputFieldErrors[fieldName]" class="text-xs text-destructive">
                 {{ toolInputFieldErrors[fieldName] }}
@@ -1387,7 +1387,7 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
             />
             <p v-if="inputKeyValidationError" class="text-xs text-destructive">{{ inputKeyValidationError }}</p>
             <p class="text-xs text-muted-foreground">
-              留空表示整个 <code>input_data</code> 作为工作流输入；否则从 <code>input_data[input_key]</code> 读取。
+              {{ t('workflow_editor.input_key_hint_line1') }}
             </p>
             <p class="text-sm font-medium leading-none">{{ t('workflow_editor.input_fixed_input') }}</p>
             <Textarea
@@ -1400,7 +1400,7 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
             <p v-if="inputFixedInputParseError" class="text-xs text-destructive">{{ inputFixedInputParseError }}</p>
             <p v-else-if="inputFixedInputValidationError" class="text-xs text-destructive">{{ inputFixedInputValidationError }}</p>
             <p class="text-xs text-muted-foreground">
-              与工作流入参合并，用于补默认值；执行时 <code>fixed_input</code> 先于 <code>input_data</code> 合并。
+              {{ t('workflow_editor.input_key_hint_line2') }}
             </p>
           </div>
         </details>
@@ -1678,16 +1678,16 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
             />
             <p v-if="outputKeyValidationError" class="text-xs text-destructive">{{ outputKeyValidationError }}</p>
             <p class="text-xs text-muted-foreground">
-              将该节点输出写入到 <code>execution.output_data[output_key]</code>。
+              {{ t('workflow_editor.output_key_hint') }}
             </p>
             <p class="text-sm font-medium leading-none">{{ t('workflow_editor.output_expression') }}</p>
             <Input
               :model-value="(config().expression as string) ?? ''"
-              placeholder="${nodes.llm_1.output} 或 ${input.text}"
+              :placeholder="t('workflow_editor.output_expression_placeholder')"
               @update:model-value="updateConfig('expression', ($event as string)?.trim() || undefined)"
             />
             <p class="text-xs text-muted-foreground">
-              使用执行上下文表达式从前序节点或输入中选择最终输出；留空则使用节点默认输出。
+              {{ t('workflow_editor.output_expression_hint') }}
             </p>
           </div>
         </details>
@@ -1707,7 +1707,7 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
           @click="canDeleteNode() ? onDeleteNode() : onDeleteEdge()"
         >
           <Trash2 class="w-4 h-4 mr-2" />
-          {{ canDeleteNode() ? t('workflow_editor.delete_node') : 'Delete edge' }}
+          {{ canDeleteNode() ? t('workflow_editor.delete_node') : t('workflow_editor.delete_edge') }}
         </Button>
       </div>
     </div>

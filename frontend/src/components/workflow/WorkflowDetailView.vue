@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Edit, Play, Trash2, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,6 +25,7 @@ import { normalizeExecutionStatus, normalizeNodeStatus, parseAgentSchemaError, s
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const workflowId = route.params.id as string
 
 const workflow = ref<WorkflowRecord | null>(null)
@@ -379,20 +381,18 @@ onUnmounted(() => {
         <p class="text-sm text-muted-foreground">ID: {{ workflowId }}</p>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="outline" class="gap-2" @click="openVersions">
-          Versions
-        </Button>
+        <Button variant="outline" class="gap-2" @click="openVersions">{{ t('workflow_page.versions') }}</Button>
         <Button variant="outline" class="gap-2" @click="editWorkflow">
           <Edit class="w-4 h-4" />
-          Edit
+          {{ t('workflow_page.edit') }}
         </Button>
         <Button variant="destructive" class="gap-2">
           <Trash2 class="w-4 h-4" />
-          Delete
+          {{ t('workflow_page.delete') }}
         </Button>
         <Button class="gap-2 bg-blue-600 hover:bg-blue-700" @click="runWorkflow">
           <Play class="w-4 h-4" />
-          Run
+          {{ t('workflow_page.run') }}
         </Button>
       </div>
     </div>
@@ -402,30 +402,31 @@ onUnmounted(() => {
         <div class="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Workflow Information</CardTitle>
+              <CardTitle>{{ t('workflow_page.workflow_information') }}</CardTitle>
             </CardHeader>
             <CardContent class="space-y-3">
               <div>
-                <label class="text-sm font-medium text-muted-foreground">Name</label>
+                <label for="workflow-name-input" class="text-sm font-medium text-muted-foreground">{{ t('workflow_page.name') }}</label>
                 <div class="flex items-center gap-2 mt-1">
                   <Input
                     v-model="workflowNameEdit"
+                    id="workflow-name-input"
                     class="flex-1 text-base"
-                    placeholder="Workflow name"
+                    :placeholder="t('workflow_page.workflow_name_placeholder')"
                     :disabled="workflowNameSaving"
                     @blur="saveWorkflowName"
                     @keydown.enter.prevent="saveWorkflowName"
                   />
-                  <span v-if="workflowNameSaving" class="text-xs text-muted-foreground">Saving...</span>
+                  <span v-if="workflowNameSaving" class="text-xs text-muted-foreground">{{ t('workflow_page.saving') }}</span>
                 </div>
               </div>
               <div>
-                <label class="text-sm font-medium text-muted-foreground">Description</label>
-                <p class="text-base">{{ workflow?.description || '-' }}</p>
+                <label for="workflow-description-text" class="text-sm font-medium text-muted-foreground">{{ t('workflow_page.description') }}</label>
+                <p id="workflow-description-text" class="text-base">{{ workflow?.description || '-' }}</p>
               </div>
               <div>
-                <label class="text-sm font-medium text-muted-foreground">Status</label>
-                <Badge variant="secondary">{{ workflow?.lifecycle_state || 'draft' }}</Badge>
+                <label for="workflow-status-badge" class="text-sm font-medium text-muted-foreground">{{ t('workflow_page.status') }}</label>
+                <Badge id="workflow-status-badge" variant="secondary">{{ workflow?.lifecycle_state || 'draft' }}</Badge>
               </div>
             </CardContent>
           </Card>
@@ -433,22 +434,22 @@ onUnmounted(() => {
           <Card>
             <CardHeader>
               <CardTitle class="flex items-center justify-between">
-                <span>Latest Node Results</span>
+                <span>{{ t('workflow_page.latest_node_results') }}</span>
                 <select v-model="nodeFilter" class="h-8 rounded-md border border-input bg-background px-2 text-xs">
-                  <option value="all">All</option>
-                  <option value="failed">Failed</option>
-                  <option value="slow">Slow</option>
-                  <option value="completed">Completed</option>
+                  <option value="all">{{ t('workflow_page.filter_all') }}</option>
+                  <option value="failed">{{ t('workflow_page.filter_failed') }}</option>
+                  <option value="slow">{{ t('workflow_page.filter_slow') }}</option>
+                  <option value="completed">{{ t('workflow_page.filter_completed') }}</option>
                 </select>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div v-if="loading" class="h-40 flex items-center justify-center text-muted-foreground text-sm">
                 <Loader2 class="w-4 h-4 animate-spin mr-2" />
-                Loading...
+                {{ t('workflow_page.loading') }}
               </div>
               <div v-else-if="!selectedExecution || filteredNodeStates.length === 0" class="h-40 flex items-center justify-center text-muted-foreground text-sm">
-                No node-level results yet.
+                {{ t('workflow_page.no_node_results_yet') }}
               </div>
               <div v-else class="space-y-3 max-h-[32rem] overflow-auto pr-1">
                 <div v-for="ns in filteredNodeStates" :key="ns.node_id" class="rounded-lg border border-border/60 p-3">
@@ -463,17 +464,17 @@ onUnmounted(() => {
                   </div>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                     <div class="rounded border border-border/50 bg-muted/20 p-2">
-                      <div class="mb-1 text-muted-foreground">input</div>
+                      <div class="mb-1 text-muted-foreground">{{ t('workflow_page.input') }}</div>
                       <pre class="whitespace-pre-wrap break-words">{{ prettyJson(ns.input_data) }}</pre>
                     </div>
                     <div class="rounded border border-border/50 bg-muted/20 p-2">
-                      <div class="mb-1 text-muted-foreground">output</div>
+                      <div class="mb-1 text-muted-foreground">{{ t('workflow_page.output') }}</div>
                       <pre class="whitespace-pre-wrap break-words">{{ prettyJson(ns.output_data) }}</pre>
                     </div>
                   </div>
                   <template v-if="ns.error_message">
                     <div v-if="parseAgentSchemaError(ns.error_message)" class="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
-                      <p class="font-medium text-amber-700 dark:text-amber-400">Output schema 校验失败（调试）</p>
+                      <p class="font-medium text-amber-700 dark:text-amber-400">{{ t('workflow_page.output_schema_validation_failed_debug') }}</p>
                       <p class="mt-1 text-amber-600 dark:text-amber-500">{{ parseAgentSchemaError(ns.error_message)?.detail }}</p>
                     </div>
                     <div v-else class="mt-2 rounded border border-red-500/30 bg-red-500/5 p-2 text-xs text-red-400">{{ ns.error_message }}</div>
@@ -488,7 +489,7 @@ onUnmounted(() => {
           <Card>
             <CardHeader>
               <CardTitle class="flex items-center justify-between">
-                <span>Execution History</span>
+                <span>{{ t('workflow_page.execution_history') }}</span>
                 <span class="text-xs text-muted-foreground">
                   {{ executionTotal === 0 ? '0-0' : `${executionOffset + 1}-${Math.min(executionOffset + executions.length, executionTotal)}` }}/{{ executionTotal }}
                 </span>
@@ -497,9 +498,9 @@ onUnmounted(() => {
             <CardContent>
               <div v-if="executionLoading" class="text-sm text-muted-foreground flex items-center gap-2">
                 <Loader2 class="w-4 h-4 animate-spin" />
-                Loading history...
+                {{ t('workflow_page.loading_history') }}
               </div>
-              <div v-else-if="executions.length === 0" class="text-sm text-muted-foreground">No executions.</div>
+              <div v-else-if="executions.length === 0" class="text-sm text-muted-foreground">{{ t('workflow_page.no_executions') }}</div>
               <div v-else class="space-y-2">
                 <button
                   v-for="exec in executions"
@@ -518,7 +519,7 @@ onUnmounted(() => {
                         class="h-6 px-2 text-xs"
                         @click.stop="openExecutionRun(exec.execution_id)"
                       >
-                        Open
+                        {{ t('workflow_page.open') }}
                       </Button>
                       <Button
                         variant="ghost"
@@ -528,7 +529,7 @@ onUnmounted(() => {
                         @click.stop="deleteExecutionHistory(exec.execution_id)"
                       >
                         <Loader2 v-if="deletingExecutionId === exec.execution_id" class="w-3 h-3 animate-spin" />
-                        <span v-else>Delete</span>
+                        <span v-else>{{ t('workflow_page.delete') }}</span>
                       </Button>
                     </div>
                   </div>
@@ -537,7 +538,7 @@ onUnmounted(() => {
                   </div>
                 </button>
               </div>
-              <div class="mt-2 text-[11px] text-muted-foreground">Timezone: {{ localTimeZone }}</div>
+              <div class="mt-2 text-[11px] text-muted-foreground">{{ t('workflow_page.timezone') }}: {{ localTimeZone }}</div>
               <div class="mt-3 flex items-center justify-end gap-2">
                 <Button
                   variant="outline"
@@ -545,7 +546,7 @@ onUnmounted(() => {
                   :disabled="executionOffset <= 0 || executionLoading"
                   @click="prevExecutionPage"
                 >
-                  Prev
+                  {{ t('workflow_page.prev') }}
                 </Button>
                 <Button
                   variant="outline"
@@ -553,7 +554,7 @@ onUnmounted(() => {
                   :disabled="executionOffset + executionLimit >= executionTotal || executionLoading"
                   @click="nextExecutionPage"
                 >
-                  Next
+                  {{ t('workflow_page.next') }}
                 </Button>
               </div>
             </CardContent>
@@ -561,7 +562,7 @@ onUnmounted(() => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Selected Output</CardTitle>
+              <CardTitle>{{ t('workflow_page.selected_output') }}</CardTitle>
             </CardHeader>
             <CardContent>
               <pre class="h-56 overflow-auto rounded border border-border/60 bg-muted/20 p-3 text-xs whitespace-pre-wrap break-words">{{ prettyJson(selectedExecution?.output_data) }}</pre>
@@ -570,13 +571,14 @@ onUnmounted(() => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Execution Governance</CardTitle>
+              <CardTitle>{{ t('workflow_page.execution_governance') }}</CardTitle>
             </CardHeader>
             <CardContent class="space-y-3">
               <div class="space-y-2">
-                <label class="text-sm font-medium">Max queue size</label>
+                <label for="workflow-governance-max-queue-size" class="text-sm font-medium">{{ t('workflow_page.max_queue_size') }}</label>
                 <Input
                   v-model.number="governanceForm.max_queue_size"
+                  id="workflow-governance-max-queue-size"
                   type="number"
                   min="1"
                   max="10000"
@@ -584,17 +586,18 @@ onUnmounted(() => {
                 />
               </div>
               <div class="space-y-2">
-                <label class="text-sm font-medium">Backpressure</label>
+                <label for="workflow-governance-backpressure" class="text-sm font-medium">{{ t('workflow_page.backpressure') }}</label>
                 <select
                   v-model="governanceForm.backpressure_strategy"
+                  id="workflow-governance-backpressure"
                   class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
                 >
-                  <option value="wait">Wait (queue)</option>
-                  <option value="reject">Reject when full</option>
+                  <option value="wait">{{ t('workflow_page.backpressure_wait') }}</option>
+                  <option value="reject">{{ t('workflow_page.backpressure_reject') }}</option>
                 </select>
               </div>
               <div v-if="governance?.queue" class="text-xs text-muted-foreground">
-                Queued: {{ governance.queue.queued_executions ?? 0 }} / {{ governance.queue.max_queue_size ?? '-' }}
+                {{ t('workflow_page.queued') }}: {{ governance.queue.queued_executions ?? 0 }} / {{ governance.queue.max_queue_size ?? '-' }}
               </div>
               <Button
                 size="sm"
@@ -603,7 +606,7 @@ onUnmounted(() => {
                 @click="saveGovernance"
               >
                 <Loader2 v-if="governanceSaving" class="w-4 h-4 animate-spin mr-2" />
-                Save governance
+                {{ t('workflow_page.save_governance') }}
               </Button>
             </CardContent>
           </Card>

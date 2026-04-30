@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { i18n } from '@/i18n'
 
 // 路由配置
 const routes: RouteRecordRaw[] = [
@@ -382,6 +383,53 @@ const router = createRouter({
   routes
 })
 
+const routeTitleKeyMap: Record<string, string> = {
+  chat: 'router.chat',
+  workflow: 'router.workflow',
+  'workflow-create': 'router.workflow_create',
+  'workflow-detail': 'router.workflow_detail',
+  'workflow-edit': 'router.workflow_edit',
+  'workflow-run': 'router.workflow_run',
+  'workflow-versions': 'router.workflow_versions',
+  images: 'router.images',
+  'images-history': 'router.images_history',
+  'images-job-detail': 'router.images_job_detail',
+  models: 'router.models',
+  'models-llm': 'router.models',
+  'models-vlm': 'router.models',
+  'models-asr': 'router.models',
+  'models-perception': 'router.models',
+  'models-perception-detection': 'router.models',
+  'models-perception-segmentation': 'router.models',
+  'models-perception-tracking': 'router.models',
+  'models-embedding': 'router.models',
+  'models-image-generation': 'router.models',
+  'model-config': 'router.model_config',
+  knowledge: 'router.knowledge',
+  'knowledge-create': 'router.knowledge_create',
+  'knowledge-detail': 'router.knowledge_detail',
+  agents: 'router.agents',
+  'agents-create': 'router.agents_create',
+  'agents-run': 'router.agents_run',
+  'agents-trace': 'router.agents_trace',
+  'agents-edit': 'router.agents_edit',
+  skills: 'router.skills',
+  'skills-create': 'router.skills_create',
+  'skill-detail': 'router.skill_detail',
+  logs: 'router.logs',
+  settings: 'router.settings',
+  'settings-general': 'router.settings_general',
+  'settings-backend': 'router.settings_backend',
+  'settings-object-detection': 'router.settings_object_detection',
+  'settings-image-generation': 'router.settings_image_generation',
+  'settings-asr': 'router.settings_asr',
+  'settings-backup': 'router.settings_backup',
+  'settings-model-backup': 'router.settings_model_backup',
+  'settings-runtime': 'router.settings_runtime',
+  'settings-mcp': 'router.settings_mcp',
+  optimization: 'router.optimization',
+}
+
 // 路由守卫：确保路由正确导航
 router.beforeEach((to, from, next) => {
   // 记录路由变化，便于调试
@@ -390,10 +438,11 @@ router.beforeEach((to, from, next) => {
 })
 
 router.afterEach((to) => {
-  // 路由变化后，更新页面标题
-  if (to.meta.title) {
-    document.title = `${to.meta.title} - perilla大模型与智能体应用平台`
-  }
+  const routeName = typeof to.name === 'string' ? to.name : ''
+  const titleKey = routeTitleKeyMap[routeName]
+  const routeTitle = titleKey ? i18n.global.t(titleKey) : String(to.meta.title ?? '')
+  const appTitle = i18n.global.t('app.title')
+  document.title = routeTitle ? `${routeTitle} - ${appTitle}` : appTitle
 })
 
 export default router

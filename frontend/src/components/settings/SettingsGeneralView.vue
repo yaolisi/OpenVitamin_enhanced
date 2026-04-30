@@ -280,17 +280,17 @@ watch(theme, (newTheme) => {
     <div class="flex-1 flex overflow-hidden px-10 pb-10 gap-8">
       <!-- Settings Navigation -->
       <aside
-        aria-label="Settings navigation"
+        :aria-label="t('settings.navigation_aria')"
         class="shrink-0 hidden lg:flex flex-col transition-all duration-200"
         :class="navCollapsed ? 'w-16' : 'w-56'"
       >
         <div class="flex items-center justify-between mb-4">
           <div v-if="!navCollapsed" class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Settings
+            {{ t('settings.navigation_title') }}
           </div>
           <button
             class="h-7 w-7 rounded-lg border border-border/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-            aria-label="Toggle settings navigation"
+            :aria-label="t('settings.navigation_toggle_aria')"
             @click="navCollapsed = !navCollapsed"
           >
             <ChevronLeft v-if="!navCollapsed" class="w-4 h-4" />
@@ -431,8 +431,8 @@ watch(theme, (newTheme) => {
             <div class="grid grid-cols-2 gap-4">
               <button 
                 v-for="lang in [
-                  { id: 'en', label: t('settings.langEn'), sub: 'English' },
-                  { id: 'zh', label: t('settings.langZh'), sub: '中文' }
+                  { id: 'en', label: t('settings.langEn'), sub: t('settings.language_en_native') },
+                  { id: 'zh', label: t('settings.langZh'), sub: t('settings.language_zh_native') }
                 ]" 
                 :key="lang.id"
                 @click="handleLanguageChange(lang.id)"
@@ -498,7 +498,7 @@ watch(theme, (newTheme) => {
                     <Input 
                       id="general-model-dir"
                       v-model="dataDirectory"
-                      placeholder="~/.local-ai/models/"
+                      :placeholder="t('settings.storage.model_dir_placeholder')"
                       class="pl-12 h-12 bg-background border-border text-foreground rounded-xl"
                       @update:modelValue="isEditing = true"
                     />
@@ -554,7 +554,7 @@ watch(theme, (newTheme) => {
             </div>
             <div class="flex items-center justify-between gap-4 text-sm">
               <span class="text-muted-foreground">{{ t('settings.monitor.node_version') }}</span>
-              <span class="font-medium text-foreground">{{ metrics?.node_version || 'N/A' }}</span>
+                <span class="font-medium text-foreground">{{ metrics?.node_version || t('common.unknown') }}</span>
             </div>
           </div>
 

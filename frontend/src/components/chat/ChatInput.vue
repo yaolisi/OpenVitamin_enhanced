@@ -233,7 +233,7 @@ onUnmounted(() => {
           class="h-5 px-2.5 gap-1.5 bg-muted text-muted-foreground border-none text-[10px] font-medium"
         >
           <Eye class="w-3 h-3" />
-          {{ t('chat.vision') }}
+          {{ t('chat.vision_label') }}
         </Badge>
       </div>
 

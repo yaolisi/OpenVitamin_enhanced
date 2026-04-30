@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -15,25 +16,26 @@ const emit = defineEmits<{
   (e: 'update:cacheClearModelAlias', value: string): void
   (e: 'clear-cache'): void
 }>()
+const { t } = useI18n()
 </script>
 
 <template>
   <div class="space-y-4">
     <div class="grid gap-3 md:grid-cols-2">
       <div class="space-y-2">
-        <p class="text-xs text-muted-foreground">按用户清理（可选）</p>
+        <p class="text-xs text-muted-foreground">{{ t('cache_monitor.clear.user_scope') }}</p>
         <Input
           :model-value="cacheClearUserId"
-          placeholder="例如：u1"
+          :placeholder="t('cache_monitor.clear.user_placeholder')"
           class="h-10 bg-background border-border text-foreground rounded-xl px-3"
           @update:modelValue="(v) => emit('update:cacheClearUserId', String(v ?? ''))"
         />
       </div>
       <div class="space-y-2">
-        <p class="text-xs text-muted-foreground">按模型别名清理（可选）</p>
+        <p class="text-xs text-muted-foreground">{{ t('cache_monitor.clear.model_scope') }}</p>
         <Input
           :model-value="cacheClearModelAlias"
-          placeholder="例如：reasoning-model"
+          :placeholder="t('cache_monitor.clear.model_placeholder')"
           class="h-10 bg-background border-border text-foreground rounded-xl px-3"
           @update:modelValue="(v) => emit('update:cacheClearModelAlias', String(v ?? ''))"
         />
@@ -46,7 +48,7 @@ const emit = defineEmits<{
         :disabled="clearCacheLoading"
         @click="emit('clear-cache')"
       >
-        {{ clearCacheLoading ? '清理中...' : '清理推理缓存' }}
+        {{ clearCacheLoading ? t('cache_monitor.clear.clearing') : t('cache_monitor.clear.clear_action') }}
       </Button>
       <span v-if="clearCacheMessage" class="text-xs text-emerald-400">{{ clearCacheMessage }}</span>
       <span v-if="clearCacheError" class="text-xs text-red-400">{{ clearCacheError }}</span>

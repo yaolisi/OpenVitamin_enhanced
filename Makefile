@@ -70,6 +70,7 @@ MONITORING_GRAFANA_URL ?= http://127.0.0.1:3000
 .PHONY: event-bus-smoke-contract-guard-validator
 .PHONY: event-bus-smoke-contract-guard-workflow
 .PHONY: event-bus-smoke-contract-guard-status-json
+.PHONY: i18n-hardcoded-scan
 
 help:
 	@echo "perilla Docker helper targets:"
@@ -489,16 +490,19 @@ lint: lint-backend
 check-nvmrc-align:
 	@bash scripts/check-nvmrc-align.sh
 
+i18n-hardcoded-scan:
+	@bash scripts/check-frontend-i18n-hardcoded.sh
+
 test-frontend-unit: check-nvmrc-align
 	@cd frontend && npm run test:unit
 
 build-frontend: check-nvmrc-align
 	@cd frontend && npm run build
 
-pr-check: check-nvmrc-align lint-backend test-no-fallback test-frontend-unit build-frontend
+pr-check: check-nvmrc-align i18n-hardcoded-scan lint-backend test-no-fallback test-frontend-unit build-frontend
 	@echo "pr-check: OK"
 
-pr-check-fast: check-nvmrc-align lint-backend test-no-fallback test-frontend-unit
+pr-check-fast: check-nvmrc-align i18n-hardcoded-scan lint-backend test-no-fallback test-frontend-unit
 	@echo "pr-check-fast: OK (no build-frontend)"
 
 ci: pr-check

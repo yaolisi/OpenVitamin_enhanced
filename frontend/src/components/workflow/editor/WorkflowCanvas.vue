@@ -969,7 +969,7 @@ function onConnect(connection: { source: string; target: string; sourceHandle?: 
           ref="searchInputRef"
           v-model="searchKeyword"
           type="text"
-          placeholder="搜索节点"
+          :placeholder="t('workflow_canvas.search_placeholder')"
           class="h-7 w-40 bg-transparent text-xs outline-none"
           @keydown="onSearchInputKeydown"
         />
@@ -979,72 +979,72 @@ function onConnect(connection: { source: string; target: string; sourceHandle?: 
         class="h-7 min-w-[170px] rounded-md border border-border/60 bg-background px-2 text-xs"
         @change="locateNode(selectedSearchNodeId)"
       >
-        <option v-if="!searchNodeOptions().length" value="">无匹配节点</option>
+        <option v-if="!searchNodeOptions().length" value="">{{ t('workflow_canvas.no_matching_nodes') }}</option>
         <option v-for="node in searchNodeOptions()" :key="node.id" :value="node.id">
           {{ nodeLabel(node) }}
         </option>
       </select>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="定位到当前搜索节点" aria-label="定位到当前搜索节点" @click="locateNode(selectedSearchNodeId)">
-        定位
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.locate_title')" :aria-label="t('workflow_canvas.locate_title')" @click="locateNode(selectedSearchNodeId)">
+        {{ t('workflow_canvas.locate') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="快捷键帮助（? / F1）" aria-label="打开快捷键帮助" @click="showShortcutHelp = !showShortcutHelp">
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.shortcuts_toggle_title')" :aria-label="t('workflow_canvas.shortcuts_open_aria')" @click="showShortcutHelp = !showShortcutHelp">
         ?
       </button>
       <label class="ml-1 flex items-center gap-1 text-[11px] text-muted-foreground">
         <input v-model="searchInFocusedGroupOnly" type="checkbox" :disabled="!focusedGroupId" />
-        仅当前分组
+        {{ t('workflow_canvas.only_current_group') }}
       </label>
     </div>
     <div class="absolute right-3 top-3 z-20 flex items-center gap-1 rounded-lg border border-border/60 bg-background/95 px-2 py-2 shadow-sm backdrop-blur">
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted flex items-center gap-1" title="适配画布（Ctrl/Cmd+F）" aria-label="适配画布" @click="fitCanvas">
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted flex items-center gap-1" :title="t('workflow_canvas.fit_canvas_title')" :aria-label="t('workflow_canvas.fit_canvas_aria')" @click="fitCanvas">
         <ScanSearch class="h-3.5 w-3.5" />
-        适配
+        {{ t('workflow_canvas.fit_canvas') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="缩小画布（Ctrl/Cmd+-）" aria-label="缩小画布" @click="zoomOutCanvas">
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.zoom_out_title')" :aria-label="t('workflow_canvas.zoom_out_aria')" @click="zoomOutCanvas">
         <ZoomOut class="h-3.5 w-3.5" />
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="放大画布（Ctrl/Cmd+=）" aria-label="放大画布" @click="zoomInCanvas">
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.zoom_in_title')" :aria-label="t('workflow_canvas.zoom_in_aria')" @click="zoomInCanvas">
         <ZoomIn class="h-3.5 w-3.5" />
       </button>
       <input
         v-model="groupName"
         type="text"
-        placeholder="分组名"
+        :placeholder="t('workflow_canvas.group_name_placeholder')"
         class="h-7 w-20 rounded-md border border-border/60 bg-transparent px-2 text-xs outline-none"
       />
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted flex items-center gap-1" title="创建分组（Ctrl/Cmd+G）" aria-label="创建分组" @click="createGroupFromSelection">
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted flex items-center gap-1" :title="t('workflow_canvas.create_group_title')" :aria-label="t('workflow_canvas.create_group_aria')" @click="createGroupFromSelection">
         <FolderTree class="h-3.5 w-3.5" />
-        分组
+        {{ t('workflow_canvas.group') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="重命名分组（Ctrl/Cmd+R）" aria-label="重命名分组" @click="renameSelectedGroup">
-        重命名
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.rename_group_title')" :aria-label="t('workflow_canvas.rename_group_aria')" @click="renameSelectedGroup">
+        {{ t('workflow_canvas.rename') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="折叠/展开分组（Ctrl/Cmd+E）" aria-label="折叠或展开分组" @click="toggleSelectedGroupCollapse">
-        折叠/展开
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.toggle_group_title')" :aria-label="t('workflow_canvas.toggle_group_aria')" @click="toggleSelectedGroupCollapse">
+        {{ t('workflow_canvas.toggle_group') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="聚焦当前分组" aria-label="聚焦当前分组" @click="toggleFocusSelectedGroup">
-        聚焦分组
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.focus_group_title')" :aria-label="t('workflow_canvas.focus_group_aria')" @click="toggleFocusSelectedGroup">
+        {{ t('workflow_canvas.focus_group') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="分组放大（Ctrl/Cmd+]）" aria-label="分组放大" @click="resizeSelectedGroup(1.12)">
-        组放大
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.group_zoom_in_title')" :aria-label="t('workflow_canvas.group_zoom_in_aria')" @click="resizeSelectedGroup(1.12)">
+        {{ t('workflow_canvas.group_zoom_in') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="分组缩小（Ctrl/Cmd+[）" aria-label="分组缩小" @click="resizeSelectedGroup(0.9)">
-        组缩小
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.group_zoom_out_title')" :aria-label="t('workflow_canvas.group_zoom_out_aria')" @click="resizeSelectedGroup(0.9)">
+        {{ t('workflow_canvas.group_zoom_out') }}
       </button>
-      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" title="解组（Ctrl/Cmd+Shift+G）" aria-label="解组" @click="ungroupSelectedGroup">
-        解组
+      <button class="h-7 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" :title="t('workflow_canvas.ungroup_title')" :aria-label="t('workflow_canvas.ungroup_aria')" @click="ungroupSelectedGroup">
+        {{ t('workflow_canvas.ungroup') }}
       </button>
     </div>
     <div class="absolute right-3 bottom-3 z-20 rounded-md border border-border/50 bg-background/85 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur">
-      按 <span class="font-mono text-foreground">?</span> 或 <span class="font-mono text-foreground">F1</span> 查看快捷键
+      {{ t('workflow_canvas.shortcuts_hint_prefix') }} <span class="font-mono text-foreground">?</span> {{ t('workflow_canvas.shortcuts_hint_or') }} <span class="font-mono text-foreground">F1</span> {{ t('workflow_canvas.shortcuts_hint_suffix') }}
     </div>
     <div
       v-if="focusedGroupId"
       class="absolute bottom-3 left-1/2 z-30 -translate-x-1/2 rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-xs text-blue-700 dark:text-blue-300"
     >
-      当前聚焦：{{ focusedGroupLabel() }}
+      {{ t('workflow_canvas.current_focus') }}{{ focusedGroupLabel() }}
       <button class="ml-2 rounded border border-blue-500/40 px-2 py-0.5 hover:bg-blue-500/20" @click="clearFocusMode">
-        退出
+        {{ t('workflow_canvas.exit') }}
       </button>
     </div>
     <div
@@ -1055,13 +1055,13 @@ function onConnect(connection: { source: string; target: string; sourceHandle?: 
         <input
           v-model="groupName"
           type="text"
-          placeholder="输入分组名并回车"
+          :placeholder="t('workflow_canvas.input_group_name_placeholder')"
           class="h-8 w-52 rounded-md border border-border/60 bg-transparent px-2 text-xs outline-none"
           @keydown.enter.prevent="confirmRenameFromInline"
           @keydown.esc.prevent="renamingGroupId = null"
         />
         <button class="h-8 rounded-md border border-border/60 px-2 text-xs hover:bg-muted" @click="confirmRenameFromInline">
-          确认
+          {{ t('workflow_canvas.confirm') }}
         </button>
       </div>
     </div>
@@ -1070,24 +1070,24 @@ function onConnect(connection: { source: string; target: string; sourceHandle?: 
       class="absolute right-3 bottom-12 z-40 w-80 rounded-lg border border-border/60 bg-background/95 p-3 text-xs shadow-sm backdrop-blur"
     >
       <div class="mb-2 flex items-center justify-between">
-        <p class="font-semibold">快捷键帮助</p>
-        <button class="rounded border border-border/60 px-2 py-0.5 hover:bg-muted" @click="showShortcutHelp = false">关闭</button>
+        <p class="font-semibold">{{ t('workflow_canvas.shortcuts_help') }}</p>
+        <button class="rounded border border-border/60 px-2 py-0.5 hover:bg-muted" @click="showShortcutHelp = false">{{ t('workflow_canvas.close') }}</button>
       </div>
       <div class="grid grid-cols-[110px_1fr] gap-x-2 gap-y-1 text-muted-foreground">
-        <span class="font-mono text-foreground">?</span><span>显示/隐藏帮助</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+S</span><span>保存工作流</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+Z</span><span>撤销</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+Y</span><span>重做</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+F</span><span>画布适配视图</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+=</span><span>放大画布</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+-</span><span>缩小画布</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+G</span><span>创建分组</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+Shift+G</span><span>解组</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+E</span><span>折叠/展开分组</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+R</span><span>重命名已选分组</span>
-        <span class="font-mono text-foreground">Ctrl/Cmd+[ / ]</span><span>组缩小 / 组放大</span>
-        <span class="font-mono text-foreground">Shift 拖拽</span><span>等比缩放分组</span>
-        <span class="font-mono text-foreground">Alt 拖拽</span><span>中心点缩放分组</span>
+        <span class="font-mono text-foreground">?</span><span>{{ t('workflow_canvas.shortcut_toggle_help') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+S</span><span>{{ t('workflow_canvas.shortcut_save') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+Z</span><span>{{ t('workflow_canvas.shortcut_undo') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+Y</span><span>{{ t('workflow_canvas.shortcut_redo') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+F</span><span>{{ t('workflow_canvas.shortcut_fit') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+=</span><span>{{ t('workflow_canvas.shortcut_zoom_in') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+-</span><span>{{ t('workflow_canvas.shortcut_zoom_out') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+G</span><span>{{ t('workflow_canvas.shortcut_group') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+Shift+G</span><span>{{ t('workflow_canvas.shortcut_ungroup') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+E</span><span>{{ t('workflow_canvas.shortcut_toggle_group') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+R</span><span>{{ t('workflow_canvas.shortcut_rename_group') }}</span>
+        <span class="font-mono text-foreground">Ctrl/Cmd+[ / ]</span><span>{{ t('workflow_canvas.shortcut_resize_group') }}</span>
+        <span class="font-mono text-foreground">Shift + Drag</span><span>{{ t('workflow_canvas.shortcut_shift_drag') }}</span>
+        <span class="font-mono text-foreground">Alt + Drag</span><span>{{ t('workflow_canvas.shortcut_alt_drag') }}</span>
       </div>
     </div>
     <div
@@ -1098,7 +1098,7 @@ function onConnect(connection: { source: string; target: string; sourceHandle?: 
       {{ groupResizeState.rawWidth }} x {{ groupResizeState.rawHeight }}
       <span class="mx-1 text-slate-400">-></span>
       {{ groupResizeState.currentWidth }} x {{ groupResizeState.currentHeight }}
-      <span class="ml-1 text-slate-300">Shift 等比 / Alt 中心</span>
+      <span class="ml-1 text-slate-300">{{ t('workflow_canvas.resize_tip') }}</span>
     </div>
     <!-- v-model 与 Vue Flow 双向绑定，拖动由库内部更新 nodesRef，onNodesChange 只做同步与选中逻辑 -->
     <VueFlow

@@ -237,7 +237,12 @@ const selectedRecommendationReason = computed(() => {
     | undefined
   const s = (picked?.signals || {}) as Record<string, any>
   if (!s || Object.keys(s).length === 0) return ''
-  return `重叠工具 ${s.overlap ?? 0}，转移信号 ${s.transition_score ?? 0}（置信度 ${(Number(s.transition_confidence || 0) * 100).toFixed(0)}%），用户历史 ${s.user_uses ?? 0} 次`
+  return t('workflow_page.recommend_reason_detail', {
+    overlap: s.overlap ?? 0,
+    transitionScore: s.transition_score ?? 0,
+    confidence: (Number(s.transition_confidence || 0) * 100).toFixed(0),
+    userUses: s.user_uses ?? 0,
+  })
 })
 const selectedRecommendationChips = computed(() => {
   const picked = recommendedTemplates.value.find((x) => x.id === selectedTemplateId.value) as
@@ -254,7 +259,7 @@ const selectedRecommendationChips = computed(() => {
       return {
         key: `${from}->${to}`,
         label: `${from} -> ${to}`,
-        detail: `转移权重 ${w.toFixed(2)}`,
+        detail: t('workflow_page.transition_weight_detail', { weight: w.toFixed(2) }),
         from,
         to,
       }
@@ -280,20 +285,20 @@ const governanceMaturity = computed(() => {
     return {
       level: 'Healthy',
       toneClass: 'text-emerald-700 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
-      hint: `节点覆盖较少（<= ${(healthyThreshold * 100).toFixed(0)}%），策略收敛良好。`,
+      hint: t('workflow_page.governance_hint_healthy', { threshold: (healthyThreshold * 100).toFixed(0) }),
     }
   }
   if (ratio <= warningThreshold) {
     return {
       level: 'Warning',
       toneClass: 'text-amber-700 dark:text-amber-300 border-amber-500/40 bg-amber-500/10',
-      hint: `存在一定节点覆盖（<= ${(warningThreshold * 100).toFixed(0)}%），建议定期巡检。`,
+      hint: t('workflow_page.governance_hint_warning', { threshold: (warningThreshold * 100).toFixed(0) }),
     }
   }
   return {
     level: 'Risky',
     toneClass: 'text-destructive border-destructive/40 bg-destructive/10',
-    hint: '节点覆盖占比较高，建议收敛至全局策略。',
+    hint: t('workflow_page.governance_hint_risky'),
   }
 })
 const importedGovernanceDiff = computed(() => {
@@ -441,9 +446,7 @@ function goBack() {
 
 function confirmGovernanceRiskBeforeSave(): boolean {
   if (governanceMaturity.value.level !== 'Risky') return true
-  return window.confirm(
-    '当前治理状态为 Risky（节点覆盖比例较高）。建议先收敛策略后再发布。\n是否仍继续保存为新版本？',
-  )
+  return window.confirm(t('workflow_page.confirm_governance_risk_before_save'))
 }
 
 function normalizeReflectorConfig() {
@@ -677,7 +680,9 @@ function clearNodeReflectorOverrides(nodeId: string) {
 
 function clearAllReflectorOverrides() {
   if (!reflectorOverrideNodes.value.length) return
-  const confirmed = window.confirm(`确认清除 ${reflectorOverrideNodes.value.length} 个节点的 Reflector 覆盖配置吗？`)
+  const confirmed = window.confirm(
+    t('workflow_page.confirm_clear_reflector_overrides', { count: reflectorOverrideNodes.value.length }),
+  )
   if (!confirmed) return
   editorNodes.value = editorNodes.value.map((node) => {
     const cfg = { ...((node.data?.config as Record<string, unknown>) || {}) }
@@ -748,7 +753,7 @@ function openGovernanceSnapshotImport() {
       importedGovernanceError.value = ''
     } catch (error) {
       importedGovernanceSnapshot.value = null
-      importedGovernanceError.value = `快照导入失败：${String(error)}`
+      importedGovernanceError.value = t('workflow_page.import_snapshot_failed', { error: String(error) })
     }
   }
   input.click()
@@ -766,11 +771,14 @@ function focusNodeFromGovernanceDiff(nodeId: string) {
     governanceUiMessage.value = ''
     return
   }
-  governanceUiMessage.value = `节点 ${nodeId} 不在当前画布中，无法定位。`
+  governanceUiMessage.value = t('workflow_page.node_not_found_on_canvas', { nodeId })
 }
 
 function onRecommendationChipClick(chip: { key: string; label: string; detail: string; from: string; to: string }) {
-  governanceUiMessage.value = `推荐链路：${chip.label}（${chip.detail}）`
+  governanceUiMessage.value = t('workflow_page.recommend_path_detail', {
+    label: chip.label,
+    detail: chip.detail,
+  })
   activeRecommendationPairKey.value = chip.key
   const fromNode = editorNodes.value.find((n) => {
     const cfg = (n.data?.config || {}) as Record<string, unknown>
@@ -947,21 +955,21 @@ onUnmounted(() => {
           v-model="workflowName"
           type="text"
           class="font-semibold text-lg bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-1 py-0.5 min-w-0 max-w-md"
-          placeholder="Workflow name"
+          :placeholder="t('workflow_page.workflow_name_placeholder')"
         />
         <div class="text-sm text-muted-foreground shrink-0">{{ workflowVersion }}</div>
       </div>
       <div class="ml-auto flex items-center gap-2">
         <Button variant="outline" size="sm" class="gap-2" :disabled="undoStack.length === 0" @click="undo">
           <Undo2 class="w-4 h-4" />
-          撤销
+          {{ t('workflow_page.undo') }}
         </Button>
         <Button variant="outline" size="sm" class="gap-2" :disabled="redoStack.length === 0" @click="redo">
           <Redo2 class="w-4 h-4" />
-          重做
+          {{ t('workflow_page.redo') }}
         </Button>
         <Button variant="outline" size="sm" class="gap-2" @click="runPreflightCheck">
-          运行前检查
+          {{ t('workflow_page.preflight_check_before_run') }}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
@@ -972,21 +980,21 @@ onUnmounted(() => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem @click="runWorkflowSaveAndRun">先保存当前草稿并运行</DropdownMenuItem>
-            <DropdownMenuItem @click="runWorkflowPublishedOnly">直接运行已发布版本</DropdownMenuItem>
+            <DropdownMenuItem @click="runWorkflowSaveAndRun">{{ t('workflow_page.run_after_save_draft') }}</DropdownMenuItem>
+            <DropdownMenuItem @click="runWorkflowPublishedOnly">{{ t('workflow_page.run_published_directly') }}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button variant="outline" size="sm" class="gap-2" :disabled="saveInProgress" @click="saveWorkflow">
           <Loader2 v-if="saveInProgress" class="w-4 h-4 animate-spin" />
           <Save v-else class="w-4 h-4" />
-          {{ saveInProgress ? '保存中...' : '保存为新版本' }}<span v-if="isDirty && !saveInProgress" class="ml-1 text-amber-500">*</span>
+          {{ saveInProgress ? t('workflow_page.saving') : t('workflow_page.save_as_new_version') }}<span v-if="isDirty && !saveInProgress" class="ml-1 text-amber-500">*</span>
         </Button>
         <Button
           size="sm"
           class="gap-2"
           variant="outline"
           disabled
-          title="功能开发中，敬请期待"
+          :title="t('workflow_page.coming_soon')"
         >
           <Rocket class="w-4 h-4 opacity-50" />
           <span class="opacity-70">{{ t('workflow_editor.deploy') }}</span>
@@ -994,7 +1002,7 @@ onUnmounted(() => {
       </div>
     </div>
     <div class="px-6 py-3 border-b border-border/40 bg-muted/20 flex items-center gap-3">
-      <span class="text-sm font-medium">智能推荐模板</span>
+      <span class="text-sm font-medium">{{ t('workflow_page.smart_recommend_templates') }}</span>
       <select
         v-model="selectedTemplateId"
         class="h-8 min-w-[220px] rounded-md border border-input bg-background px-2 text-sm"
@@ -1004,15 +1012,15 @@ onUnmounted(() => {
           :key="tpl.id"
           :value="tpl.id"
         >
-          {{ tpl.name }}（推荐分: {{ tpl.score }}）
+          {{ tpl.name }} ({{ t('workflow_page.recommend_score') }}: {{ tpl.score }})
         </option>
       </select>
-      <Button variant="outline" size="sm" @click="applyTemplate">一键导入模板</Button>
+      <Button variant="outline" size="sm" @click="applyTemplate">{{ t('workflow_page.one_click_import') }}</Button>
       <span class="text-xs text-muted-foreground">
         {{ templates.find((t) => t.id === selectedTemplateId)?.description }}
       </span>
       <span v-if="selectedRecommendationReason" class="text-xs text-muted-foreground">
-        推荐原因：{{ selectedRecommendationReason }}
+        {{ t('workflow_page.recommend_reason') }}: {{ selectedRecommendationReason }}
       </span>
       <div v-if="selectedRecommendationChips.length" class="flex items-center gap-2 flex-wrap">
         <button
@@ -1028,7 +1036,7 @@ onUnmounted(() => {
         </button>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs text-muted-foreground">模板节点预览：</span>
+        <span class="text-xs text-muted-foreground">{{ t('workflow_page.template_nodes_preview') }}:</span>
         <button
           v-for="node in previewTemplateSkillNodes"
           :key="node.nodeId"
@@ -1043,10 +1051,10 @@ onUnmounted(() => {
       </div>
     </div>
     <div class="px-6 py-3 border-b border-border/40 bg-muted/20">
-      <div class="text-sm font-medium mb-2">Reflector 默认策略（全局）</div>
+      <div class="text-sm font-medium mb-2">{{ t('workflow_page.reflector_default_policy_global') }}</div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <label class="flex flex-col gap-1 text-xs text-muted-foreground">
-          最大重试次数 (0-20)
+          {{ t('workflow_page.max_retries_range') }}
           <input
             v-model.number="reflectorMaxRetries"
             type="number"
@@ -1056,7 +1064,7 @@ onUnmounted(() => {
           />
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted-foreground">
-          重试间隔秒数 (0-60)
+          {{ t('workflow_page.retry_interval_seconds_range') }}
           <input
             v-model.number="reflectorRetryIntervalSeconds"
             type="number"
@@ -1067,54 +1075,54 @@ onUnmounted(() => {
           />
         </label>
         <label class="flex flex-col gap-1 text-xs text-muted-foreground">
-          备用 Agent ID
+          {{ t('workflow_page.fallback_agent_id') }}
           <input
             v-model="reflectorFallbackAgentId"
             type="text"
             maxlength="512"
-            placeholder="agent.worker.backup"
+            :placeholder="t('workflow_page.fallback_agent_placeholder')"
             class="h-8 rounded border border-input bg-background px-2 text-sm text-foreground"
           />
         </label>
       </div>
       <div class="mt-3 rounded border border-border/60 bg-background/80 px-3 py-2 text-xs">
-        <div class="font-medium mb-1">最终生效策略预览（当前选中节点）</div>
+        <div class="font-medium mb-1">{{ t('workflow_page.effective_policy_preview_current_node') }}</div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
           <div>
-            <span class="text-muted-foreground">重试次数：</span>
+            <span class="text-muted-foreground">{{ t('workflow_page.retry_count') }}:</span>
             <span class="font-medium">{{ effectiveReflectorPolicy.maxRetries }}</span>
             <span class="ml-1 text-muted-foreground">
-              (来源：{{ effectiveReflectorPolicy.maxRetriesSource === 'node' ? '节点覆盖' : '工作流全局' }})
+              ({{ t('workflow_page.source') }}: {{ effectiveReflectorPolicy.maxRetriesSource === 'node' ? t('workflow_page.node_override') : t('workflow_page.workflow_global') }})
             </span>
           </div>
           <div>
-            <span class="text-muted-foreground">重试间隔：</span>
+            <span class="text-muted-foreground">{{ t('workflow_page.retry_interval') }}:</span>
             <span class="font-medium">{{ effectiveReflectorPolicy.retryIntervalSeconds }}s</span>
             <span class="ml-1 text-muted-foreground">
-              (来源：{{ effectiveReflectorPolicy.retryIntervalSource === 'node' ? '节点覆盖' : '工作流全局' }})
+              ({{ t('workflow_page.source') }}: {{ effectiveReflectorPolicy.retryIntervalSource === 'node' ? t('workflow_page.node_override') : t('workflow_page.workflow_global') }})
             </span>
           </div>
           <div>
-            <span class="text-muted-foreground">备用 Agent：</span>
-            <span class="font-medium">{{ effectiveReflectorPolicy.fallbackAgentId || '未配置' }}</span>
+            <span class="text-muted-foreground">{{ t('workflow_page.fallback_agent') }}:</span>
+            <span class="font-medium">{{ effectiveReflectorPolicy.fallbackAgentId || t('workflow_page.not_configured') }}</span>
             <span class="ml-1 text-muted-foreground">
-              (来源：{{ effectiveReflectorPolicy.fallbackSource === 'node' ? '节点覆盖' : '工作流全局' }})
+              ({{ t('workflow_page.source') }}: {{ effectiveReflectorPolicy.fallbackSource === 'node' ? t('workflow_page.node_override') : t('workflow_page.workflow_global') }})
             </span>
           </div>
         </div>
         <div class="mt-1 text-muted-foreground">
-          当前节点类型：{{ effectiveReflectorPolicy.nodeType || '未选中' }}（仅当节点配置包含 reflector_* 字段时会覆盖全局）
+          {{ t('workflow_page.current_node_type') }}: {{ effectiveReflectorPolicy.nodeType || t('workflow_page.not_selected') }} ({{ t('workflow_page.node_reflector_override_hint') }})
         </div>
       </div>
       <div class="mt-3 rounded border border-border/60 bg-background/80 px-3 py-2 text-xs">
         <div class="flex items-center justify-between mb-1">
           <div class="flex items-center gap-2">
-            <div class="font-medium">节点级覆盖巡检</div>
+            <div class="font-medium">{{ t('workflow_page.node_level_override_inspection') }}</div>
             <span
               class="inline-flex items-center rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
-              :title="`覆盖节点 ${reflectorCoverageSummary.ratioText}`"
+              :title="`${t('workflow_page.covered_nodes')} ${reflectorCoverageSummary.ratioText}`"
             >
-              覆盖节点 {{ reflectorCoverageSummary.ratioText }}
+              {{ t('workflow_page.covered_nodes') }} {{ reflectorCoverageSummary.ratioText }}
             </span>
             <span
               :class="[
@@ -1131,14 +1139,14 @@ onUnmounted(() => {
               type="button"
               @click="openGovernanceSnapshotImport"
             >
-              导入治理快照
+              {{ t('workflow_page.import_governance_snapshot') }}
             </button>
             <button
               class="text-xs text-primary hover:underline"
               type="button"
               @click="exportReflectorGovernanceSnapshot"
             >
-              导出治理快照
+              {{ t('workflow_page.export_governance_snapshot') }}
             </button>
             <button
               v-if="reflectorOverrideNodes.length > 0"
@@ -1146,18 +1154,18 @@ onUnmounted(() => {
               type="button"
               @click="clearAllReflectorOverrides"
             >
-              清除全部覆盖
+              {{ t('workflow_page.clear_all_overrides') }}
             </button>
           </div>
         </div>
         <div class="mb-2 text-muted-foreground">
-          治理建议：{{ governanceMaturity.hint }}
+          {{ t('workflow_page.governance_suggestion') }}: {{ governanceMaturity.hint }}
         </div>
         <div v-if="reflectorOverrideNodes.length === 0" class="text-muted-foreground">
-          当前流程没有节点覆盖 reflector 全局策略。
+          {{ t('workflow_page.no_node_overrides_reflector_global') }}
         </div>
         <div class="mb-2 text-muted-foreground">
-          字段分布：
+          {{ t('workflow_page.field_distribution') }}:
           max_retries={{ reflectorOverrideFieldStats.retriesCount }}，
           retry_interval_seconds={{ reflectorOverrideFieldStats.intervalCount }}，
           fallback_agent_id={{ reflectorOverrideFieldStats.fallbackCount }}
@@ -1170,13 +1178,13 @@ onUnmounted(() => {
         </div>
         <div v-if="importedGovernanceSnapshot" class="mb-2 rounded border border-dashed border-border px-2 py-2">
           <div class="flex items-center justify-between mb-1">
-            <div class="font-medium">导入快照预览（只读，不影响当前配置）</div>
+            <div class="font-medium">{{ t('workflow_page.imported_snapshot_preview_readonly') }}</div>
             <button
               class="text-xs text-muted-foreground hover:underline"
               type="button"
               @click="clearImportedGovernanceSnapshot"
             >
-              关闭预览
+              {{ t('workflow_page.close_preview') }}
             </button>
           </div>
           <div class="text-muted-foreground">
@@ -1185,17 +1193,17 @@ onUnmounted(() => {
             exported_at={{ importedGovernanceSnapshot.exported_at || '-' }}
           </div>
           <div class="text-muted-foreground">
-            覆盖节点={{ importedGovernanceSnapshot.coverage?.ratioText || '-' }}；
-            字段分布：
+            {{ t('workflow_page.covered_nodes') }}={{ importedGovernanceSnapshot.coverage?.ratioText || '-' }};
+            {{ t('workflow_page.field_distribution') }}:
             max_retries={{ importedGovernanceSnapshot.field_distribution?.retriesCount ?? '-' }}，
             retry_interval_seconds={{ importedGovernanceSnapshot.field_distribution?.intervalCount ?? '-' }}，
             fallback_agent_id={{ importedGovernanceSnapshot.field_distribution?.fallbackCount ?? '-' }}
           </div>
           <div v-if="importedGovernanceDiff" class="mt-1">
-            <div class="text-muted-foreground mb-1">与当前差异：</div>
+            <div class="text-muted-foreground mb-1">{{ t('workflow_page.diff_with_current') }}:</div>
             <div class="flex flex-wrap gap-2">
               <span :class="['inline-flex items-center rounded border border-border px-1.5 py-0.5', diffToneClass(importedGovernanceDiff.coverageDelta)]">
-                覆盖节点Δ={{ importedGovernanceDiff.coverageDelta >= 0 ? '+' : '' }}{{ importedGovernanceDiff.coverageDelta }}
+                {{ t('workflow_page.covered_nodes') }}Δ={{ importedGovernanceDiff.coverageDelta >= 0 ? '+' : '' }}{{ importedGovernanceDiff.coverageDelta }}
               </span>
               <span :class="['inline-flex items-center rounded border border-border px-1.5 py-0.5', diffToneClass(importedGovernanceDiff.retriesDelta)]">
                 max_retriesΔ={{ importedGovernanceDiff.retriesDelta >= 0 ? '+' : '' }}{{ importedGovernanceDiff.retriesDelta }}
@@ -1212,7 +1220,7 @@ onUnmounted(() => {
             v-if="importedGovernanceDiff && (importedGovernanceDiff.addedNodeIds.length || importedGovernanceDiff.removedNodeIds.length)"
             class="mt-1"
           >
-            <div class="text-muted-foreground mb-1">节点清单差异：</div>
+            <div class="text-muted-foreground mb-1">{{ t('workflow_page.node_list_diff') }}:</div>
             <div class="flex flex-wrap gap-2">
               <span
                 v-for="nodeId in importedGovernanceDiff.addedNodeIds"
@@ -1246,14 +1254,14 @@ onUnmounted(() => {
             >
               {{ item.label }} ({{ item.nodeId }})
             </button>
-            <span class="text-muted-foreground">类型: {{ item.type }}</span>
-            <span class="text-muted-foreground">覆盖字段: {{ item.overrideKeys.join(', ') }}</span>
+            <span class="text-muted-foreground">{{ t('workflow_page.type') }}: {{ item.type }}</span>
+            <span class="text-muted-foreground">{{ t('workflow_page.override_fields') }}: {{ item.overrideKeys.join(', ') }}</span>
             <button
               class="text-xs text-destructive hover:underline"
               type="button"
               @click="clearNodeReflectorOverrides(item.nodeId)"
             >
-              清除覆盖
+              {{ t('workflow_page.clear_override') }}
             </button>
           </div>
         </div>
@@ -1262,7 +1270,7 @@ onUnmounted(() => {
 
     <!-- 校验错误面板：点击定位节点 -->
     <div v-if="validationErrors.length" class="mx-6 mb-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm">
-      <p class="font-medium text-amber-800 dark:text-amber-400 mb-2">保存前校验未通过</p>
+      <p class="font-medium text-amber-800 dark:text-amber-400 mb-2">{{ t('workflow_page.validation_failed_before_save') }}</p>
       <ul class="space-y-1">
         <li
           v-for="(e, i) in validationErrors"
@@ -1277,17 +1285,17 @@ onUnmounted(() => {
 
     <!-- 草稿恢复提示条（非阻断） -->
     <div v-if="draftRestorePending" class="mx-6 mb-2 rounded-lg border border-blue-500/50 bg-blue-500/10 px-4 py-2 flex items-center justify-between text-sm">
-      <span class="text-blue-800 dark:text-blue-200">检测到未保存草稿</span>
+      <span class="text-blue-800 dark:text-blue-200">{{ t('workflow_page.unsaved_draft_detected') }}</span>
       <div class="flex gap-2">
-        <Button variant="outline" size="sm" @click="acceptDraftRestore">恢复草稿</Button>
-        <Button variant="ghost" size="sm" @click="dismissDraftRestore">丢弃草稿</Button>
+        <Button variant="outline" size="sm" @click="acceptDraftRestore">{{ t('workflow_page.restore_draft') }}</Button>
+        <Button variant="ghost" size="sm" @click="dismissDraftRestore">{{ t('workflow_page.discard_draft') }}</Button>
       </div>
     </div>
 
     <!-- Three columns -->
     <div class="flex flex-1 min-h-0">
       <!-- Left: Node Library -->
-      <aside class="w-56 shrink-0 flex flex-col border-r border-border/50" aria-label="节点库面板">
+      <aside class="w-56 shrink-0 flex flex-col border-r border-border/50" :aria-label="t('workflow_page.node_library_panel_aria')">
         <NodeLibrary />
       </aside>
 
@@ -1306,7 +1314,7 @@ onUnmounted(() => {
       </main>
 
       <!-- Right: Node Config -->
-      <aside class="w-80 shrink-0 flex flex-col border-l border-border/50" aria-label="节点配置面板">
+      <aside class="w-80 shrink-0 flex flex-col border-l border-border/50" :aria-label="t('workflow_page.node_config_panel_aria')">
         <NodeConfigPanel
           :node="selectedNode"
           :selected-node-id="selectedNodeId"
