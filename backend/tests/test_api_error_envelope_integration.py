@@ -169,6 +169,32 @@ def test_accept_language_zh_with_higher_q_wins_even_if_not_first():
     assert body["error"]["code"] == "tool_not_found"
 
 
+def test_accept_language_wildcard_falls_back_to_default_english():
+    client = TestClient(_build_app())
+    resp = client.get(
+        "/api/core/tool-not-found",
+        headers={"Accept-Language": "*"},
+    )
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["detail"] == "tool not found"
+    assert body["error"]["message"] == "tool not found"
+    assert body["error"]["code"] == "tool_not_found"
+
+
+def test_accept_language_invalid_q_falls_back_gracefully():
+    client = TestClient(_build_app())
+    resp = client.get(
+        "/api/core/tool-not-found",
+        headers={"Accept-Language": "zh-CN;q=abc, en-US;q=0.7"},
+    )
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["detail"] == "tool not found"
+    assert body["error"]["message"] == "tool not found"
+    assert body["error"]["code"] == "tool_not_found"
+
+
 def test_framework_http_exception_triggers_fallback_observer(fallback_probe):
     client = TestClient(_build_app())
     resp = client.get("/api/core/framework-http-error")

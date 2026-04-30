@@ -767,6 +767,8 @@ def _resolve_locale(accept_language: str | None) -> str:
         if not item:
             continue
         lang, *params = item.split(";")
+        if lang == "*":
+            continue
         q = _parse_q_value(params)
         locale = "zh" if lang.startswith("zh") else "en"
         if q > best_q:
