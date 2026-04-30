@@ -204,6 +204,234 @@ _ERROR_MESSAGES: Dict[str, Dict[str, str]] = {
         "en": "rag trace internal error",
         "zh": "RAG Trace 内部错误",
     },
+    "agent_invalid_execution_strategy": {
+        "en": "invalid execution strategy",
+        "zh": "执行策略不合法",
+    },
+    "agent_invalid_integer_field": {
+        "en": "invalid integer field",
+        "zh": "整数字段不合法",
+    },
+    "agent_invalid_messages_format": {
+        "en": "invalid messages format",
+        "zh": "消息格式不合法",
+    },
+    "agent_invalid_on_failure_strategy": {
+        "en": "invalid on-failure strategy",
+        "zh": "失败处理策略不合法",
+    },
+    "agent_invalid_replan_prompt": {
+        "en": "invalid replan prompt",
+        "zh": "重规划提示词不合法",
+    },
+    "agent_invalid_response_mode": {
+        "en": "invalid response mode",
+        "zh": "响应模式不合法",
+    },
+    "agent_invalid_tool_failure_reflection": {
+        "en": "invalid tool failure reflection config",
+        "zh": "工具失败反思配置不合法",
+    },
+    "agent_invalid_workspace_path": {
+        "en": "invalid workspace path",
+        "zh": "工作区路径不合法",
+    },
+    "agent_kb_store_unavailable": {
+        "en": "knowledge base store is unavailable",
+        "zh": "知识库存储不可用",
+    },
+    "agent_kernel_opts_execution_strategy_conflict": {
+        "en": "kernel options conflict with execution strategy",
+        "zh": "内核参数与执行策略冲突",
+    },
+    "agent_kernel_opts_max_parallel_conflict": {
+        "en": "kernel options conflict with max parallel",
+        "zh": "内核参数与最大并行度冲突",
+    },
+    "agent_knowledge_base_not_found": {
+        "en": "agent knowledge base not found",
+        "zh": "智能体知识库不存在",
+    },
+    "agent_nl_description_too_short": {
+        "en": "natural language description is too short",
+        "zh": "自然语言描述过短",
+    },
+    "agent_nl_generate_invalid": {
+        "en": "invalid natural language generation request",
+        "zh": "自然语言生成请求不合法",
+    },
+    "agent_nl_no_models": {
+        "en": "no available models for natural language generation",
+        "zh": "无可用模型用于自然语言生成",
+    },
+    "agent_parallel_nodes_out_of_range": {
+        "en": "parallel nodes value is out of range",
+        "zh": "并行节点数超出范围",
+    },
+    "agent_replan_prompt_required": {
+        "en": "replan prompt is required",
+        "zh": "重规划提示词为必填项",
+    },
+    "agent_session_message_not_found": {
+        "en": "agent session message not found",
+        "zh": "智能体会话消息不存在",
+    },
+    "agent_session_not_found_after_delete": {
+        "en": "agent session not found after delete",
+        "zh": "删除后未找到智能体会话",
+    },
+    "agent_session_save_failed": {
+        "en": "failed to save agent session",
+        "zh": "保存智能体会话失败",
+    },
+    "agent_skill_blocked_by_policy": {
+        "en": "agent skill is blocked by policy",
+        "zh": "智能体技能被策略阻止",
+    },
+    "agent_upload_rate_limited": {
+        "en": "agent upload is rate limited",
+        "zh": "智能体上传触发限流",
+    },
+    "agent_upload_too_many_files": {
+        "en": "too many uploaded files",
+        "zh": "上传文件数量过多",
+    },
+    "chat_completion_failed": {
+        "en": "chat completion failed",
+        "zh": "对话补全失败",
+    },
+    "chat_messages_required": {
+        "en": "messages are required",
+        "zh": "messages 参数为必填项",
+    },
+    "idempotency_conflict": {
+        "en": "idempotency conflict",
+        "zh": "幂等冲突",
+    },
+    "idempotency_in_progress": {
+        "en": "idempotency request is in progress",
+        "zh": "幂等请求处理中",
+    },
+    "knowledge_access_denied": {
+        "en": "knowledge access denied",
+        "zh": "无权访问知识资源",
+    },
+    "knowledge_base_update_failed": {
+        "en": "failed to update knowledge base",
+        "zh": "更新知识库失败",
+    },
+    "knowledge_document_file_missing": {
+        "en": "knowledge document file is missing",
+        "zh": "知识库文档文件不存在",
+    },
+    "knowledge_document_no_file_path": {
+        "en": "knowledge document has no file path",
+        "zh": "知识库文档缺少文件路径",
+    },
+    "knowledge_internal_error": {
+        "en": "knowledge internal error",
+        "zh": "知识库内部错误",
+    },
+    "knowledge_resource_not_found": {
+        "en": "knowledge resource not found",
+        "zh": "知识资源不存在",
+    },
+    "knowledge_search_embedding_failed": {
+        "en": "knowledge search embedding failed",
+        "zh": "知识检索向量化失败",
+    },
+    "mcp_import_failed": {
+        "en": "MCP import failed",
+        "zh": "MCP 导入失败",
+    },
+    "mcp_import_invalid": {
+        "en": "invalid MCP import request",
+        "zh": "MCP 导入请求不合法",
+    },
+    "mcp_probe_failed": {
+        "en": "MCP probe failed",
+        "zh": "MCP 探测失败",
+    },
+    "mcp_skill_preview_failed": {
+        "en": "MCP skill preview failed",
+        "zh": "MCP 技能预览失败",
+    },
+    "mcp_tools_list_failed": {
+        "en": "failed to list MCP tools",
+        "zh": "获取 MCP 工具列表失败",
+    },
+    "workflow_admin_required": {
+        "en": "workflow admin permission required",
+        "zh": "需要工作流管理员权限",
+    },
+    "workflow_approval_task_expired": {
+        "en": "workflow approval task expired",
+        "zh": "工作流审批任务已过期",
+    },
+    "workflow_approval_task_not_found": {
+        "en": "workflow approval task not found",
+        "zh": "工作流审批任务不存在",
+    },
+    "workflow_cancel_invalid_request": {
+        "en": "invalid workflow cancel request",
+        "zh": "取消工作流请求不合法",
+    },
+    "workflow_diff_from_version_not_found": {
+        "en": "source workflow version for diff not found",
+        "zh": "用于比对的源工作流版本不存在",
+    },
+    "workflow_diff_to_version_not_found": {
+        "en": "target workflow version for diff not found",
+        "zh": "用于比对的目标工作流版本不存在",
+    },
+    "workflow_execution_delete_conflict": {
+        "en": "workflow execution cannot be deleted in current state",
+        "zh": "当前状态下无法删除工作流执行记录",
+    },
+    "workflow_execution_invalid_request": {
+        "en": "invalid workflow execution request",
+        "zh": "工作流执行请求不合法",
+    },
+    "workflow_governance_invalid_backpressure_strategy": {
+        "en": "invalid workflow governance backpressure strategy",
+        "zh": "工作流治理背压策略不合法",
+    },
+    "workflow_id_mismatch": {
+        "en": "workflow id mismatch",
+        "zh": "工作流 ID 不匹配",
+    },
+    "workflow_invalid_end_time": {
+        "en": "invalid workflow end time",
+        "zh": "工作流结束时间不合法",
+    },
+    "workflow_invalid_start_time": {
+        "en": "invalid workflow start time",
+        "zh": "工作流开始时间不合法",
+    },
+    "workflow_invalid_time_range": {
+        "en": "invalid workflow time range",
+        "zh": "工作流时间范围不合法",
+    },
+    "workflow_namespace_tenant_mismatch": {
+        "en": "workflow namespace tenant mismatch",
+        "zh": "工作流命名空间租户不匹配",
+    },
+    "workflow_runtime_error": {
+        "en": "workflow runtime error",
+        "zh": "工作流运行时错误",
+    },
+    "workflow_version_invalid_request": {
+        "en": "invalid workflow version request",
+        "zh": "工作流版本请求不合法",
+    },
+    "workflow_version_publish_invalid": {
+        "en": "invalid workflow version publish request",
+        "zh": "工作流版本发布请求不合法",
+    },
+    "workflow_version_rollback_publish_failed": {
+        "en": "failed to publish rollback workflow version",
+        "zh": "发布回滚工作流版本失败",
+    },
 }
 
 
