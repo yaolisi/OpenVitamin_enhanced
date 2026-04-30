@@ -4,7 +4,7 @@ MCP JSON-RPC 帧与常量（stdio：一行一条 UTF-8 JSON，不得含未转义
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 # 与多数 MCP Server 兼容；握手时可由服务端协商更新
 DEFAULT_PROTOCOL_VERSION = "2024-11-05"
@@ -25,7 +25,7 @@ def decode_message_line(line: bytes) -> Dict[str, Any]:
     s = line.decode("utf-8", errors="replace").strip()
     if not s:
         return {}
-    return json.loads(s)
+    return cast(Dict[str, Any], json.loads(s))
 
 
 def build_request(

@@ -202,10 +202,10 @@ def infer_architecture_layers(root: Path) -> LayeredGuess:
     guess = LayeredGuess()
     
     # Get all directories
-    dirs = set()
-    for d in root.rglob('*'):
-        if d.is_dir() and d.name not in SKIP_DIRS:
-            rel = str(d.relative_to(root))
+    dirs: set[str] = set()
+    for entry in root.rglob('*'):
+        if entry.is_dir() and entry.name not in SKIP_DIRS:
+            rel = str(entry.relative_to(root))
             dirs.add(rel)
             # Also add first-level directories
             parts = rel.split('/')
@@ -381,10 +381,12 @@ def detect_kmp_targets(root: Path, all_files: List[Path]) -> Dict[str, Any]:
     - targets: List[str]
     - source_sets: Dict[str, List[str]]
     """
-    result = {
+    targets: List[str] = []
+    source_sets: Dict[str, List[str]] = {}
+    result: Dict[str, Any] = {
         'is_kmp': False,
-        'targets': [],
-        'source_sets': {},
+        'targets': targets,
+        'source_sets': source_sets,
     }
     
     # Check for build.gradle.kts with kotlin { ... } multiplatform block
@@ -416,8 +418,8 @@ def detect_kmp_targets(root: Path, all_files: List[Path]) -> Dict[str, Any]:
             import re
             for pattern, target in target_patterns:
                 if re.search(pattern, content):
-                    if target not in result['targets']:
-                        result['targets'].append(target)
+                    if target not in targets:
+                        targets.append(target)
                         
         except Exception:
             continue
@@ -429,20 +431,20 @@ def detect_kmp_targets(root: Path, all_files: List[Path]) -> Dict[str, Any]:
             for part in parts:
                 if part in KMP_SOURCE_SETS:
                     result['is_kmp'] = True
-                    if part not in result['source_sets']:
-                        result['source_sets'][part] = []
-                    result['source_sets'][part].append(str(file_path))
+                    if part not in source_sets:
+                        source_sets[part] = []
+                    source_sets[part].append(str(file_path))
                     break
     
     # Infer targets from source sets
-    for source_set in result['source_sets']:
+    for source_set in source_sets:
         for target_hint, target_name in [
             ('jvm', 'jvm'), ('js', 'js'), ('android', 'android'),
             ('ios', 'ios'), ('macos', 'macos'), ('linux', 'linux'),
             ('mingw', 'windows'), ('wasm', 'wasm'),
         ]:
-            if target_hint in source_set and target_name not in result['targets']:
-                result['targets'].append(target_name)
+            if target_hint in source_set and target_name not in targets:
+                targets.append(target_name)
     
     return result
 
@@ -661,7 +663,7 @@ def analyze(workspace_path: str) -> ProjectModel:
     dir_count = 0
     max_depth = 0
     
-    def count_dirs(nodes: List[DirectoryNode], depth: int):
+    def count_dirs(nodes: List[DirectoryNode], depth: int) -> None:
         nonlocal dir_count, max_depth
         for node in nodes:
             if node.type == "directory":

@@ -25,6 +25,7 @@ from .models import (
     BackupStatus,
     BackupType,
     RestoreResult,
+    RestoreStatus,
 )
 from .strategy import BackupStrategy
 from .sqlite_strategy import SQLiteBackupStrategy
@@ -262,7 +263,7 @@ class BackupManager:
             with sqlite3.connect(str(self.metadata_db_path)) as conn:
                 conn.row_factory = sqlite3.Row
                 query = "SELECT * FROM backup_metadata"
-                params = []
+                params: list[str | int] = []
 
                 if status:
                     query += " WHERE status = ?"

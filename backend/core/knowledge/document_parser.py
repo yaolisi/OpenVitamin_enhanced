@@ -82,10 +82,10 @@ class DocumentParser:
     def _parse_pdf(file_path: Path) -> ParsedDocument:
         """解析 PDF"""
         try:
-            import pdfplumber  # type: ignore[import-untyped]
+            import pdfplumber  # type: ignore[import-untyped, import-not-found]
         except ImportError:
             try:
-                import pypdf
+                import pypdf  # type: ignore[import-untyped, import-not-found]
             except ImportError:
                 raise ImportError("Please install pdfplumber or pypdf: pip install pdfplumber")
         
@@ -93,7 +93,7 @@ class DocumentParser:
         doc_id = file_path.stem
         
         try:
-            import pdfplumber  # type: ignore[import-untyped]
+            import pdfplumber  # type: ignore[import-untyped, import-not-found]
             with pdfplumber.open(file_path) as pdf:
                 for page_num, page in enumerate(pdf.pages, start=1):
                     text = page.extract_text()
@@ -101,7 +101,7 @@ class DocumentParser:
                         pages.append(ParsedPage(page=page_num, text=text))
         except ImportError:
             # Fallback to pypdf
-            import pypdf  # type: ignore[import-untyped]
+            import pypdf  # type: ignore[import-untyped, import-not-found]
             with open(file_path, 'rb') as f:
                 pdf_reader = pypdf.PdfReader(f)
                 for page_num, page in enumerate(pdf_reader.pages, start=1):
@@ -123,7 +123,7 @@ class DocumentParser:
     def _parse_docx(file_path: Path) -> ParsedDocument:
         """解析 DOCX"""
         try:
-            from docx import Document  # type: ignore[import-untyped]
+            from docx import Document  # type: ignore[import-untyped, import-not-found]
         except ImportError:
             raise ImportError("Please install python-docx: pip install python-docx")
         

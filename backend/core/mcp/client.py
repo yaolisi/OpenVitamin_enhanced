@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from log import logger
 
@@ -169,7 +169,7 @@ class MCPStdioClient:
         params: Dict[str, Any] = {}
         if cursor is not None:
             params["cursor"] = cursor
-        return await self.request("tools/list", params)
+        return cast(Dict[str, Any], await self.request("tools/list", params))
 
     async def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Any:
         """tools/call，返回 result。"""

@@ -6,7 +6,7 @@ Skill Embedding 模块
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, cast
 
 import numpy as np
 from log import logger
@@ -67,7 +67,7 @@ class MockEmbeddingService(EmbeddingService):
         vector = np.random.randn(self.dimension).astype(np.float32)
         vector = vector / np.linalg.norm(vector)
         
-        return vector.tolist()
+        return cast(List[float], vector.tolist())
 
 
 class LocalEmbeddingService(EmbeddingService):

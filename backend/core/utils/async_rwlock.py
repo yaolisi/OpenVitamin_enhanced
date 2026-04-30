@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 
@@ -43,7 +44,7 @@ class AsyncRWLock:
             self._cond.notify_all()
 
     @asynccontextmanager
-    async def read_lock(self):
+    async def read_lock(self) -> AsyncIterator[None]:
         await self.acquire_read()
         try:
             yield
@@ -51,7 +52,7 @@ class AsyncRWLock:
             await self.release_read()
 
     @asynccontextmanager
-    async def write_lock(self):
+    async def write_lock(self) -> AsyncIterator[None]:
         await self.acquire_write()
         try:
             yield

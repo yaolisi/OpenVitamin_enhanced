@@ -264,10 +264,12 @@ class SafeShellExecutor:
                 f"duration={duration:.2f}s, success={success}, count={new_count}"
             )
             
+            rc = process.returncode
+            exit_code = rc if not timed_out and rc is not None else -1
             return ShellExecutionResult(
                 success=success,
                 command=command,
-                exit_code=process.returncode if not timed_out else -1,
+                exit_code=exit_code,
                 stdout=stdout_str,
                 stderr=stderr_str,
                 timed_out=timed_out,
