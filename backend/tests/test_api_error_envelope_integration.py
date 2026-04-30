@@ -143,6 +143,19 @@ def test_tool_not_found_is_localized_to_zh():
     assert body["error"]["code"] == "tool_not_found"
 
 
+def test_accept_language_with_spaces_still_localizes_to_zh():
+    client = TestClient(_build_app())
+    resp = client.get(
+        "/api/core/tool-not-found",
+        headers={"Accept-Language": "en-US,en;q=0.9, zh-CN;q=0.8"},
+    )
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["detail"] == "工具不存在"
+    assert body["error"]["message"] == "工具不存在"
+    assert body["error"]["code"] == "tool_not_found"
+
+
 def test_framework_http_exception_triggers_fallback_observer(fallback_probe):
     client = TestClient(_build_app())
     resp = client.get("/api/core/framework-http-error")

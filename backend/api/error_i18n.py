@@ -760,8 +760,10 @@ def _resolve_locale(accept_language: str | None) -> str:
     if not accept_language:
         return "en"
     normalized = accept_language.lower()
-    if normalized.startswith("zh") or ",zh" in normalized:
-        return "zh"
+    for raw_item in normalized.split(","):
+        lang = raw_item.strip().split(";", 1)[0]
+        if lang.startswith("zh"):
+            return "zh"
     return "en"
 
 
