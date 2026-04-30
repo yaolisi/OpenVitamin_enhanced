@@ -30,6 +30,14 @@ def _build_app() -> FastAPI:
             details={"field": "messages"},
         )
 
+    @app.get("/api/core/mcp-not-found")
+    async def _mcp_not_found():
+        raise_api_error(
+            status_code=404,
+            code="mcp_server_not_found",
+            message="MCP server not found",
+        )
+
     @app.get("/api/core/framework-http-error")
     async def _framework_http_error():
         raise HTTPException(status_code=401, detail="unauthorized by framework")
@@ -57,6 +65,19 @@ def test_raise_api_error_keeps_custom_error_code_and_details():
     assert body["error"]["details"]["field"] == "messages"
 
 
+def test_raise_api_error_localizes_message_by_accept_language():
+    client = TestClient(_build_app())
+    resp = client.get(
+        "/api/core/typed-http-error",
+        headers={"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"},
+    )
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["detail"] == "请求参数校验失败"
+    assert body["error"]["message"] == "请求参数校验失败"
+    assert body["error"]["code"] == "invalid_payload"
+
+
 def test_framework_http_exception_uses_fallback_code():
     client = TestClient(_build_app())
     resp = client.get("/api/core/framework-http-error")
@@ -65,6 +86,19 @@ def test_framework_http_exception_uses_fallback_code():
     assert body["detail"] == "unauthorized by framework"
     assert body["error"]["code"] == "http_unexpected_401"
     assert body["error"]["details"]["source"] == "http_exception_fallback"
+
+
+def test_mcp_not_found_message_is_localized():
+    client = TestClient(_build_app())
+    resp = client.get(
+        "/api/core/mcp-not-found",
+        headers={"Accept-Language": "zh-CN"},
+    )
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["detail"] == "MCP 服务不存在"
+    assert body["error"]["message"] == "MCP 服务不存在"
+    assert body["error"]["code"] == "mcp_server_not_found"
 
 
 def test_framework_http_exception_triggers_fallback_observer(fallback_probe):

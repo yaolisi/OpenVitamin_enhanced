@@ -1449,12 +1449,12 @@ async def chat_completions(
 async def chat_stream_resume(body: ChatStreamResumeBody, request: Request) -> StreamingResponse:
     """从已缓冲的 SSE 帧序列按 chunk 下标继续拉取（断点续传）。"""
     if not bool(getattr(settings, "chat_stream_resume_enabled", True)):
-        raise_api_error(status_code=404, code="stream_resume_disabled", message="断点续传未开启")
+        raise_api_error(status_code=404, code="stream_resume_disabled", message="stream resume is disabled")
     user_id = _get_user_id(request)
     store = get_stream_resume_store()
     sess = store.get(body.stream_id)
     if not sess or sess.user_id != user_id:
-        raise_api_error(status_code=404, code="stream_not_found", message="流不存在或已过期")
+        raise_api_error(status_code=404, code="stream_not_found", message="stream not found or expired")
 
     wait_timeout = float(getattr(settings, "chat_stream_resume_wait_timeout_seconds", 120) or 120)
     use_gzip = bool(getattr(sess, "use_gzip", False))
@@ -1501,7 +1501,7 @@ async def chat_completions_async_submit(req: ChatCompletionRequest, request: Req
     - 前端可通过查询接口轮询结果
     """
     if req.stream:
-        raise_api_error(status_code=400, code="chat_async_stream_not_supported", message="异步模式暂不支持 stream=true")
+        raise_api_error(status_code=400, code="chat_async_stream_not_supported", message="async mode does not support stream=true")
 
     # 复制最小请求上下文，避免背景任务依赖已结束的连接对象。
     headers = dict(request.headers)
@@ -1536,7 +1536,7 @@ async def chat_completions_async_result(request_id: str) -> ChatAsyncResultRespo
     """
     job = await get_async_chat_job_manager().get(request_id)
     if not job:
-        raise_api_error(status_code=404, code="chat_async_job_not_found", message="请求不存在或已过期")
+        raise_api_error(status_code=404, code="chat_async_job_not_found", message="request not found or expired")
     result_obj: Optional[ChatCompletionResponse] = None
     if isinstance(job.result, dict):
         try:

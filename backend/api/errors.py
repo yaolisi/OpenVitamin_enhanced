@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from api.error_i18n import localize_error_message
 from log import logger
 
 
@@ -79,9 +80,14 @@ def raise_api_error(
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(APIException)
     async def _api_exception_handler(request: Request, exc: APIException) -> JSONResponse:
+        localized_message = localize_error_message(
+            code=exc.code,
+            default_message=exc.message,
+            accept_language=request.headers.get("accept-language"),
+        )
         error = APIError(
             code=exc.code,
-            message=exc.message,
+            message=localized_message,
             details=exc.details,
             request_id=getattr(request.state, "request_id", None),
             trace_id=getattr(request.state, "trace_id", None),
@@ -89,7 +95,7 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content={
-                "detail": exc.message,
+                "detail": localized_message,
                 "error": error.model_dump(exclude_none=True),
             },
         )
@@ -122,9 +128,14 @@ def register_error_handlers(app: FastAPI) -> None:
                 request.url.path,
             )
 
+        localized_message = localize_error_message(
+            code=code,
+            default_message=message,
+            accept_language=request.headers.get("accept-language"),
+        )
         error = APIError(
             code=code,
-            message=message,
+            message=localized_message,
             details=extra_details if isinstance(extra_details, dict) else None,
             request_id=getattr(request.state, "request_id", None),
             trace_id=getattr(request.state, "trace_id", None),
@@ -132,16 +143,21 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content={
-                "detail": message,
+                "detail": localized_message,
                 "error": error.model_dump(exclude_none=True),
             },
         )
 
     @app.exception_handler(Exception)
     async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        localized_message = localize_error_message(
+            code="internal_server_error",
+            default_message="Internal server error",
+            accept_language=request.headers.get("accept-language"),
+        )
         error = APIError(
             code="internal_server_error",
-            message="Internal server error",
+            message=localized_message,
             details={"exception": exc.__class__.__name__},
             request_id=getattr(request.state, "request_id", None),
             trace_id=getattr(request.state, "trace_id", None),
@@ -149,7 +165,7 @@ def register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=500,
             content={
-                "detail": "Internal server error",
+                "detail": localized_message,
                 "error": error.model_dump(exclude_none=True),
             },
         )
