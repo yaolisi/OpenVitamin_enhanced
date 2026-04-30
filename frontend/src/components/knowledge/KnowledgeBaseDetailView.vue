@@ -986,7 +986,7 @@ const handleReindexKnowledgeBase = async () => {
                 <Input v-model.number="chunkOverlap" type="number" min="0" max="50" />
               </div>
               <div class="p-4 bg-background/50 border border-border/50 rounded-lg">
-                <p class="text-sm font-medium mb-3 block uppercase">按文档类型分块大小（Token）</p>
+                <p class="text-sm font-medium mb-3 block uppercase">{{ t('knowledge.detail.chunk_size_by_doc_type') }}</p>
                 <div class="grid grid-cols-2 gap-3">
                   <div v-for="docType in ['pdf', 'md', 'txt', 'docx']" :key="docType">
                     <p class="text-xs text-muted-foreground mb-1">{{ docType.toUpperCase() }}</p>
@@ -996,7 +996,7 @@ const handleReindexKnowledgeBase = async () => {
               </div>
               <Button variant="outline" @click="saveChunkingSettings" :disabled="savingChunkSettings">
                 <Save :class="['w-4 h-4 mr-2', savingChunkSettings ? 'animate-pulse' : '']" />
-                {{ savingChunkSettings ? '保存中...' : '保存分块配置' }}
+                {{ savingChunkSettings ? t('knowledge.detail.saving_chunk_settings') : t('knowledge.detail.save_chunk_settings') }}
               </Button>
               <Button @click="handleReindexKnowledgeBase" :disabled="reindexingKB">
                 <RefreshCw :class="['w-4 h-4 mr-2', reindexingKB ? 'animate-spin' : '']" />
