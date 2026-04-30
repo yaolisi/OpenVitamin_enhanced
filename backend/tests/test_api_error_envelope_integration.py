@@ -50,6 +50,14 @@ def _build_app() -> FastAPI:
             message="workflow not found",
         )
 
+    @app.get("/api/core/tool-not-found")
+    async def _tool_not_found():
+        raise_api_error(
+            status_code=404,
+            code="tool_not_found",
+            message="tool not found",
+        )
+
     return app
 
 
@@ -120,6 +128,19 @@ def test_workflow_not_found_is_english_when_accept_language_is_english():
     assert body["detail"] == "workflow not found"
     assert body["error"]["message"] == "workflow not found"
     assert body["error"]["code"] == "workflow_not_found"
+
+
+def test_tool_not_found_is_localized_to_zh():
+    client = TestClient(_build_app())
+    resp = client.get(
+        "/api/core/tool-not-found",
+        headers={"Accept-Language": "zh-CN"},
+    )
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["detail"] == "工具不存在"
+    assert body["error"]["message"] == "工具不存在"
+    assert body["error"]["code"] == "tool_not_found"
 
 
 def test_framework_http_exception_triggers_fallback_observer(fallback_probe):

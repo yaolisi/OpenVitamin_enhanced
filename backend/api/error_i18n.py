@@ -124,6 +124,86 @@ _ERROR_MESSAGES: Dict[str, Dict[str, str]] = {
         "en": "invalid MCP request",
         "zh": "MCP 请求不合法",
     },
+    "agent_create_failed": {
+        "en": "Failed to create agent",
+        "zh": "创建智能体失败",
+    },
+    "agent_update_failed": {
+        "en": "Failed to update agent",
+        "zh": "更新智能体失败",
+    },
+    "agent_not_found": {
+        "en": "agent not found",
+        "zh": "智能体不存在",
+    },
+    "agent_model_not_found": {
+        "en": "agent model not found",
+        "zh": "智能体模型不存在",
+    },
+    "agent_skill_not_found": {
+        "en": "agent skill not found",
+        "zh": "智能体技能不存在",
+    },
+    "agent_session_not_found": {
+        "en": "agent session not found",
+        "zh": "智能体会话不存在",
+    },
+    "agent_workspace_not_found": {
+        "en": "agent workspace not found",
+        "zh": "智能体工作区不存在",
+    },
+    "agent_session_file_not_found": {
+        "en": "agent session file not found",
+        "zh": "智能体会话文件不存在",
+    },
+    "agent_invalid_messages_json": {
+        "en": "invalid messages json",
+        "zh": "消息 JSON 格式不合法",
+    },
+    "agent_upload_file_too_large": {
+        "en": "uploaded file is too large",
+        "zh": "上传文件过大",
+    },
+    "agent_upload_total_too_large": {
+        "en": "total upload size is too large",
+        "zh": "上传总大小过大",
+    },
+    "tool_not_found": {
+        "en": "tool not found",
+        "zh": "工具不存在",
+    },
+    "tool_registry_invalid": {
+        "en": "tool registry invalid",
+        "zh": "工具注册表无效",
+    },
+    "tool_web_search_invalid": {
+        "en": "invalid web search request",
+        "zh": "Web 搜索请求不合法",
+    },
+    "tool_web_search_not_registered": {
+        "en": "web search tool is not registered",
+        "zh": "Web 搜索工具未注册",
+    },
+    "events_replay_not_found": {
+        "en": "replay not found",
+        "zh": "重放任务不存在",
+    },
+    "events_internal_error": {
+        "en": "events internal error",
+        "zh": "事件服务内部错误",
+    },
+    "rag_trace_invalid_chunks": {
+        "en": "invalid rag trace chunks",
+        "zh": "RAG Trace 分片数据不合法",
+    },
+    "rag_trace_finalize_invalid": {
+        "en": "invalid rag trace finalize request",
+        "zh": "RAG Trace 完成请求不合法",
+    },
+    "rag_trace_internal_error": {
+        "en": "rag trace internal error",
+        "zh": "RAG Trace 内部错误",
+    },
 }
 
 
