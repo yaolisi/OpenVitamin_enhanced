@@ -57,6 +57,19 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/workflow/:id/history',
+    name: 'workflow-history',
+    redirect: (to) => {
+      const raw = to.params.id
+      const id = Array.isArray(raw) ? raw[0] : raw
+      return {
+        name: 'workflow-run',
+        params: { id: String(id ?? '') },
+        query: { ...to.query, history_only: '1' },
+      }
+    },
+  },
+  {
     path: '/workflow/:id/versions',
     name: 'workflow-versions',
     component: () => import('@/components/workflow/WorkflowVersionsView.vue'),

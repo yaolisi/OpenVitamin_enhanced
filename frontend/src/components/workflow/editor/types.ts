@@ -51,23 +51,23 @@ export const NODE_LIBRARY: NodeLibraryItem[] = [
   // AI
   { type: 'llm', labelKey: 'workflow_editor.node_llm', label: 'LLM', icon: 'brain', category: 'ai' },
   { type: 'agent', labelKey: 'workflow_editor.node_agent', label: 'Agent', icon: 'user', category: 'ai' },
-  { type: 'embedding', labelKey: 'workflow_editor.node_embedding', label: 'Embedding', icon: 'layers', category: 'ai', disabled: true, disabledReasonKey: 'workflow_editor.disabled_coming_soon', disabledReason: 'Coming soon' },
+  { type: 'embedding', labelKey: 'workflow_editor.node_embedding', label: 'Embedding', icon: 'layers', category: 'ai' },
   // Prompt
   { type: 'prompt_template', labelKey: 'workflow_editor.node_prompt_template', label: 'Prompt Template', icon: 'file-text', category: 'prompt' },
-  { type: 'system_prompt', labelKey: 'workflow_editor.node_system_prompt', label: 'System Prompt', icon: 'message-square', category: 'prompt', disabled: true, disabledReasonKey: 'workflow_editor.disabled_use_prompt_template', disabledReason: 'Use Prompt Template for now' },
+  { type: 'system_prompt', labelKey: 'workflow_editor.node_system_prompt', label: 'System Prompt', icon: 'message-square', category: 'prompt' },
   // Data
   { type: 'input', labelKey: 'workflow_editor.node_input', label: 'Input', icon: 'log-in', category: 'data' },
   { type: 'output', labelKey: 'workflow_editor.node_output', label: 'Output', icon: 'log-out', category: 'data' },
-  { type: 'variable', labelKey: 'workflow_editor.node_variable', label: 'Variable', icon: 'variable', category: 'data', disabled: true, disabledReasonKey: 'workflow_editor.disabled_coming_soon', disabledReason: 'Coming soon' },
+  { type: 'variable', labelKey: 'workflow_editor.node_variable', label: 'Variable', icon: 'variable', category: 'data' },
   // Logic
   { type: 'condition', labelKey: 'workflow_editor.node_condition', label: 'Condition', icon: 'git-branch', category: 'logic' },
   { type: 'loop', labelKey: 'workflow_editor.node_loop', label: 'Loop', icon: 'repeat', category: 'logic' },
   { type: 'sub_workflow', labelKey: 'workflow_editor.node_sub_workflow', label: 'Sub-workflow', icon: 'boxes', category: 'logic' },
-  { type: 'parallel', labelKey: 'workflow_editor.node_parallel', label: 'Parallel', icon: 'copy', category: 'logic', disabled: true, disabledReasonKey: 'workflow_editor.disabled_coming_soon', disabledReason: 'Coming soon' },
+  { type: 'parallel', labelKey: 'workflow_editor.node_parallel', label: 'Parallel', icon: 'copy', category: 'logic' },
   // Tool
   { type: 'skill', labelKey: 'workflow_editor.node_skill', label: 'Skill', icon: 'sparkles', category: 'tool' },
-  { type: 'http_request', labelKey: 'workflow_editor.node_http_request', label: 'HTTP Request', icon: 'globe', category: 'tool', disabled: true, disabledReasonKey: 'workflow_editor.disabled_coming_soon', disabledReason: 'Coming soon' },
-  { type: 'python', labelKey: 'workflow_editor.node_python', label: 'Python', icon: 'code', category: 'tool', disabled: true, disabledReasonKey: 'workflow_editor.disabled_coming_soon', disabledReason: 'Coming soon' },
+  { type: 'http_request', labelKey: 'workflow_editor.node_http_request', label: 'HTTP Request', icon: 'globe', category: 'tool' },
+  { type: 'python', labelKey: 'workflow_editor.node_python', label: 'Python', icon: 'code', category: 'tool' },
   { type: 'shell', labelKey: 'workflow_editor.node_shell', label: 'Shell', icon: 'terminal', category: 'tool' },
 ]
 

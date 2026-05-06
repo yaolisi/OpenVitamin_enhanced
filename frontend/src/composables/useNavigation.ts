@@ -11,6 +11,7 @@ const routeNameToViewType: Record<string, ViewType> = {
   'workflow-detail': 'workflow',
   'workflow-edit': 'workflow',
   'workflow-run': 'workflow',
+  'workflow-history': 'workflow',
   'workflow-versions': 'workflow',
   'images': 'images',
   'images-history': 'images',

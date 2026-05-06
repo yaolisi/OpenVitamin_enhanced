@@ -7,7 +7,7 @@ import { registerWorkflowCanvasSelect, registerWorkflowGroupResizeStart } from '
 import type { Node, Edge, NodeChange, EdgeChange } from '@vue-flow/core'
 import WorkflowNode from './nodes/WorkflowNode.vue'
 import FlowCoordBridge from './FlowCoordBridge.vue'
-import type { WorkflowNodeData } from './types'
+import { NODE_LIBRARY, type WorkflowNodeData } from './types'
 
 const props = withDefaults(
   defineProps<{
@@ -85,43 +85,79 @@ watch(
 
 const nodeTypes = { workflow: markRaw(WorkflowNode) }
 
+function libraryLabel(nodeType: WorkflowNodeData['type']): string {
+  if (nodeType === 'start') return String(t('workflow_editor.node_start'))
+  if (nodeType === 'group') return String(t('workflow_canvas.group'))
+  const item = NODE_LIBRARY.find((n) => n.type === nodeType)
+  if (item?.labelKey) return String(t(item.labelKey))
+  return String(t('workflow_editor.node_default'))
+}
+
+function defaultSubtitleForType(nodeType: WorkflowNodeData['type']): string | undefined {
+  if (nodeType === 'llm' || nodeType === 'embedding') {
+    return String(t('workflow_editor.default_select_model'))
+  }
+  if (nodeType === 'skill') return String(t('workflow_editor.default_select_tool'))
+  if (nodeType === 'agent') return String(t('workflow_editor.default_select_agent'))
+  if (nodeType === 'sub_workflow') return String(t('workflow_editor.default_subworkflow_id'))
+  return undefined
+}
+
+function defaultConfigForType(nodeType: WorkflowNodeData['type']): Record<string, unknown> {
+  switch (nodeType) {
+    case 'llm':
+      return { model_id: '' }
+    case 'embedding':
+      return { workflow_node_type: 'embedding', model_id: '' }
+    case 'agent':
+      return { agent_id: '', agent_display_name: '' }
+    case 'skill':
+      return { tool_name: '' }
+    case 'sub_workflow':
+      return {
+        workflow_node_type: 'sub_workflow',
+        target_workflow_id: '',
+        target_version_selector: 'fixed',
+      }
+    case 'prompt_template':
+      return { workflow_node_type: 'prompt_template', template: '', role: 'user' }
+    case 'system_prompt':
+      return { workflow_node_type: 'prompt_template', template: '', role: 'system' }
+    case 'variable':
+      return { workflow_node_type: 'variable', variables: {} }
+    case 'parallel':
+      return { workflow_node_type: 'parallel', max_parallel: 5 }
+    case 'loop':
+      return {
+        workflow_node_type: 'loop',
+        loop_type: 'fixed',
+        max_iterations: 5,
+        condition_expression: '',
+        loop_body: { type: 'tool', tool_name: 'time.now' },
+      }
+    case 'http_request':
+      return {
+        workflow_node_type: 'http_request',
+        tool_name: 'http.request',
+        url: '',
+        method: 'GET',
+        timeout: 30,
+      }
+    case 'python':
+      return { workflow_node_type: 'python', code: '' }
+    case 'shell':
+      return { workflow_node_type: 'shell', command: '' }
+    default:
+      return {}
+  }
+}
+
 function defaultDataForType(type: WorkflowNodeData['type']): WorkflowNodeData {
   return {
     type,
-    label:
-      type === 'llm'
-        ? t('workflow_editor.node_llm')
-        : type === 'agent'
-          ? t('workflow_editor.node_agent')
-          : type === 'skill'
-            ? t('workflow_editor.node_skill')
-            : type === 'sub_workflow'
-              ? t('workflow_editor.node_sub_workflow')
-              : t('workflow_editor.node_default'),
-    subtitle:
-      type === 'llm'
-        ? t('workflow_editor.default_select_model')
-        : type === 'skill'
-          ? t('workflow_editor.default_select_tool')
-          : type === 'agent'
-            ? t('workflow_editor.default_select_agent')
-            : type === 'sub_workflow'
-              ? t('workflow_editor.default_subworkflow_id')
-              : undefined,
-    config:
-      type === 'llm'
-        ? { model_id: '' }
-        : type === 'skill'
-          ? { tool_name: '' }
-          : type === 'agent'
-            ? { agent_id: '', agent_display_name: '' }
-            : type === 'sub_workflow'
-              ? {
-                  workflow_node_type: 'sub_workflow',
-                  target_workflow_id: '',
-                  target_version_selector: 'fixed',
-                }
-              : {},
+    label: libraryLabel(type),
+    subtitle: defaultSubtitleForType(type),
+    config: defaultConfigForType(type),
   }
 }
 

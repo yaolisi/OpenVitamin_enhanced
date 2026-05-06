@@ -8,6 +8,7 @@ import pytest
 
 from core.workflows.models.workflow_version import (
     WorkflowDAG,
+    WorkflowEdge,
     WorkflowNode,
     WorkflowVersion,
     WorkflowVersionState,
@@ -34,8 +35,11 @@ from config.settings import settings
 from core.agent_runtime.session import AgentSession, agent_session_state_as_dict
 
 
-def _build_version(*, workflow_id: str, version_id: str, nodes: list[WorkflowNode]) -> WorkflowVersion:
-    dag = WorkflowDAG(nodes=nodes, edges=[], entry_node=nodes[0].id if nodes else None, global_config={})
+def _build_version(
+    *, workflow_id: str, version_id: str, nodes: list[WorkflowNode], edges: list[WorkflowEdge] | None = None
+) -> WorkflowVersion:
+    edge_list = edges or []
+    dag = WorkflowDAG(nodes=nodes, edges=edge_list, entry_node=nodes[0].id if nodes else None, global_config={})
     return WorkflowVersion(
         version_id=version_id,
         workflow_id=workflow_id,
@@ -86,6 +90,148 @@ def test_graph_runtime_adapter_accepts_parallel_node() -> None:
     version = _build_version(workflow_id="wf-parent", version_id="v-parent-parallel", nodes=[parallel_node])
     errors = GraphRuntimeAdapter.validate_compatibility(version)
     assert errors == []
+
+
+def test_graph_runtime_adapter_normalizes_legacy_system_prompt_node_to_prompt_template() -> None:
+    """方案 B：旧 DAG 存 workflow_node_type=system_prompt → 规范为 prompt_template + role=system"""
+    node = WorkflowNode(
+        id="sp-1",
+        type="prompt_template",
+        config={"workflow_node_type": "system_prompt", "template": "Be helpful"},
+    )
+    adapted = GraphRuntimeAdapter._adapt_node(node)
+    assert adapted.config["workflow_node_type"] == "prompt_template"
+    assert adapted.config.get("role") == "system"
+
+
+def test_graph_runtime_adapter_rejects_embedding_without_model() -> None:
+    node = WorkflowNode(
+        id="emb-bad",
+        type="embedding",
+        config={"workflow_node_type": "embedding"},
+    )
+    version = _build_version(workflow_id="wf-nodes", version_id="v-emb-bad", nodes=[node])
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert any("Embedding node" in e and "model_id" in e for e in errors)
+
+
+def test_graph_runtime_adapter_rejects_http_without_url() -> None:
+    node = WorkflowNode(
+        id="http-bad",
+        type="tool",
+        config={"workflow_node_type": "http_request", "method": "GET"},
+    )
+    version = _build_version(workflow_id="wf-nodes", version_id="v-http-bad", nodes=[node])
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert any("HTTP request node" in e and "url" in e for e in errors)
+
+
+def test_graph_runtime_adapter_rejects_variable_non_object() -> None:
+    node = WorkflowNode(
+        id="var-bad",
+        type="variable",
+        config={"workflow_node_type": "variable", "variables": []},
+    )
+    version = _build_version(workflow_id="wf-nodes", version_id="v-var-bad", nodes=[node])
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert any("Variable node" in e and "variables" in e for e in errors)
+
+
+def test_graph_runtime_adapter_accepts_embedding_variable_http_nodes() -> None:
+    nodes = [
+        WorkflowNode(
+            id="emb-1",
+            type="embedding",
+            config={"workflow_node_type": "embedding", "model_id": "embedding:test"},
+        ),
+        WorkflowNode(
+            id="var-1",
+            type="variable",
+            config={"workflow_node_type": "variable", "variables": {"k": "v"}},
+        ),
+        WorkflowNode(
+            id="http-1",
+            type="tool",
+            config={
+                "workflow_node_type": "http_request",
+                "tool_name": "http.request",
+                "url": "https://example.com",
+                "method": "GET",
+            },
+        ),
+    ]
+    version = _build_version(workflow_id="wf-nodes", version_id="v-ext", nodes=nodes)
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert errors == []
+
+
+def test_graph_runtime_adapter_rejects_python_without_code() -> None:
+    node = WorkflowNode(
+        id="py-bad",
+        type="script",
+        config={"workflow_node_type": "python", "code": ""},
+    )
+    version = _build_version(workflow_id="wf-nodes", version_id="v-py-bad", nodes=[node])
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert any("Python node" in e and "code" in e for e in errors)
+
+
+def test_graph_runtime_adapter_rejects_loop_without_loop_body() -> None:
+    node = WorkflowNode(
+        id="loop-bad",
+        type="loop",
+        config={"workflow_node_type": "loop", "max_iterations": 3},
+    )
+    version = _build_version(workflow_id="wf-loop", version_id="v-loop-bad", nodes=[node])
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert any("Loop node" in e and "loop_body" in e for e in errors)
+
+
+def test_graph_runtime_adapter_accepts_loop_with_tool_loop_body() -> None:
+    loop_n = WorkflowNode(
+        id="loop-ok",
+        type="loop",
+        config={
+            "workflow_node_type": "loop",
+            "max_iterations": 3,
+            "loop_body": {"type": "tool", "tool_name": "time.now"},
+        },
+    )
+    stub_llm = WorkflowNode(id="stub-l", type="llm", config={"model_id": "test"})
+    nodes = [
+        loop_n,
+        stub_llm,
+        WorkflowNode(id="stub-r", type="llm", config={"model_id": "test"}),
+    ]
+    edges = [
+        WorkflowEdge(from_node="loop-ok", to_node="stub-l", source_handle="continue"),
+        WorkflowEdge(from_node="loop-ok", to_node="stub-r", source_handle="exit"),
+    ]
+    version = _build_version(workflow_id="wf-loop", version_id="v-loop-ok", nodes=nodes, edges=edges)
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert errors == []
+
+
+def test_graph_runtime_adapter_accepts_python_with_code_from_upstream_only() -> None:
+    node = WorkflowNode(
+        id="py-up",
+        type="script",
+        config={"workflow_node_type": "python", "code": "", "code_from_upstream": True},
+    )
+    version = _build_version(workflow_id="wf-nodes", version_id="v-py-up", nodes=[node])
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert errors == []
+
+
+def test_graph_runtime_adapter_rejects_shell_without_command() -> None:
+    node = WorkflowNode(
+        id="sh-bad",
+        type="script",
+        config={"workflow_node_type": "shell", "command": ""},
+    )
+    version = _build_version(workflow_id="wf-nodes", version_id="v-sh-bad", nodes=[node])
+    errors = GraphRuntimeAdapter.validate_compatibility(version)
+    assert any("Shell node" in e and "command" in e for e in errors)
 
 
 def test_workflow_runtime_resolve_reflector_retry_config(monkeypatch) -> None:

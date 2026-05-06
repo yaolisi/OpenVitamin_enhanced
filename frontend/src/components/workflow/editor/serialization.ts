@@ -28,7 +28,10 @@ const RUNTIME_TO_EDITOR_TYPE: Record<string, EditorNodeType> = {
   start: 'start',
   input: 'input',
   llm: 'llm',
+  embedding: 'embedding',
   prompt_template: 'prompt_template',
+  variable: 'variable',
+  parallel: 'parallel',
   output: 'output',
   condition: 'condition',
   loop: 'loop',
@@ -40,13 +43,19 @@ const RUNTIME_TO_EDITOR_TYPE: Record<string, EditorNodeType> = {
 const EDITOR_NODE_LABEL_KEY_MAP: Partial<Record<EditorNodeType, string>> = {
   start: 'workflow_editor.node_start',
   llm: 'workflow_editor.node_llm',
+  embedding: 'workflow_editor.node_embedding',
   prompt_template: 'workflow_editor.node_prompt_template',
+  system_prompt: 'workflow_editor.node_system_prompt',
+  variable: 'workflow_editor.node_variable',
+  parallel: 'workflow_editor.node_parallel',
   input: 'workflow_editor.node_input',
   output: 'workflow_editor.node_output',
   condition: 'workflow_editor.node_condition',
   loop: 'workflow_editor.node_loop',
   sub_workflow: 'workflow_editor.node_sub_workflow',
   shell: 'workflow_editor.node_shell',
+  python: 'workflow_editor.node_python',
+  http_request: 'workflow_editor.node_http_request',
   skill: 'workflow_editor.node_skill',
 }
 
@@ -64,8 +73,24 @@ export function inferEditorNodeType(node: WorkflowNodePayload): EditorNodeType {
   if (wnt === 'sub_workflow') return 'sub_workflow'
   if (wnt === 'parallel') return 'parallel'
   if (wnt === 'loop') return 'loop'
-  const rt = node.type || ''
-  return RUNTIME_TO_EDITOR_TYPE[rt] ?? 'skill'
+  if (wnt === 'embedding') return 'embedding'
+  if (wnt === 'variable') return 'variable'
+  if (wnt === 'http_request') return 'http_request'
+  /** 旧版曾单独存 workflow_node_type=system_prompt；加载后运行时会规范为 prompt_template */
+  if (wnt === 'system_prompt') return 'system_prompt'
+  const rtLower = String(node.type || '').trim().toLowerCase()
+  const roleStr = String(cfg.role ?? '').trim().toLowerCase()
+  if (
+    (wnt === 'prompt_template' || rtLower === 'prompt_template') &&
+    roleStr === 'system'
+  ) {
+    return 'system_prompt'
+  }
+  if (wnt === 'prompt_template') return 'prompt_template'
+  if (wnt === 'python') return 'python'
+  const mapped = RUNTIME_TO_EDITOR_TYPE[rtLower]
+  if (mapped) return mapped
+  return 'skill'
 }
 
 export function toWorkflowDag(
@@ -87,6 +112,51 @@ export function toWorkflowDag(
       }
       // 归一化：持久化时不再写 legacy model 字段
       delete config.model
+    }
+
+    if (editorType === 'embedding') {
+      const modelId = typeof config.model_id === 'string' ? config.model_id.trim() : ''
+      const legacyModel = typeof config.model === 'string' ? config.model.trim() : ''
+      if (!modelId && legacyModel) {
+        config.model_id = legacyModel
+      }
+      delete config.model
+      config.workflow_node_type = 'embedding'
+    }
+
+    if (editorType === 'variable') {
+      config.workflow_node_type = 'variable'
+    }
+
+    if (editorType === 'parallel') {
+      config.workflow_node_type = 'parallel'
+    }
+
+    if (editorType === 'loop') {
+      config.workflow_node_type = 'loop'
+      const lb = config.loop_body
+      if (!lb || typeof lb !== 'object' || Array.isArray(lb)) {
+        config.loop_body = { type: 'tool', tool_name: 'time.now' }
+      }
+    }
+
+    /** 方案 B：System Prompt 仅为快捷入口，持久化为 prompt_template + role=system */
+    if (editorType === 'system_prompt') {
+      config.workflow_node_type = 'prompt_template'
+      if (config.role === undefined || config.role === null || config.role === '') {
+        config.role = 'system'
+      }
+    }
+
+    if (editorType === 'prompt_template') {
+      config.workflow_node_type = 'prompt_template'
+    }
+
+    if (editorType === 'http_request') {
+      config.workflow_node_type = 'http_request'
+      if (!config.tool_name) {
+        config.tool_name = 'http.request'
+      }
     }
 
     if (editorType === 'agent') {
@@ -193,6 +263,17 @@ function subtitleFromConfig(type: EditorNodeType, config: Record<string, unknown
   if (type === 'sub_workflow') {
     const id = String((config.target_workflow_id as string) ?? '').trim()
     return id || undefined
+  }
+  if (type === 'embedding') {
+    return (config.model_display_name as string) || (config.model_id as string) || undefined
+  }
+  if (type === 'http_request') {
+    const u = String(config.url ?? '').trim()
+    return u || undefined
+  }
+  if (type === 'parallel') {
+    const mp = config.max_parallel
+    return mp !== undefined && mp !== null ? String(mp) : undefined
   }
   return undefined
 }

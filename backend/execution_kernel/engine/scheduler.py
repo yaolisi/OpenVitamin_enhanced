@@ -812,6 +812,12 @@ class Scheduler:
             output = await self.executor.execute_with_retry(
                 node_runtime, node_def, context
             )
+
+            pending_merges = list(getattr(context, "_pending_global_merges", None) or [])
+            if pending_merges:
+                for patch in pending_merges:
+                    await self._persist_global_context_merge(instance_id, patch)
+                getattr(context, "_pending_global_merges", []).clear()
             
             # 更新上下文
             context.set_node_output(node_id, output)
@@ -1381,6 +1387,35 @@ class Scheduler:
                     instance_id,
                 )
                 return
+
+    async def _persist_global_context_merge(self, instance_id: str, patch: Dict[str, Any]) -> None:
+        """将补丁合并入 GraphInstance.global_context（如 variable 节点写入的 workflow_variables）。"""
+        if not patch:
+            return
+        try:
+            async with self.db.async_session() as session:
+                repo = GraphInstanceRepository(session)
+                inst = await repo.get(instance_id, for_update=True)
+                if not inst:
+                    return
+                gc = dict(inst.global_context or {})
+                for key, val in patch.items():
+                    if key == "workflow_variables" and isinstance(val, dict):
+                        cur = gc.get("workflow_variables")
+                        if not isinstance(cur, dict):
+                            cur = {}
+                        gc["workflow_variables"] = {**cur, **val}
+                    else:
+                        gc[key] = val
+                inst.global_context = gc
+                flag_modified(inst, "global_context")
+                await session.commit()
+        except Exception:
+            logger.exception(
+                "[Scheduler] Failed to persist global_context merge instance_id=%s patch_keys=%s",
+                instance_id,
+                list(patch.keys()),
+            )
 
     def _compose_node_input_from_upstreams(
         self,

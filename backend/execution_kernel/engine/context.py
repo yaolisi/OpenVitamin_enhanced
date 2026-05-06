@@ -3,7 +3,7 @@ Context Propagation
 上下文传播模型，全局 context 只读，节点输出声明式存储
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import re
 import logging
 
@@ -45,6 +45,8 @@ class GraphContext:
         self._global_data = dict(global_data)  # 只读副本
         self._node_outputs = dict(node_outputs or {})  # node_id -> output
         self._current_node_input = dict(current_node_input or {})
+        # 节点执行后需要合并进 GraphInstance.global_context 的补丁（由 Scheduler 落库）
+        self._pending_global_merges: List[Dict[str, Any]] = []
     
     @property
     def global_data(self) -> Dict[str, Any]:
@@ -56,6 +58,11 @@ class GraphContext:
         """节点输出（只读）"""
         return {k: dict(v) for k, v in self._node_outputs.items()}
     
+    def enqueue_global_merge(self, patch: Dict[str, Any]) -> None:
+        """将全局上下文补丁加入队列，供 Scheduler 在节点成功后写入实例 global_context。"""
+        if patch:
+            self._pending_global_merges.append(dict(patch))
+
     def set_node_output(self, node_id: str, output: Dict[str, Any]):
         """
         设置节点输出（声明式存储）

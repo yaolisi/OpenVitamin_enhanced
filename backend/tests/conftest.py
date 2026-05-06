@@ -42,6 +42,14 @@ def _reset_workflow_execution_manager_singleton_after_test() -> Iterator[None]:
     from core.workflows.governance import reset_execution_manager_singleton
 
     reset_execution_manager_singleton()
+    # monkeypatch 替换 get_engine / SessionLocal 的测试会留下 SessionLocal._maker 绑定假引擎；
+    # dispose_engine 清空全局 Engine 与 sessionmaker 缓存，避免后续测试拿到极简 _Conn 连接。
+    try:
+        from core.data.base import dispose_engine
+
+        dispose_engine()
+    except Exception:
+        pass
 
 
 @pytest.fixture()

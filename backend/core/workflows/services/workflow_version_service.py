@@ -16,6 +16,7 @@ from core.workflows.models import (
     WorkflowEdge
 )
 from core.workflows.repository import WorkflowVersionRepository
+from core.workflows.runtime.graph_runtime_adapter import GraphRuntimeAdapter
 from core.system.settings_store import get_system_settings_store
 from config.settings import settings
 from log import logger
@@ -125,10 +126,12 @@ class WorkflowVersionService:
         workflow_node_type = str(cfg.get("workflow_node_type") or node_type).strip().lower()
 
         WorkflowVersionService._normalize_llm_config(cfg, workflow_node_type)
+        WorkflowVersionService._normalize_embedding_config(cfg, workflow_node_type)
         WorkflowVersionService._normalize_agent_config(cfg, workflow_node_type)
         WorkflowVersionService._normalize_tool_config(cfg, workflow_node_type)
         WorkflowVersionService._normalize_sub_workflow_config(cfg, workflow_node_type)
         WorkflowVersionService._normalize_parallel_config(cfg, workflow_node_type)
+        WorkflowVersionService._normalize_http_request_config(cfg, workflow_node_type)
 
         return WorkflowNode(
             id=node.id,
@@ -142,6 +145,16 @@ class WorkflowVersionService:
     @staticmethod
     def _normalize_llm_config(cfg: Dict[str, Any], workflow_node_type: str) -> None:
         if workflow_node_type != "llm":
+            return
+        model_id = str(cfg.get("model_id") or "").strip()
+        legacy_model = str(cfg.get("model") or "").strip()
+        if not model_id and legacy_model:
+            cfg["model_id"] = legacy_model
+        cfg.pop("model", None)
+
+    @staticmethod
+    def _normalize_embedding_config(cfg: Dict[str, Any], workflow_node_type: str) -> None:
+        if workflow_node_type != "embedding":
             return
         model_id = str(cfg.get("model_id") or "").strip()
         legacy_model = str(cfg.get("model") or "").strip()
@@ -195,6 +208,13 @@ class WorkflowVersionService:
                 # 保留原值给后续校验报错
                 cfg["max_parallel"] = max_parallel
         cfg.pop("max_concurrency", None)
+
+    @staticmethod
+    def _normalize_http_request_config(cfg: Dict[str, Any], workflow_node_type: str) -> None:
+        if workflow_node_type != "http_request":
+            return
+        if not str(cfg.get("tool_name") or "").strip():
+            cfg["tool_name"] = "http.request"
 
     @staticmethod
     def _normalize_edge(edge: WorkflowEdge) -> WorkflowEdge:
@@ -275,6 +295,11 @@ class WorkflowVersionService:
         )
         if errors:
             raise ValueError(f"Cannot publish invalid DAG: {'; '.join(errors)}")
+        compat = GraphRuntimeAdapter.validate_compatibility(version)
+        if compat:
+            raise ValueError(
+                f"Cannot publish DAG incompatible with runtime: {'; '.join(compat)}"
+            )
         self._validate_workflow_global_config(version.dag.global_config or {})
         self._validate_sub_workflow_references(version.workflow_id, version.dag)
         self._validate_sub_workflow_cycles(version.workflow_id, version.version_id, version.dag)

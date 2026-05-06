@@ -13,6 +13,13 @@ import {
   Code,
   Globe,
   Boxes,
+  MessageSquare,
+  Variable,
+  Copy,
+  Sparkles,
+  LogIn,
+  LogOut,
+  Terminal,
 } from 'lucide-vue-next'
 import type { WorkflowNodeData } from '../types'
 import { requestWorkflowGroupResizeStart, requestWorkflowNodeSelect } from '../canvasSelection'
@@ -22,12 +29,21 @@ const props = defineProps<NodeProps<WorkflowNodeData>>()
 const iconMap: Record<string, typeof Play> = {
   start: Play,
   prompt_template: FileText,
+  system_prompt: MessageSquare,
   llm: Brain,
   agent: User,
   embedding: Layers,
+  input: LogIn,
+  output: LogOut,
+  variable: Variable,
   condition: GitBranch,
   loop: Repeat,
+  parallel: Copy,
   sub_workflow: Boxes,
+  skill: Sparkles,
+  http_request: Globe,
+  python: Code,
+  shell: Terminal,
   script: Code,
   tool: Globe,
 }
@@ -35,12 +51,21 @@ const iconMap: Record<string, typeof Play> = {
 const colorMap: Record<string, string> = {
   start: 'from-blue-500 to-blue-600 border-blue-500/30 bg-blue-500/10',
   prompt_template: 'from-amber-500 to-amber-600 border-amber-500/30 bg-amber-500/10',
+  system_prompt: 'from-amber-600 to-amber-700 border-amber-600/30 bg-amber-600/10',
   llm: 'from-indigo-500 to-indigo-600 border-indigo-500/30 bg-indigo-500/10',
   agent: 'from-violet-500 to-violet-600 border-violet-500/30 bg-violet-500/10',
   embedding: 'from-cyan-500 to-cyan-600 border-cyan-500/30 bg-cyan-500/10',
+  input: 'from-blue-400 to-blue-500 border-blue-400/30 bg-blue-400/10',
+  output: 'from-blue-700 to-blue-800 border-blue-700/30 bg-blue-700/10',
+  variable: 'from-fuchsia-500 to-fuchsia-600 border-fuchsia-500/30 bg-fuchsia-500/10',
   condition: 'from-emerald-500 to-emerald-600 border-emerald-500/30 bg-emerald-500/10',
   loop: 'from-teal-500 to-teal-600 border-teal-500/30 bg-teal-500/10',
+  parallel: 'from-lime-600 to-lime-700 border-lime-600/30 bg-lime-600/10',
   sub_workflow: 'from-sky-500 to-sky-600 border-sky-500/30 bg-sky-500/10',
+  skill: 'from-orange-500 to-orange-600 border-orange-500/30 bg-orange-500/10',
+  http_request: 'from-orange-600 to-red-600 border-orange-600/30 bg-orange-600/10',
+  python: 'from-slate-500 to-slate-600 border-slate-500/30 bg-slate-500/10',
+  shell: 'from-zinc-600 to-zinc-700 border-zinc-600/30 bg-zinc-600/10',
   script: 'from-slate-500 to-slate-600 border-slate-500/30 bg-slate-500/10',
   tool: 'from-orange-500 to-orange-600 border-orange-500/30 bg-orange-500/10',
 }
@@ -62,6 +87,13 @@ const nodeSubtitle = computed(() => {
   if (d?.type === 'sub_workflow') {
     const wid = String((cfg.target_workflow_id as string) ?? '').trim()
     return wid || ''
+  }
+  if (d?.type === 'embedding') {
+    const name = (cfg.model_display_name as string) || (cfg.model_id as string)
+    return name || ''
+  }
+  if (d?.type === 'http_request') {
+    return String(cfg.url ?? '').trim() || ''
   }
   return (d?.subtitle as string) || ''
 })

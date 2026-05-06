@@ -16,6 +16,18 @@ export interface ValidationError {
 
 const DEFAULT_INPUT_KEYS = new Set(['query', 'text', 'prompt', 'message'])
 
+const WF_VARS_PREFIX = 'global.workflow_variables.'
+
+/** 从 `${global.workflow_variables.foo}` 或 `${global.workflow_variables.foo.bar}` 取顶层键 foo */
+function workflowVariableTopKeyFromToken(token: string): string | null {
+  const t = token.trim()
+  if (!t.startsWith(WF_VARS_PREFIX)) return null
+  const rest = t.slice(WF_VARS_PREFIX.length).trim()
+  if (!rest) return null
+  const top = rest.split('.')[0]?.trim()
+  return top || null
+}
+
 function extractVars(expr: string): string[] {
   const out: string[] = []
   const re = /\$\{([^}]+)\}/g
@@ -89,6 +101,19 @@ export function validateWorkflowNodes(
       }
     }
 
+    if (type === 'llm') {
+      const modelId = String(config.model_id ?? '').trim()
+      const legacyModel = String(config.model ?? '').trim()
+      if (!modelId && !legacyModel) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'LLM 节点：请选择模型（model_id）',
+          messageKey: 'workflow_editor.llm_model_required',
+        })
+      }
+    }
+
     if (type === 'sub_workflow') {
       const wid = String(config.target_workflow_id ?? '').trim()
       if (!wid) {
@@ -138,6 +163,118 @@ export function validateWorkflowNodes(
         }
       }
     }
+
+    if (type === 'embedding') {
+      const mid = String(config.model_id ?? '').trim()
+      if (!mid) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'Embedding 节点：请选择或填写 model_id',
+          messageKey: 'workflow_editor.embedding_model_required',
+        })
+      }
+    }
+
+    if (type === 'http_request') {
+      const url = String(config.url ?? '').trim()
+      if (!url) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'HTTP 节点：请填写 url',
+          messageKey: 'workflow_editor.http_url_required',
+        })
+      }
+    }
+
+    if (type === 'variable') {
+      const vars = config.variables
+      if (vars !== undefined && vars !== null && (typeof vars !== 'object' || Array.isArray(vars))) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'Variable 节点：variables 须为 JSON 对象',
+          messageKey: 'workflow_editor.variable_map_object_required',
+        })
+      }
+    }
+
+    if (type === 'python') {
+      const fromUpstream = config.code_from_upstream === true
+      if (!fromUpstream) {
+        const code = String(config.code ?? '').trim()
+        if (!code) {
+          errors.push({
+            nodeId: node.id,
+            nodeLabel: label,
+            message: 'Python 节点：请填写 code（走 python.run）',
+            messageKey: 'workflow_editor.python_code_required',
+          })
+        }
+      }
+    }
+
+    if (type === 'skill') {
+      const tool = String(config.tool_name ?? config.tool_id ?? '').trim()
+      if (!tool) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'Skill 节点：请选择或填写工具（tool_name）',
+          messageKey: 'workflow_editor.skill_tool_name_required',
+        })
+      }
+    }
+
+    if (type === 'shell') {
+      const command = String(config.command ?? '').trim()
+      if (!command) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'Shell 节点：请填写 command',
+          messageKey: 'workflow_editor.shell_command_required',
+        })
+      }
+    }
+
+    if (type === 'loop') {
+      const lb = config.loop_body
+      if (!lb || typeof lb !== 'object' || Array.isArray(lb)) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'Loop 节点：loop_body 须为对象（单次迭代执行的配置）',
+          messageKey: 'workflow_editor.loop_body_object_required',
+        })
+      } else {
+        const body = lb as Record<string, unknown>
+        const bodyType = String(body.type ?? 'tool').trim().toLowerCase()
+        if (bodyType === 'tool') {
+          const tn = String(body.tool_name ?? body.tool_id ?? '').trim()
+          if (!tn) {
+            errors.push({
+              nodeId: node.id,
+              nodeLabel: label,
+              message: 'Loop 节点：loop_body.type 为 tool 时需填写 tool_name',
+              messageKey: 'workflow_editor.loop_body_tool_name_required',
+            })
+          }
+        } else if (['agent', 'manager', 'worker', 'reflector'].includes(bodyType)) {
+          const aid = String(body.agent_id ?? '').trim()
+          if (!aid) {
+            errors.push({
+              nodeId: node.id,
+              nodeLabel: label,
+              message: `Loop 节点：loop_body 为 ${bodyType} 时需填写 agent_id`,
+              messageKey: 'workflow_editor.loop_body_agent_required',
+              messageParams: { role: bodyType },
+            })
+          }
+        }
+      }
+    }
   }
 
   return {
@@ -155,7 +292,19 @@ export function validateWorkflowPreflight(
 
   const inputFixedInputKeySet = new Set<string>(DEFAULT_INPUT_KEYS)
   let inputQueryDefault: unknown = undefined
+  const declaredWorkflowVariableKeys = new Set<string>()
   for (const node of nodes) {
+    if (node.data?.type === 'variable') {
+      const cfg = (node.data?.config ?? {}) as Record<string, unknown>
+      const vars = cfg.variables
+      if (vars && typeof vars === 'object' && !Array.isArray(vars)) {
+        for (const k of Object.keys(vars as Record<string, unknown>)) {
+          const key = String(k).trim()
+          if (key) declaredWorkflowVariableKeys.add(key)
+        }
+      }
+      continue
+    }
     if (node.data?.type !== 'input') continue
     const cfg = (node.data?.config ?? {}) as Record<string, unknown>
     const fixed = cfg.fixed_input
@@ -205,6 +354,25 @@ export function validateWorkflowPreflight(
             message: `Condition 引用了不存在的节点变量：\${${v}}`,
             messageKey: 'workflow_editor.condition_node_reference_missing',
             messageParams: { variable: v },
+          })
+        }
+      } else {
+        const wfTop = workflowVariableTopKeyFromToken(v)
+        if (
+          wfTop &&
+          declaredWorkflowVariableKeys.size > 0 &&
+          !declaredWorkflowVariableKeys.has(wfTop)
+        ) {
+          errors.push({
+            nodeId: node.id,
+            nodeLabel: label,
+            message: `Condition 变量不存在：\${${v}}。当前 Variable 节点未声明 workflow_variables.${wfTop}（已声明: ${Array.from(declaredWorkflowVariableKeys).join(', ')}）`,
+            messageKey: 'workflow_editor.condition_workflow_variable_missing',
+            messageParams: {
+              variable: v,
+              key: wfTop,
+              available: Array.from(declaredWorkflowVariableKeys).join(', '),
+            },
           })
         }
       }

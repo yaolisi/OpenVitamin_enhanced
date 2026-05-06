@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, Callable, List, Awaitable, cast, Tuple
 from datetime import UTC, datetime, timedelta
 import asyncio
 import json
+import re
 import traceback
 from pathlib import Path
 
@@ -475,6 +476,133 @@ class WorkflowRuntime:
                 return v.strip()
         return None
 
+    @staticmethod
+    def _render_mustache_template(template: str, context: GraphContext) -> str:
+        pattern = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
+
+        def repl(match) -> str:
+            inner = match.group(1).strip()
+            if not inner:
+                return match.group(0)
+            expr = inner if inner.startswith("${") else "${" + inner + "}"
+            try:
+                val = context.resolve(expr)
+                return "" if val is None else str(val)
+            except Exception:
+                logger.warning("[WorkflowRuntime] Template placeholder resolve failed: %s", inner)
+                return match.group(0)
+
+        return pattern.sub(repl, template)
+
+    async def _handle_embedding_node(
+        self,
+        *,
+        node_def: NodeDefinition,
+        cfg: Dict[str, Any],
+        input_data: Dict[str, Any],
+        context: GraphContext,
+    ) -> Dict[str, Any]:
+        model = str(cfg.get("model_id") or cfg.get("model") or "").strip()
+        if not model:
+            return {"error": "Embedding node missing model_id"}
+        raw_text = cfg.get("input_text")
+        if raw_text is None:
+            raw_text = cfg.get("text")
+        text_val: Optional[str] = None
+        if isinstance(raw_text, str):
+            s = raw_text.strip()
+            if s:
+                text_val = str(context.resolve(s)) if "${" in s else s
+        if not text_val:
+            inferred = self._infer_prompt_from_payload(input_data or {})
+            text_val = inferred or ""
+        if not text_val.strip():
+            return {"error": "Embedding node missing input text"}
+        resp = await self._inference_client.embed(
+            model=model,
+            input_text=text_val,
+            metadata={
+                "source": "workflow_runtime",
+                "node_id": node_def.id,
+                "caller": "workflow.embedding_node",
+            },
+        )
+        data = resp.model_dump()
+        return {
+            "type": "embedding_result",
+            "embeddings": data.get("embeddings") or [],
+            "model": data.get("model") or model,
+            "provider": data.get("provider"),
+            "model_alias": data.get("model_alias"),
+        }
+
+    def _handle_prompt_template_node(
+        self,
+        *,
+        cfg: Dict[str, Any],
+        input_data: Dict[str, Any],
+        context: GraphContext,
+    ) -> Dict[str, Any]:
+        template_raw = cfg.get("template")
+        template = (
+            str(template_raw)
+            if isinstance(template_raw, str)
+            else str(cfg.get("prompt") or input_data.get("prompt") or "")
+        )
+        rendered = self._render_mustache_template(template, context)
+        role = str(cfg.get("role") or "user").strip().lower()
+        return {"type": "prompt_template_result", "text": rendered, "role": role}
+
+    def _handle_variable_node(
+        self, cfg: Dict[str, Any], _input_data: Dict[str, Any], context: GraphContext
+    ) -> Dict[str, Any]:
+        variables = cfg.get("variables")
+        if not isinstance(variables, dict):
+            variables = {}
+        merged: Dict[str, Any] = {}
+        for k, raw in variables.items():
+            key = str(k).strip()
+            if not key:
+                continue
+            if isinstance(raw, str):
+                val: Any = context.resolve(raw) if "${" in raw else raw
+            else:
+                val = raw
+            merged[key] = val
+
+        global_ref = getattr(context, "_global_data", None)
+        if isinstance(global_ref, dict):
+            cur = global_ref.get("workflow_variables")
+            if not isinstance(cur, dict):
+                cur = {}
+            global_ref["workflow_variables"] = {**cur, **merged}
+
+        context.enqueue_global_merge({"workflow_variables": merged})
+
+        snap = (
+            dict(global_ref.get("workflow_variables") or {})
+            if isinstance(global_ref, dict)
+            else dict(merged)
+        )
+        return {"type": "variable_result", "workflow_variables": snap}
+
+    async def _handle_http_request_node(
+        self,
+        *,
+        cfg: Dict[str, Any],
+        input_data: Dict[str, Any],
+        context: GraphContext,
+    ) -> Dict[str, Any]:
+        tool_cfg = {**cfg, "tool_name": "http.request"}
+        keys = ("url", "method", "body", "headers", "params", "auth", "timeout", "json")
+        tool_input: Dict[str, Any] = {}
+        for k in keys:
+            if cfg.get(k) is not None:
+                tool_input[k] = cfg[k]
+        tool_input = context.resolve_dict(tool_input)
+        merged = {**(input_data or {}), **tool_input}
+        return await self._execute_tool_node(tool_cfg, merged, context)
+
     async def _tool_handler(
         self, node_def: NodeDefinition, input_data: Dict[str, Any], context: GraphContext
     ) -> Dict[str, Any]:
@@ -513,6 +641,20 @@ class WorkflowRuntime:
                 context=context,
                 cfg=cfg,
             )
+        if workflow_node_type == "embedding":
+            return await self._handle_embedding_node(
+                node_def=node_def, cfg=cfg, input_data=input_data, context=context
+            )
+        if workflow_node_type == "prompt_template":
+            return self._handle_prompt_template_node(
+                cfg=cfg, input_data=input_data, context=context
+            )
+        if workflow_node_type == "variable":
+            return self._handle_variable_node(cfg, input_data, context)
+        if workflow_node_type == "http_request":
+            return await self._handle_http_request_node(
+                cfg=cfg, input_data=input_data, context=context
+            )
         if workflow_node_type == "approval":
             return self._handle_approval_node(node_def, context)
         result = await self._execute_tool_node(cfg, input_data, context)
@@ -534,6 +676,19 @@ class WorkflowRuntime:
         self, node_def: NodeDefinition, input_data: Dict[str, Any], context: GraphContext
     ) -> Dict[str, Any]:
         cfg = node_def.config or {}
+        wnt = str(cfg.get("workflow_node_type") or "").strip().lower()
+        if wnt == "python":
+            code = cfg.get("code") if cfg.get("code") is not None else (input_data or {}).get("code")
+            if not code:
+                return {"error": "Python node missing code"}
+            cfg = dict(cfg)
+            cfg["workflow_node_type"] = "python"
+            cfg["tool_name"] = "python.run"
+            return await self._tool_handler(
+                node_def=type(node_def)(**{**node_def.model_dump(), "config": cfg}),
+                input_data={**(input_data or {}), "code": code},
+                context=context,
+            )
         command = cfg.get("command") or (input_data or {}).get("command")
         if not command:
             return {"error": "Script node missing command"}
@@ -562,13 +717,24 @@ class WorkflowRuntime:
                 model_id,
                 legacy_model,
             )
-        prompt = cfg.get("prompt") or (input_data or {}).get("prompt")
+        prompt = cfg.get("prompt")
+        if prompt is None and isinstance(input_data, dict):
+            prompt = (
+                input_data.get("prompt")
+                or input_data.get("message")
+                or input_data.get("text")
+            )
         if prompt is None:
             prompt = json.dumps(input_data or {}, ensure_ascii=False, sort_keys=True)
+        system_prompt = cfg.get("system_prompt")
+        if system_prompt is None and isinstance(input_data, dict):
+            system_prompt = input_data.get("system_prompt")
+            if system_prompt is None and str(input_data.get("role") or "").strip().lower() == "system":
+                system_prompt = input_data.get("text")
         resp = await self._inference_client.generate(
             model=model,
             prompt=str(prompt),
-            system_prompt=cfg.get("system_prompt"),
+            system_prompt=system_prompt,
             temperature=float(cfg.get("temperature", 0.7)),
             max_tokens=int(cfg.get("max_tokens", 2048)),
             stop=cfg.get("stop") if isinstance(cfg.get("stop"), list) else None,
@@ -1941,8 +2107,19 @@ class WorkflowRuntime:
             "workspace": workspace_dir,
             **base_gc,
         }
-        # 将归一化后的 correlation_id 写回 DB，使 GET execution / 前端与调度时 global_context 一致
-        persisted_gc = {**(execution.global_context or {}), "correlation_id": global_context["correlation_id"]}
+        # 本地工作流默认授予常用内置工具权限（调用方仍可通过 global_context.permissions 显式关闭）
+        merged_perms = dict(global_context.get("permissions") or {})
+        merged_perms.setdefault("python.run", True)
+        merged_perms.setdefault("shell.run", True)
+        if bool(getattr(settings, "tool_net_http_enabled", False)):
+            merged_perms.setdefault("net.http", True)
+        global_context["permissions"] = merged_perms
+        # 将归一化后的 correlation_id / permissions 写回 DB，使 GET execution / 前端与调度时 global_context 一致
+        persisted_gc = {
+            **(execution.global_context or {}),
+            "correlation_id": global_context["correlation_id"],
+            "permissions": merged_perms,
+        }
         self.execution_repository.update_global_context(
             execution.execution_id, persisted_gc, tenant_id=rtid
         )

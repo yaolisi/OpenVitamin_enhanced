@@ -11,7 +11,7 @@
 |------|------|
 | [README.md](README.md) | 教程目录导航、403/404/429 等问题索引 |
 | [tutorial-quickstart.md](tutorial-quickstart.md) | 约 10 分钟极简上手 |
-| [tutorial-index.md](tutorial-index.md) | 索引、命令、PowerShell 对照 |
+| [tutorial-index.md](tutorial-index.md) | 索引、命令、PowerShell 对照；**控制台模型与账号**见 **§1.1** 与第 **8.1～8.3** 节对照 |
 | [tutorial-ops-checklist.md](tutorial-ops-checklist.md) | 发版前短清单 |
 | [tutorial-incident-runbook.md](tutorial-incident-runbook.md) | 线上故障卡片 |
 | [tutorial-security-baseline.md](tutorial-security-baseline.md) | 安全 MUST 与门禁 |
@@ -235,10 +235,152 @@ npm run dev
 
 首次登录后，建议按这个顺序体验：
 
-1. **General / Backend Settings**：看系统配置是否生效  
+1. **General / Backend Settings**：看系统配置是否生效（界面语言、主题、数据目录，以及 **Backend** 中的 **API Key / 租户** 等；详见 **§8.2**）  
 2. **Workflow**：创建一个最小流程并执行  
-3. **Models / Images**：验证模型侧能力（按你的环境）  
+3. **Models / Images**：验证模型侧能力（磁盘本地模型 **§8.1**、云端注册 **§8.3**，按你的环境）  
 4. **Audit / Logs（若开放）**：确认审计与追踪信息
+
+### 8.1 配置本地化大模型（方法与步骤）
+
+推理仍全部由 **FastAPI 网关**调度；前端只做目录、清单与注册信息的维护。常见有两种用法：**磁盘上的本机模型（`backend=local`）**，以及 **本机运行的 Ollama / LM Studio 等 OpenAI 兼容服务**（网关注册后走对应运行时）。
+
+#### A. 先设置模型数据目录（全局）
+
+1. 打开 **Settings（设置）→ General（常规）**。  
+2. 找到 **数据目录 / Data directory**（对应系统配置里的 `dataDirectory`），设为存放模型的根路径，默认一般为 `~/.local-ai/models/`。  
+3. **保存**。后端扫描器会优先使用该路径（未配置时回落到环境变量/默认 `local_model_directory`）。
+
+#### B. 磁盘本机模型：`model.json` + 权重文件
+
+适用于 GGUF、部分 Torch/其他格式的本地权重；注册后模型在列表中的 **`backend` 为 `local`**，才可使用下文「模型配置页」。
+
+**1）目录布局（与后端 `LocalScanner` 一致）**
+
+在数据目录下为每个模型准备**独立子目录**，目录内必须有 **`model.json`**。可选分层便于分类：
+
+- `…/llm/<模型目录>/model.json`
+- `…/vlm/<模型目录>/model.json`
+- `…/embedding/`、`…/asr/`、`…/perception/`、`…/image_generation/` 等同理  
+
+也可把模型目录直接放在数据目录根下（平铺），只要该文件夹内含 `model.json` 即可。
+
+**2）`model.json` 要点**
+
+至少需要：`model_id`、`name`、`model_type`（如 `llm` / `vlm`）、`runtime`（如对话常用 `llama.cpp`）、以及 **`path`**（相对于该模型目录的权重相对路径，指向实际文件）。其余字段（能力、量化说明、`metadata` 等）可按模型类型补充；不熟悉时可之后在 UI 里改。
+
+**3）在前端注册与扫描**
+
+1. 打开 **Models（模型库）**（路由一般为 `/models`，可按左侧分类进入 LLM/VLM 等）。  
+2. 点击标题栏区域的 **扫描 / 刷新** 按钮（调用 `POST /api/models/scan`），等待扫描结束。  
+3. 在列表上用 **「仅本地」** 筛选可只看 `backend=local` 的条目（界面上的「本地」指磁盘注册模型；见下文说明）。  
+4. 进入某一模型的 **配置 / Configure**，跳转到 **`/models/<id>/config`**。  
+5. 仅 **`backend === local`** 时会出现 **本地模型配置编辑器**：在 **基础信息 / 能力 / 运行时 /（VLM 等）** 各页填写或修正路径、运行时、`model.json` 高级 JSON；保存会写入网关（`PUT /api/models/<id>/manifest`）。  
+6. **浏览目录**选权重时，服务端仅在允许的根路径内列出文件；若被拒绝，请在后端 `.env` 中配置 **`FILE_READ_ALLOWED_ROOTS`**，包含你的模型盘路径（生产勿设为 `/`）。
+
+#### C. 本机 Ollama / LM Studio（不在磁盘放 `model.json`）
+
+这类服务在本机端口提供 HTTP API，网关通过扫描或手动注册接入；列表里 **`backend` 多为 `ollama` / `lmstudio` 等**，与磁盘 `local` 不同。
+
+**步骤简述：**
+
+1. 在本机启动 Ollama（默认 `http://127.0.0.1:11434`）或 LM Studio 本地服务器（常见 `http://127.0.0.1:1234`）。  
+2. **Models** 页点击 **添加云端模型 / Cloud model**：提供商选 **Ollama** 或 **LM Studio**，**Base URL** 填上述地址（可按需改端口），填写提供商侧的 **模型 ID**、显示名称与（若需要）API Key。  
+3. 保存后列表会出现对应条目；亦可依赖网关启动时的自动扫描（若服务已就绪）。  
+
+**说明：** 模型库顶部的「本地 / 云端」筛选里，**Ollama、LM Studio 会被归为「云端」类后端**（实现上是连本机 HTTP），与 **磁盘 `local` 模型**区分；聊天时在头部模型下拉框中选择已注册的模型即可。
+
+#### D. 验证
+
+1. **Models** 列表中能看到目标模型且无报错。  
+2. 打开 **Chat**，在模型选择器中选该模型并发一条测试消息。  
+3. 若加载失败，结合前端提示与后端日志排查（路径错误、显存不足、运行时未安装等）。
+
+### 8.2 账号与安全相关设置（方法与步骤）
+
+Web 控制台是 **本地优先的控制台**：没有独立的「注册 / 登录密码」流程；与网关交互身份主要由浏览器内保存的 **API Key**、**租户 ID** 以及界面偏好构成。以下路径均以侧边栏 **Settings（设置）** 为入口，默认打开 **`/settings/general`**。
+
+#### A. 常规偏好（Settings → General）
+
+路由：**`/settings/general`**。
+
+| 能力 | 说明 |
+|------|------|
+| **离线模式** | 切换后会影响前端对外部依赖的假设（与业务开关一致时保存）。 |
+| **界面语言** | 中文 / English；写入 `localStorage`（`platform-language`），并与发往网关的 **`Accept-Language`** 对齐，便于后端错误信息国际化。 |
+| **界面主题** | 跟随系统 / 浅色 / 深色；写入 `localStorage`（`platform-theme`）并作用于文档根节点 class。 |
+| **数据目录** | 见 **§8.1**；保存至系统配置 `dataDirectory`。 |
+| **默认推理相关** | 如默认模型加载器、上下文长度、GPU 层数等（与 **Backend** 页部分项同源，以界面为准）；修改后需点击 **保存** 写入网关侧用户/系统设置。 |
+
+**操作步骤：** 在 General 页调整选项 → 点击右上角 **保存**（部分开关可能自动保存，以界面提示为准）。
+
+#### B. 安全上下文：API Key 与租户（Settings → Backend）
+
+路由：**`/settings/backend`**。向下滚动到 **Security Context** 区块。
+
+| 字段 | 作用 |
+|------|------|
+| **Admin API Key** | 对应 HTTP 头 **`X-Api-Key`**，用于受 RBAC/租户策略保护的网关接口；保存后存放在浏览器 **`localStorage`** 键 **`ai_platform_api_key`**（界面另有说明）。 |
+| **Tenant ID** | 对应 **`X-Tenant-Id`**，须与后端 **`TENANT_API_KEY_TENANTS_JSON`** 等配置一致；默认常用 `default`，保存键为 **`ai_platform_tenant_id`**。 |
+
+**操作步骤：**
+
+1. 打开 **Settings → Backend**（侧栏选 **Backend / 后端**）。  
+2. 在 **Security Context** 中填写或粘贴 **API Key**、**Tenant ID**（可用显示/隐藏切换查看 Key）。  
+3. 点击 **Save Security Context** 写入浏览器存储；之后 **`apiFetch` 发出的请求会自动带上上述请求头**（与教程 **§9**、**§10** 中的 curl 示例一致）。  
+4. 需要重新从存储读取时点击 **Reload**；需在本书签页移除身份时点击 **Clear Security Context**（会清空 Key 与租户并恢复输入框展示）。  
+
+**注意：** Key 与租户仅保存在本机浏览器，**不会**随「General/Backend 保存到服务端配置」而上传到服务器；替换浏览器或清除站点数据后需重新填写。
+
+#### C. 其他设置子页（按需）
+
+同一 **Settings** 侧栏还可进入：`/settings/backup`、`/settings/model-backup`、`/settings/runtime`、`/settings/object-detection`、`/settings/image-generation`、`/settings/asr`、`/settings/mcp` 等，用于数据库/模型备份、运行时、检测与语音等专项配置，与「账号身份」无关时不在此展开。
+
+#### D. 与审计头字段的关系（可选了解）
+
+网关请求还会自动携带 **`X-User-Id`**（默认来自 `localStorage` 键 **`ai_platform_user_id`**，缺省为 `default`）等；当前设置页 **未** 提供独立「用户账号」表单，一般由会话或其它流程写入。若仅用控制台完成配置，重点关注 **§8.2 B** 即可。
+
+### 8.3 配置云端大模型（方法与步骤）
+
+云端模型指通过 **HTTP API**（OpenAI 兼容或厂商原生适配）由网关转发的推理来源；与 **§8.1** 磁盘 `local` 模型不同，权重不在本机目录，而在提供商侧。控制台通过 **「添加云端模型」** 写入注册表（等价网关 **`POST /api/models`**）。
+
+#### A. 前置条件
+
+1. **管理员 API Key**：`POST /api/models` 要求请求携带 **`X-Api-Key`** 且 RBAC 映射为 **管理员（admin）** 角色；否则会 **401/403**。请在 **§8.2** 中把浏览器 **Security Context** 配置为具有管理员权限的 Key。  
+2. **CSRF**：该接口为 **POST**，浏览器需已通过同源 **`GET`**（如健康检查）拿到 **`csrf_token` Cookie**，并由前端自动附带 **`X-CSRF-Token`**（项目 `apiFetch` 已处理）；脚本调用见 **§13** / **§20**。  
+3. **隐私**：云端 Key 会写入网关侧模型元数据用于推理鉴权；仅在合规前提下配置外部服务商密钥。
+
+#### B. 在前端注册（推荐）
+
+1. 打开 **Models（模型库）**（`/models`）。  
+2. 点击标题栏 **添加云端模型 / Cloud model**，打开向导对话框。  
+3. **步骤 1 — 选择提供商**：  
+   - **OpenAI**、**Gemini**（Google）、**DeepSeek**、**Kimi**（Moonshot）、**LM Studio**、**Ollama**、**自定义（Custom）** 等。  
+   - 切换提供商时，**Base URL** 与 **runtime** 会按预设填充（可自行修改）。常见预设包括：`https://api.openai.com/v1`、`https://generativelanguage.googleapis.com/v1beta/openai`、`https://api.deepseek.com`、`https://api.moonshot.cn/v1`、`http://localhost:1234/v1`、`http://localhost:11434` 等（以界面为准）。  
+4. **步骤 2 — 模型身份**：  
+   - **提供商模型 ID**（`provider_model_id`）：**必填**，即上游接口里的模型名（如 `gpt-4o`、`deepseek-chat`）。  
+   - **显示名称**（`name`）：可选，用于列表展示。  
+   - **系统 ID**（`id`）：可选；不填时由代码按 `provider:provider_model_id` 等规则生成，须全局唯一。  
+5. **步骤 3 — 连接**：  
+   - **Base URL**：OpenAI 兼容根地址（无尾斜杠问题以你环境为准，按服务商文档填写）。  
+   - **API Key**：对 **OpenAI / Gemini / DeepSeek / Kimi / Custom** 等一般为 **必填**；**LM Studio、Ollama** 在界面上标为 **可选**（本机无鉴权时常为空）。  
+   - **描述**：可选备注。  
+6. 点击 **注册**。成功后对话框关闭，列表刷新即可看到新条目。  
+
+**界面筛选：** 使用模型库顶部的 **「仅云端」**，可快速只看此类条目（含 **§8.1 C** 所述的本机 Ollama/LM Studio HTTP 通道，它们在后端也归为云端类 **backend**）。
+
+#### C. 注册后微调（侧栏配置）
+
+在列表中展开某云端模型，点击 **Configure**，右侧打开 **Model Config Sidebar**，可调整展示名、`provider_model_id`、**上下文长度**、温度、`top_p`、**Base URL**、**API Key**（写入模型元数据）等，保存调用 **`PATCH /api/models/{model_id}`**（同样需要管理员权限；前端已封装）。
+
+#### D. 与扫描的关系
+
+网关启动或你在模型库点击 **扫描** 时，会尝试从 **Ollama / LM Studio** 等端点拉取模型列表并 **upsert** 注册表，可能与手动添加重复或互补。**自定义厂商 Key** 通常只能用手动「添加云端模型」完成。
+
+#### E. 验证
+
+1. **Models** 列表中模型状态正常；必要时用 **§8.3 C** 侧栏确认 Base URL 与 Key。  
+2. 打开 **Chat**，在模型下拉框中选择该模型并发测试消息。  
+3. 若 **403**，核对 **§8.3 A** 管理员 Key；若连接超时或鉴权失败，核对 Base URL、模型 ID 与 Key，并查看后端日志。
 
 ---
 

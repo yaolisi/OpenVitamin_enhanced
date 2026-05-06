@@ -54,7 +54,7 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 1. 10 分钟上手：`tutorials/tutorial-quickstart.md`
 2. 实操版（30~60 分钟）：`tutorials/tutorial-beginner-playbook.md`
 3. 调试手册：`tutorials/tutorial-debug-playbook.md`
-4. 完整教程索引：`tutorials/tutorial-index.md`
+4. 完整教程索引：`tutorials/tutorial-index.md`（含 **控制台模型与账号** 与主教程第 8 章对照，见 `tutorial-index.md` **§1.1**）
 
 推荐先跑一遍核心页面：
 

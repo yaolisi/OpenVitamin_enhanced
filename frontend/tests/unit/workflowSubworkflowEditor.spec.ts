@@ -5,6 +5,36 @@ import { validateWorkflowNodes } from '@/components/workflow/editor/validation'
 import type { WorkflowNodeData } from '@/components/workflow/editor/types'
 
 describe('workflow sub-workflow editor support', () => {
+  it('infers embedding / http_request / variable from workflow_node_type', () => {
+    expect(
+      inferEditorNodeType({
+        id: 'e1',
+        type: 'tool',
+        name: 'E',
+        config: { workflow_node_type: 'embedding' },
+        position: { x: 0, y: 0 },
+      }),
+    ).toBe('embedding')
+    expect(
+      inferEditorNodeType({
+        id: 'h1',
+        type: 'tool',
+        name: 'H',
+        config: { workflow_node_type: 'http_request' },
+        position: { x: 0, y: 0 },
+      }),
+    ).toBe('http_request')
+    expect(
+      inferEditorNodeType({
+        id: 'v1',
+        type: 'variable',
+        name: 'V',
+        config: {},
+        position: { x: 0, y: 0 },
+      }),
+    ).toBe('variable')
+  })
+
   it('infers sub_workflow editor type from workflow_node_type', () => {
     const t = inferEditorNodeType({
       id: 'sub-1',
@@ -14,6 +44,39 @@ describe('workflow sub-workflow editor support', () => {
       position: { x: 100, y: 120 },
     })
     expect(t).toBe('sub_workflow')
+  })
+
+  it('persists System Prompt shortcut as prompt_template + role system (scheme B)', () => {
+    const nodes = [
+      {
+        id: 'sp-1',
+        type: 'workflow',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'system_prompt',
+          label: 'System',
+          config: { template: 'You are helpful.', role: 'system' },
+        },
+      } as Node<WorkflowNodeData>,
+    ]
+    const dag = toWorkflowDag(nodes, [])
+    expect(dag.nodes[0].type).toBe('prompt_template')
+    expect(dag.nodes[0].config?.workflow_node_type).toBe('prompt_template')
+    expect(dag.nodes[0].config?.role).toBe('system')
+    const restored = fromWorkflowDag(dag)
+    expect(restored.nodes[0].data.type).toBe('system_prompt')
+  })
+
+  it('infers system_prompt from prompt_template node when role is system', () => {
+    expect(
+      inferEditorNodeType({
+        id: 'p1',
+        type: 'prompt_template',
+        name: 'P',
+        config: { workflow_node_type: 'prompt_template', role: 'system', template: 'Hi' },
+        position: { x: 0, y: 0 },
+      }),
+    ).toBe('system_prompt')
   })
 
   it('round-trips sub_workflow node through DAG serialization', () => {

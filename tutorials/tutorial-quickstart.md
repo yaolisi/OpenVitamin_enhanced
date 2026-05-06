@@ -117,6 +117,62 @@ scripts/acceptance/run_security_regression.sh
 
 ---
 
+## 账号与设置（可选 · 与 tutorial.md §8.2 同步摘要）
+
+控制台无独立账号密码登录；身份依赖浏览器保存的 **API Key** 与 **租户**。完整说明见 **[tutorial.md](tutorial.md)** 第 **8.2** 节。
+
+**入口：** 侧边栏 **Settings**，默认 **`/settings/general`**。
+
+| 页面 | 路由 | 做什么 |
+|------|------|--------|
+| **General** | `/settings/general` | 离线模式、**界面语言**（`platform-language`）、**主题**（`platform-theme`）、数据目录与默认推理参数等 → **保存** 写入网关侧配置。 |
+| **Backend** | `/settings/backend` | **Security Context**：**Admin API Key**（→ `X-Api-Key`，存 `ai_platform_api_key`）、**Tenant ID**（→ `X-Tenant-Id`，存 `ai_platform_tenant_id`）→ **Save Security Context**；**Reload** / **Clear Security Context** 管理本机存储。 |
+
+Key 与租户仅存浏览器本机，清除站点数据后需重填。其它 Settings 子页（备份、Runtime、YOLO、ASR、MCP 等）见主教程 **§8.2 C**。
+
+---
+
+## 本地化大模型（可选 · 与 tutorial.md §8.1 同步摘要）
+
+推理一律经 **FastAPI 网关**；前端只配目录与清单。完整步骤与说明见 **[tutorial.md](tutorial.md)** 第 **8.1** 节。
+
+**1）全局数据目录**
+
+- **Settings → General**：设置 **数据目录**（`dataDirectory`，默认常为 `~/.local-ai/models/`）并保存。
+
+**2）磁盘本机模型（`backend=local`）**
+
+- 在该目录下为每个模型建子文件夹，内含 **`model.json`**；可按类型放在 `llm/`、`vlm/` 等子目录下，或根目录平铺（见主教程）。
+- `model.json` 至少含：`model_id`、`name`、`model_type`、`runtime`、权重相对路径 **`path`**。
+- **Models** 页点 **扫描**，用 **「仅本地」** 筛选磁盘模型 → **配置** 进入 `/models/<id>/config`（仅 `local` 显示编辑器）；保存即更新网关 manifest。
+- UI **浏览目录** 失败时，在后端 `.env` 配置 **`FILE_READ_ALLOWED_ROOTS`** 包含模型所在盘路径（勿用 `/`）。
+
+**3）本机 Ollama / LM Studio**
+
+- 先在本机启动服务（如 `11434` / `1234`）。
+- **Models → 添加云端模型**：选 **Ollama** 或 **LM Studio**，**Base URL** 填本机地址并填模型 ID；亦可依赖网关启动后的自动扫描。
+- 界面「本地/云端」筛选里，此类会归在 **云端** 一侧（与磁盘 `local` 不同）。
+
+**4）验证**
+
+- **Models** 可见条目 → **Chat** 中选模型试发一条消息；失败时对照前端提示与后端日志（路径、显存、运行时等）。
+
+---
+
+## 云端大模型（可选 · 与 tutorial.md §8.3 同步摘要）
+
+通过 **HTTP API** 接入外部或本机 OpenAI 兼容服务；网关 **`POST /api/models`** 注册。完整步骤见 **[tutorial.md](tutorial.md)** 第 **8.3** 节。
+
+**前置：** **Settings → Backend → Security Context** 中的 **`X-Api-Key` 须为管理员角色**，否则注册返回 **401/403**。
+
+**操作：** **Models** → **添加云端模型** → 选提供商（OpenAI / Gemini / DeepSeek / Kimi / LM Studio / Ollama / Custom）→ 填 **提供商模型 ID**（必填）、显示名、可选系统 ID → **Base URL**、**API Key**（LM Studio / Ollama 可为空）→ **注册**。列表可用 **「仅云端」** 筛选。
+
+**后续：** 列表点 **Configure** 打开侧栏，可改上下文、温度、Base URL、Key 等（**`PATCH /api/models/{id}`**，仍为管理员操作）。
+
+**验证：** **Chat** 中选该模型试聊；失败时查 Key 权限、URL、模型 ID 与后端日志。
+
+---
+
 ## CI 手动触发（可选）
 
 GitHub Actions：`tenant-security-regression`、`security-regression`。  
@@ -142,5 +198,5 @@ GitHub Actions：`tenant-security-regression`、`security-regression`。
 - [tutorial-beginner-playbook.md](tutorial-beginner-playbook.md) — 新手实操版（上手与使用）  
 - [tutorial.md](tutorial.md) — 全量教程  
 - [tutorial-debug-playbook.md](tutorial-debug-playbook.md) — 调试手册（定位与回滚）  
-- [tutorial-index.md](tutorial-index.md) — 索引与命令汇总  
+- [tutorial-index.md](tutorial-index.md) — 索引与命令汇总；**§1.1** 与主教程第 **8.1～8.3** 节（本地 / 账号 / 云端模型）对照  
 - [tutorial-ops-checklist.md](tutorial-ops-checklist.md) — 发版清单  

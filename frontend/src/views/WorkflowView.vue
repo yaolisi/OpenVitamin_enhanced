@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { 
   Plus, 
   Play, 
   Edit, 
+  History,
   Clock,
   CheckCircle2,
   XCircle,
@@ -19,7 +20,11 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { getWorkflowExecutionStatus, listWorkflows, listWorkflowExecutions, type WorkflowRecord } from '@/services/api'
 import { normalizeExecutionStatus, statusBadgeClass, type WorkflowUiStatus } from '@/components/workflow/status'
+import { buildWorkflowNewRunQuery } from '@/utils/workflowRunNavigation'
+import { useWorkflowHistoryNavigation } from '@/composables/useWorkflowHistoryNavigation'
 
+const route = useRoute()
+const { openWorkflowHistoryReadonly } = useWorkflowHistoryNavigation()
 const router = useRouter()
 const { t } = useI18n()
 
@@ -57,7 +62,11 @@ function editWorkflow(id: string) {
 }
 
 function runWorkflow(id: string) {
-  router.push({ name: 'workflow-run', params: { id } })
+  router.push({
+    name: 'workflow-run',
+    params: { id },
+    query: buildWorkflowNewRunQuery(route.query),
+  })
 }
 
 function viewWorkflow(id: string) {
@@ -256,6 +265,15 @@ onUnmounted(() => {
                   @click.stop="editWorkflow(workflow.id)"
                 >
                   <Edit class="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-amber-600 dark:text-amber-500"
+                  :title="t('workflow_page.history_readonly')"
+                  @click.stop="openWorkflowHistoryReadonly(workflow.id)"
+                >
+                  <History class="w-4 h-4" />
                 </Button>
                 <Button 
                   variant="ghost" 

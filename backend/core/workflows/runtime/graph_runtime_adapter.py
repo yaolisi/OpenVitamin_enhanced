@@ -43,8 +43,13 @@ class GraphRuntimeAdapter:
         "approval": NodeType.TOOL,
         "sub_workflow": NodeType.TOOL,
         "parallel": NodeType.TOOL,
+        "embedding": NodeType.TOOL,
+        "prompt_template": NodeType.TOOL,
+        "variable": NodeType.TOOL,
+        "http_request": NodeType.TOOL,
         "condition": NodeType.CONDITION,
         "script": NodeType.SCRIPT,
+        "python": NodeType.SCRIPT,
         "replan": NodeType.REPLAN,
         "loop": NodeType.LOOP,
     }
@@ -82,6 +87,9 @@ class GraphRuntimeAdapter:
         cfg = node.config or {}
         cfg_type = str(cfg.get("workflow_node_type") or "").strip().lower()
         normalized_cfg_type = cls._normalize_workflow_node_type(cfg_type)
+        # B：System Prompt 节点语义并入 prompt_template（role=system），不再单独 workflow_node_type
+        if normalized_cfg_type == "system_prompt":
+            return "prompt_template"
         if normalized_cfg_type in {
             "input",
             "output",
@@ -92,6 +100,11 @@ class GraphRuntimeAdapter:
             "approval",
             "sub_workflow",
             "parallel",
+            "embedding",
+            "prompt_template",
+            "variable",
+            "http_request",
+            "python",
             "condition",
             "loop",
             "replan",
@@ -159,9 +172,12 @@ class GraphRuntimeAdapter:
         
         # 构建节点配置
         config = dict(node.config)
+        cfg_orig_wnt = str((node.config or {}).get("workflow_node_type") or "").strip().lower()
         config["name"] = node.name or node.id
         config["description"] = node.description
-        config.setdefault("workflow_node_type", normalized_type)
+        config["workflow_node_type"] = normalized_type
+        if cfg_orig_wnt == "system_prompt":
+            config.setdefault("role", "system")
         
         kwargs: Dict[str, Any] = {
             "id": node.id,
@@ -517,6 +533,63 @@ class GraphRuntimeAdapter:
                     )
                 if output_key is not None and not isinstance(output_key, str):
                     errors.append(f"Output node {node.id} config.output_key must be string")
+
+            elif normalized_type == "embedding":
+                config = node.config or {}
+                model_id = str(config.get("model_id") or "").strip()
+                legacy_model = str(config.get("model") or "").strip()
+                if not model_id and not legacy_model:
+                    errors.append(
+                        f"Embedding node {node.id} missing 'model_id' or 'model' config"
+                    )
+
+            elif normalized_type == "http_request":
+                config = node.config or {}
+                url = str(config.get("url") or "").strip()
+                if not url:
+                    errors.append(f"HTTP request node {node.id} missing 'url' config")
+
+            elif normalized_type == "variable":
+                config = node.config or {}
+                if "variables" in config and config.get("variables") is not None:
+                    vars_val = config.get("variables")
+                    if not isinstance(vars_val, dict):
+                        errors.append(
+                            f"Variable node {node.id} config.variables must be a JSON object"
+                        )
+
+            elif normalized_type == "python":
+                config = node.config or {}
+                if not bool(config.get("code_from_upstream")):
+                    code = str(config.get("code") or "").strip()
+                    if not code:
+                        errors.append(f"Python node {node.id} missing non-empty 'code' config")
+
+            elif normalized_type == "script":
+                # 画布 Shell：DAG type=script + workflow_node_type=shell；运行时走 builtin_shell.run
+                config = node.config or {}
+                command = str(config.get("command") or "").strip()
+                if not command:
+                    errors.append(f"Shell node {node.id} missing non-empty 'command' config")
+
+            elif normalized_type == "loop":
+                config = node.config or {}
+                body_cfg = config.get("loop_body")
+                if not isinstance(body_cfg, dict):
+                    errors.append(f"Loop node {node.id} missing 'loop_body' object config")
+                else:
+                    body_type = str(body_cfg.get("type") or "tool").strip().lower()
+                    if body_type == "tool":
+                        tool_name = str(body_cfg.get("tool_name") or body_cfg.get("tool_id") or "").strip()
+                        if not tool_name:
+                            errors.append(
+                                f"Loop node {node.id} loop_body requires non-empty 'tool_name' when type is tool"
+                            )
+                    elif body_type in {"agent", "manager", "worker", "reflector"}:
+                        if not str(body_cfg.get("agent_id") or "").strip():
+                            errors.append(
+                                f"Loop node {node.id} loop_body requires 'agent_id' when type is {body_type}"
+                            )
 
         # Condition 节点分支触发语义校验：
         # 必须具备 true/false 两条出边，且 trigger 必须可识别。

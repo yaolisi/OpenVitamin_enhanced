@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Save, Play, Rocket, Undo2, Redo2, Loader2, ChevronDown } from 'lucide-vue-next'
+import { ArrowLeft, Save, Play, Rocket, History, Undo2, Redo2, Loader2, ChevronDown } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -28,6 +28,8 @@ import {
   recordToolCompositionUsage,
   type ToolCompositionRecommendationItem,
 } from '@/services/api'
+import { buildWorkflowNewRunQuery } from '@/utils/workflowRunNavigation'
+import { useWorkflowHistoryNavigation } from '@/composables/useWorkflowHistoryNavigation'
 import {
   listToolCompositionTemplates,
   recommendTemplates,
@@ -40,6 +42,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const workflowId = route.params.id as string
+const { openWorkflowHistoryReadonly } = useWorkflowHistoryNavigation()
 
 const workflowName = ref('')
 const workflowVersion = ref('')
@@ -520,7 +523,11 @@ async function runWorkflowSaveAndRun() {
     lastSavedSignature.value = snapshotSignature(snapshot)
     recalcDirty()
     localStorage.removeItem(EDIT_DRAFT_KEY)
-    router.push({ name: 'workflow-run', params: { id: workflowId } })
+    router.push({
+      name: 'workflow-run',
+      params: { id: workflowId },
+      query: buildWorkflowNewRunQuery(route.query),
+    })
   } catch (e) {
     console.error('Save failed:', e)
   } finally {
@@ -528,7 +535,11 @@ async function runWorkflowSaveAndRun() {
   }
 }
 function runWorkflowPublishedOnly() {
-  router.push({ name: 'workflow-run', params: { id: workflowId } })
+  router.push({
+    name: 'workflow-run',
+    params: { id: workflowId },
+    query: buildWorkflowNewRunQuery(route.query),
+  })
 }
 
 function onUpdateConfig(nodeId: string, config: Record<string, unknown>) {
@@ -970,6 +981,15 @@ onUnmounted(() => {
         </Button>
         <Button variant="outline" size="sm" class="gap-2" @click="runPreflightCheck">
           {{ t('workflow_page.preflight_check_before_run') }}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          class="gap-2 text-amber-600 dark:text-amber-500 border-amber-500/40"
+          @click="openWorkflowHistoryReadonly(workflowId)"
+        >
+          <History class="w-4 h-4" />
+          {{ t('workflow_page.history_readonly') }}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>

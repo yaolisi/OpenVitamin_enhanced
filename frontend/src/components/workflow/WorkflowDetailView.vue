@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Edit, Play, Trash2, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, Edit, Play, Trash2, Loader2, History } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,9 +22,12 @@ import {
   type WorkflowGovernanceStatus,
 } from '@/services/api'
 import { normalizeExecutionStatus, normalizeNodeStatus, parseAgentSchemaError, statusBadgeClass } from './status'
+import { buildWorkflowNewRunQuery } from '@/utils/workflowRunNavigation'
+import { useWorkflowHistoryNavigation } from '@/composables/useWorkflowHistoryNavigation'
 
 const route = useRoute()
 const router = useRouter()
+const { openWorkflowHistoryReadonly } = useWorkflowHistoryNavigation()
 const { t } = useI18n()
 const workflowId = route.params.id as string
 
@@ -73,10 +76,7 @@ function runWorkflow() {
   router.push({
     name: 'workflow-run',
     params: { id: workflowId },
-    query: {
-      auto_start: '1',
-      t: String(Date.now()),
-    },
+    query: buildWorkflowNewRunQuery(route.query),
   })
 }
 
@@ -382,6 +382,10 @@ onUnmounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <Button variant="outline" class="gap-2" @click="openVersions">{{ t('workflow_page.versions') }}</Button>
+        <Button variant="outline" class="gap-2" @click="openWorkflowHistoryReadonly(workflowId)">
+          <History class="w-4 h-4" />
+          {{ t('workflow_page.history_readonly') }}
+        </Button>
         <Button variant="outline" class="gap-2" @click="editWorkflow">
           <Edit class="w-4 h-4" />
           {{ t('workflow_page.edit') }}

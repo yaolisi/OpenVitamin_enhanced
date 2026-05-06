@@ -18,6 +18,8 @@ import {
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   cancelWorkflowExecution,
   getWorkflow,
@@ -60,6 +62,9 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const workflowId = route.params.id as string
+
+/** URL ?history_only=1：只查看历史/追踪，禁止自动开跑与手动「开始」「重跑」（可由横幅切换到普通运行页）。 */
+const historyOnly = computed(() => String(route.query.history_only || '').trim() === '1')
 
 function formatFailureBundleZipVerifyNote(r: FailureBundleZipVerifyResult, scope: 'offline' | 'zip'): string {
   const scopeLabel =
@@ -126,6 +131,11 @@ const expandedErrorStackNodes = ref<Record<string, boolean>>({})
 const viewMode = ref<'graph' | 'timeline' | 'list' | 'delivery'>('timeline')
 /** 调试用：同步等待执行完成（可能超时，仅建议调试时使用） */
 const waitForCompletion = ref(false)
+/** 创建执行时传入后端的 input_data / global_context（须为 JSON 对象） */
+const runInputDataJson = ref('{}')
+const runGlobalContextJson = ref('{}')
+/** 可选：固定运行的 WorkflowVersion.version_id；留空则后端使用当前已发布版本 */
+const runVersionId = ref('')
 let pollTimer: number | null = null
 let elapsedTimer: number | null = null
 let timelineHighlightTimer: number | null = null
@@ -377,6 +387,12 @@ function formatExecutionRunError(message: string): string {
 
 function goBack() {
   router.push({ name: 'workflow-detail', params: { id: workflowId } })
+}
+
+function openNormalRunPage() {
+  const q = { ...route.query }
+  delete q.history_only
+  void router.push({ name: 'workflow-run', params: { id: workflowId }, query: q })
 }
 
 function prettyJson(value: unknown): string {
@@ -1623,6 +1639,81 @@ function startStatusStream(executionId: string) {
   )
 }
 
+function firstRouteQueryString(key: string): string {
+  const v = route.query[key]
+  if (Array.isArray(v)) return String(v[0] ?? '').trim()
+  return String(v ?? '').trim()
+}
+
+function hydrateRunInputsFromRoute() {
+  const qIn = firstRouteQueryString('input_data')
+  const qGlob = firstRouteQueryString('global_context')
+  if (qIn) {
+    try {
+      const o = JSON.parse(qIn) as unknown
+      if (typeof o === 'object' && o !== null && !Array.isArray(o)) {
+        runInputDataJson.value = JSON.stringify(o, null, 2)
+      }
+    } catch {
+      // ignore invalid URL preset
+    }
+  }
+  if (qGlob) {
+    try {
+      const o = JSON.parse(qGlob) as unknown
+      if (typeof o === 'object' && o !== null && !Array.isArray(o)) {
+        runGlobalContextJson.value = JSON.stringify(o, null, 2)
+      }
+    } catch {
+      // ignore
+    }
+  }
+  const qVer = firstRouteQueryString('version_id')
+  if (qVer) {
+    runVersionId.value = qVer
+  }
+}
+
+function parseJsonObjectField(raw: string): { ok: true; obj: Record<string, unknown> } | { ok: false; error: string } {
+  const text = raw.trim()
+  if (!text) return { ok: true, obj: {} }
+  try {
+    const v = JSON.parse(text) as unknown
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+      return { ok: false, error: 'must be a JSON object' }
+    }
+    return { ok: true, obj: v as Record<string, unknown> }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+function buildRunPayloadForApi():
+  | { ok: true; input_data: Record<string, unknown>; global_context: Record<string, unknown> }
+  | { ok: false; message: string } {
+  const a = parseJsonObjectField(runInputDataJson.value)
+  if (!a.ok) {
+    return {
+      ok: false,
+      message: t('workflow_run.run_inputs_parse_error', {
+        field: t('workflow_run.run_inputs_input'),
+        detail: a.error,
+      }),
+    }
+  }
+  const b = parseJsonObjectField(runGlobalContextJson.value)
+  if (!b.ok) {
+    return {
+      ok: false,
+      message: t('workflow_run.run_inputs_parse_error', {
+        field: t('workflow_run.run_inputs_global'),
+        detail: b.error,
+      }),
+    }
+  }
+  return { ok: true, input_data: a.obj, global_context: b.obj }
+}
+
 async function startExecution() {
   if (runStartInFlight.value || loading.value) return
   runError.value = null
@@ -1631,12 +1722,27 @@ async function startExecution() {
   pollTick = 0
   fastPollUntilMs = Date.now() + 2000
   try {
+    const payload = buildRunPayloadForApi()
+    if (!payload.ok) {
+      runError.value = payload.message
+      return
+    }
     currentRunIdempotencyKey.value =
       currentRunIdempotencyKey.value ||
       (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
-    const exec = await runWorkflow(workflowId, {}, waitForCompletion.value, currentRunIdempotencyKey.value)
+    const versionTrim = runVersionId.value.trim()
+    const exec = await runWorkflow(
+      workflowId,
+      {
+        input_data: payload.input_data as Record<string, any>,
+        global_context: payload.global_context as Record<string, any>,
+        ...(versionTrim ? { version_id: versionTrim } : {}),
+      },
+      waitForCompletion.value,
+      currentRunIdempotencyKey.value
+    )
     // 以 runWorkflow 返回的 execution_id 为唯一真源，避免并发场景绑定到错误的 run。
     const full = await getWorkflowExecution(workflowId, exec.execution_id)
     appendExecutionLogDiff(currentExecution.value, full, 'start')
@@ -1717,9 +1823,10 @@ onMounted(async () => {
   loading.value = true
   const requestedExecutionId = String(route.query.execution_id || route.query.executionId || '').trim()
   const autoStartRequested =
-    String(route.query.auto_start || route.query.autorun || '').trim() === '1'
+    String(route.query.auto_start || route.query.autorun || '').trim() === '1' && !historyOnly.value
   try {
     await loadWorkflowMeta()
+    hydrateRunInputsFromRoute()
     if (requestedExecutionId) {
       await loadExecutionById(requestedExecutionId)
       try {
@@ -1727,7 +1834,8 @@ onMounted(async () => {
       } catch {
         // ignore first status refresh error; polling will recover
       }
-    } else {
+    } else if (!autoStartRequested) {
+      // 显式新跑（auto_start=1）时不预拉最近执行，避免先展示旧 run 再切到新 run。
       await loadLatestExecution()
     }
     if (currentExecution.value?.execution_id && isExecutionActive(currentExecution.value)) {
@@ -1738,17 +1846,11 @@ onMounted(async () => {
     loading.value = false
   }
 
-  // 从详情页点击 Run 进入时，显式触发一次新运行。
+  // 从详情页 / 列表等带 auto_start=1 进入时，显式触发一次新运行（history_only 时永不自动开跑）。
   if (autoStartRequested && !autoStartAttempted.value) {
     autoStartAttempted.value = true
     await startExecution()
     return
-  }
-
-  // 兼容：直接进入 Run 页且当前没有活跃执行时，自动触发一次运行。
-  if (!requestedExecutionId && !autoStartAttempted.value && !isExecutionActive(currentExecution.value)) {
-    autoStartAttempted.value = true
-    await startExecution()
   }
 })
 
@@ -1823,17 +1925,30 @@ onUnmounted(() => {
             <div class="text-slate-400">{{ t('workflow_run.elapsed') }}</div>
             <div class="font-semibold">{{ formatElapsed(executionElapsedMs) }}</div>
           </div>
-          <label v-if="!isRunning" class="inline-flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+          <label v-if="!isRunning && !historyOnly" class="inline-flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
             <input type="checkbox" v-model="waitForCompletion" class="h-3.5 w-3.5 rounded border-slate-600" />
             <span>{{ t('workflow_run.debug_wait') }}</span>
           </label>
-          <Button type="button" v-if="!isRunning" class="gap-2 bg-blue-600 hover:bg-blue-700" :disabled="loading" @click="startExecution">
+          <Button
+            type="button"
+            v-if="!isRunning && !historyOnly"
+            class="gap-2 bg-blue-600 hover:bg-blue-700"
+            :disabled="loading"
+            @click="startExecution"
+          >
             <Play class="w-4 h-4" /> {{ t('workflow_run.start') }}
           </Button>
-          <Button type="button" v-else variant="destructive" class="gap-2" :disabled="loading" @click="stopExecution">
+          <Button type="button" v-if="isRunning" variant="destructive" class="gap-2" :disabled="loading" @click="stopExecution">
             <Square class="w-4 h-4" /> {{ t('workflow_run.stop') }}
           </Button>
-          <Button type="button" variant="outline" class="gap-2 border-slate-700 bg-slate-900/60" :disabled="loading" @click="restartExecution">
+          <Button
+            type="button"
+            v-if="!historyOnly"
+            variant="outline"
+            class="gap-2 border-slate-700 bg-slate-900/60"
+            :disabled="loading"
+            @click="restartExecution"
+          >
             <RotateCcw class="w-4 h-4" /> {{ t('workflow_run.rerun') }}
           </Button>
           <Button
@@ -1850,9 +1965,60 @@ onUnmounted(() => {
           </Button>
         </div>
       </div>
+      <div
+        v-if="historyOnly"
+        class="mt-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 flex flex-wrap items-center justify-between gap-2"
+      >
+        <span>{{ t('workflow_run.history_only_banner') }}</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class="border-amber-500/50 text-amber-50 shrink-0"
+          @click="openNormalRunPage"
+        >
+          {{ t('workflow_run.history_only_go_run') }}
+        </Button>
+      </div>
       <div v-if="waitForCompletion" class="mt-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
         {{ t('workflow_run.wait_hint') }}
       </div>
+      <details class="mt-3 rounded border border-slate-700/80 bg-slate-950/40 px-3 py-2 text-xs">
+        <summary class="cursor-pointer select-none text-slate-300 hover:text-slate-100">
+          {{ t('workflow_run.run_inputs_summary') }}
+        </summary>
+        <p class="mt-2 text-slate-500">{{ t('workflow_run.run_inputs_query_hint') }}</p>
+        <label class="mt-2 flex flex-col gap-1 max-w-xl">
+          <span class="text-slate-400">{{ t('workflow_run.run_inputs_version') }}</span>
+          <Input
+            v-model="runVersionId"
+            class="font-mono text-[11px] h-8 bg-slate-950 border-slate-700"
+            spellcheck="false"
+            :readonly="historyOnly"
+            :placeholder="t('workflow_run.run_inputs_version_placeholder')"
+          />
+        </label>
+        <div class="mt-2 grid gap-2 md:grid-cols-2">
+          <label class="flex flex-col gap-1 min-w-0">
+            <span class="text-slate-400">{{ t('workflow_run.run_inputs_input') }}</span>
+            <Textarea
+              v-model="runInputDataJson"
+              class="min-h-[100px] font-mono text-[11px] bg-slate-950 border-slate-700"
+              spellcheck="false"
+              :readonly="historyOnly"
+            />
+          </label>
+          <label class="flex flex-col gap-1 min-w-0">
+            <span class="text-slate-400">{{ t('workflow_run.run_inputs_global') }}</span>
+            <Textarea
+              v-model="runGlobalContextJson"
+              class="min-h-[100px] font-mono text-[11px] bg-slate-950 border-slate-700"
+              spellcheck="false"
+              :readonly="historyOnly"
+            />
+          </label>
+        </div>
+      </details>
       <div v-if="runError" class="mt-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
         {{ runError }}
       </div>

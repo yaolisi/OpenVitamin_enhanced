@@ -13,6 +13,7 @@ import {
   listWorkflows,
   listWorkflowVersions,
   getWorkflowVersion,
+  listEmbeddingModels,
   type ModelInfo,
   type AgentDefinition,
   type ToolInfo,
@@ -108,6 +109,8 @@ const selectedAgentId = computed(() => {
 
 const llmModels = ref<ModelInfo[]>([])
 const loadingModels = ref(false)
+const embeddingModels = ref<Array<{ id: string; name: string; embedding_dim: number }>>([])
+const loadingEmbeddingModels = ref(false)
 const agents = ref<AgentDefinition[]>([])
 const loadingAgents = ref(false)
 const tools = ref<ToolInfo[]>([])
@@ -260,6 +263,301 @@ function onInputFixedInputInput(raw: string | number) {
   }
 }
 
+const DEFAULT_LOOP_BODY: Record<string, unknown> = { type: 'tool', tool_name: 'time.now' }
+
+const LOOP_BODY_TOOL_KEYS = new Set(['type', 'tool_name', 'tool_id', 'fixed_input'])
+const LOOP_BODY_AGENT_KEYS = new Set([
+  'type',
+  'workflow_node_type',
+  'agent_id',
+  'agent_display_name',
+  'timeout',
+])
+
+function classifyLoopBody(lb: unknown): 'tool' | 'agent' | 'advanced' {
+  if (!lb || typeof lb !== 'object' || lb === null || Array.isArray(lb)) return 'tool'
+  const o = lb as Record<string, unknown>
+  const t = String(o.type ?? '').trim().toLowerCase()
+  if (t === 'tool') {
+    const extra = Object.keys(o).filter((k) => !LOOP_BODY_TOOL_KEYS.has(k))
+    return extra.length === 0 ? 'tool' : 'advanced'
+  }
+  if (['agent', 'manager', 'worker', 'reflector'].includes(t)) {
+    const extra = Object.keys(o).filter((k) => !LOOP_BODY_AGENT_KEYS.has(k))
+    return extra.length === 0 ? 'agent' : 'advanced'
+  }
+  return 'advanced'
+}
+
+/** Loop 节点 loop_body：表单模式 tool / agent / 高级 JSON */
+const loopBodyUiMode = ref<'tool' | 'agent' | 'advanced'>('tool')
+const loopBodyToolSearch = ref('')
+const loopBodyAgentSearch = ref('')
+
+/** Loop 节点 loop_body JSON 文本框 */
+const loopLoopBodyRaw = ref('')
+const loopLoopBodyParseError = ref('')
+/** Loop 工具模式：fixed_input 原始 JSON（与 schema 表单双向同步） */
+const loopBodyFixedInputRaw = ref('')
+const loopBodyFixedInputParseError = ref('')
+function syncLoopLoopBodyRaw() {
+  if (resolvedNode.value?.data?.type !== 'loop') {
+    loopLoopBodyRaw.value = ''
+    loopLoopBodyParseError.value = ''
+    return
+  }
+  const lb = (config() as Record<string, unknown>).loop_body
+  if (typeof lb === 'object' && lb !== null && !Array.isArray(lb)) {
+    try {
+      loopLoopBodyRaw.value = JSON.stringify(lb, null, 2)
+      loopLoopBodyParseError.value = ''
+    } catch {
+      loopLoopBodyRaw.value = ''
+      loopLoopBodyParseError.value = t('workflow_editor.fixed_input_serialize_error')
+    }
+  } else {
+    loopLoopBodyRaw.value = JSON.stringify(DEFAULT_LOOP_BODY, null, 2)
+    loopLoopBodyParseError.value = ''
+  }
+}
+watch(
+  () => [
+    resolvedNode.value?.id,
+    resolvedNode.value?.data?.type,
+    (resolvedNode.value?.data?.config as Record<string, unknown>)?.loop_body,
+  ],
+  () => {
+    syncLoopLoopBodyRaw()
+    syncLoopBodyFixedInputRaw()
+    if (resolvedNode.value?.data?.type === 'loop') {
+      loopBodyUiMode.value = classifyLoopBody(
+        (resolvedNode.value.data?.config as Record<string, unknown>)?.loop_body
+      )
+    }
+  },
+  { immediate: true }
+)
+
+function syncLoopBodyFixedInputRaw() {
+  if (resolvedNode.value?.data?.type !== 'loop') {
+    loopBodyFixedInputRaw.value = ''
+    loopBodyFixedInputParseError.value = ''
+    return
+  }
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  const fi = lb?.fixed_input
+  if (fi !== undefined && fi !== null && typeof fi === 'object' && !Array.isArray(fi)) {
+    try {
+      loopBodyFixedInputRaw.value = JSON.stringify(fi, null, 2)
+      loopBodyFixedInputParseError.value = ''
+    } catch {
+      loopBodyFixedInputRaw.value = ''
+      loopBodyFixedInputParseError.value = t('workflow_editor.fixed_input_serialize_error')
+    }
+  } else {
+    loopBodyFixedInputRaw.value = ''
+    loopBodyFixedInputParseError.value = ''
+  }
+}
+
+function onLoopBodyFixedInputInput(raw: string | number) {
+  const text = String(raw ?? '')
+  loopBodyFixedInputRaw.value = text
+  const s = text.trim()
+  const lb = { ...(config().loop_body as Record<string, unknown>) }
+  if (!lb || typeof lb !== 'object') return
+  if (!s) {
+    const { fixed_input: _omit, ...rest } = lb
+    updateConfig('loop_body', rest)
+    loopBodyFixedInputParseError.value = ''
+    return
+  }
+  try {
+    const parsed = JSON.parse(s)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      loopBodyFixedInputParseError.value = t('workflow_editor.fixed_input_object_only')
+      return
+    }
+    loopBodyFixedInputParseError.value = ''
+    updateConfig('loop_body', { ...lb, fixed_input: parsed })
+  } catch {
+    loopBodyFixedInputParseError.value = t('workflow_editor.json_syntax_error')
+  }
+}
+
+function setLoopBodyUiMode(mode: 'tool' | 'agent' | 'advanced') {
+  loopBodyUiMode.value = mode
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  if (mode === 'tool') {
+    let toolName = 'time.now'
+    let fixedIn: unknown
+    if (lb && typeof lb === 'object' && String(lb.type) === 'tool') {
+      toolName = String(lb.tool_name || lb.tool_id || 'time.now')
+      fixedIn = lb.fixed_input
+    }
+    const next: Record<string, unknown> = { type: 'tool', tool_name: toolName }
+    if (fixedIn !== undefined) next.fixed_input = fixedIn
+    updateConfig('loop_body', next)
+  } else if (mode === 'agent') {
+    let agentId = ''
+    let role = 'agent'
+    if (lb && typeof lb === 'object' && ['agent', 'manager', 'worker', 'reflector'].includes(String(lb.type))) {
+      agentId = String(lb.agent_id || '')
+      role = String(lb.type || 'agent').trim().toLowerCase()
+      if (!['agent', 'manager', 'worker', 'reflector'].includes(role)) role = 'agent'
+    }
+    updateConfig('loop_body', {
+      type: role,
+      workflow_node_type: role,
+      agent_id: agentId,
+    })
+  }
+  syncLoopLoopBodyRaw()
+  syncLoopBodyFixedInputRaw()
+}
+
+function onLoopBodyToolChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value.trim()
+  if (!v) {
+    updateConfig('loop_body', { ...DEFAULT_LOOP_BODY })
+    syncLoopBodyFixedInputRaw()
+    return
+  }
+  updateConfig('loop_body', { type: 'tool', tool_name: v })
+  syncLoopBodyFixedInputRaw()
+}
+
+function onLoopBodyAgentRoleChange(e: Event) {
+  const role = (e.target as HTMLSelectElement).value
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  const id =
+    lb && typeof lb === 'object' ? String((lb as Record<string, unknown>).agent_id || '') : ''
+  updateConfig('loop_body', {
+    type: role,
+    workflow_node_type: role,
+    agent_id: id,
+  })
+}
+
+function onLoopBodyAgentIdChange(e: Event) {
+  const id = (e.target as HTMLSelectElement).value
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  let role = 'agent'
+  if (lb && typeof lb === 'object') {
+    const t = String(lb.type ?? 'agent').trim().toLowerCase()
+    if (['agent', 'manager', 'worker', 'reflector'].includes(t)) role = t
+  }
+  updateConfig('loop_body', {
+    type: role,
+    workflow_node_type: role,
+    agent_id: id,
+  })
+}
+
+const filteredLoopBodyTools = computed(() => {
+  const keyword = loopBodyToolSearch.value.trim().toLowerCase()
+  if (!keyword) return tools.value
+  return tools.value.filter((tool) => {
+    const display = tool.ui?.display_name || tool.name
+    const text = `${display} ${tool.name}`.toLowerCase()
+    return text.includes(keyword)
+  })
+})
+
+const filteredLoopBodyAgents = computed(() => {
+  const keyword = loopBodyAgentSearch.value.trim().toLowerCase()
+  if (!keyword) return agents.value
+  return agents.value.filter((a) => {
+    const text = `${a.name || a.agent_id || ''} ${a.agent_id}`.toLowerCase()
+    return text.includes(keyword)
+  })
+})
+
+const currentLoopBodyToolName = computed(() => {
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  if (!lb || typeof lb !== 'object') return ''
+  return String(lb.tool_name ?? lb.tool_id ?? '')
+})
+
+const currentLoopBodyAgentRole = computed(() => {
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  if (!lb || typeof lb !== 'object') return 'agent'
+  const t = String(lb.type ?? 'agent').trim().toLowerCase()
+  return ['agent', 'manager', 'worker', 'reflector'].includes(t) ? t : 'agent'
+})
+
+const currentLoopBodyAgentId = computed(() => {
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  if (!lb || typeof lb !== 'object') return ''
+  return String(lb.agent_id ?? '')
+})
+
+const loopBodySelectedTool = computed(() => {
+  const name = currentLoopBodyToolName.value
+  if (!name) return null
+  return tools.value.find((x) => x.name === name) ?? null
+})
+
+const loopBodyToolInputSchema = computed<Record<string, any>>(() => {
+  return (loopBodySelectedTool.value?.input_schema as Record<string, any>) || {}
+})
+
+const loopBodyToolSchemaProperties = computed<[string, Record<string, any>][]>(() => {
+  const props = loopBodyToolInputSchema.value?.properties
+  if (!props || typeof props !== 'object') return []
+  return Object.entries(props as Record<string, Record<string, any>>)
+})
+
+function currentLoopBodyFixedInputs(): Record<string, unknown> {
+  const lb = config().loop_body as Record<string, unknown> | undefined
+  const fi = lb?.fixed_input
+  if (fi && typeof fi === 'object' && !Array.isArray(fi)) return fi as Record<string, unknown>
+  return {}
+}
+
+function updateLoopBodyFixedInputField(key: string, value: unknown) {
+  const lb = { ...(config().loop_body as Record<string, unknown>) }
+  if (!lb || typeof lb !== 'object') return
+  const nextFixed = { ...currentLoopBodyFixedInputs(), [key]: value }
+  updateConfig('loop_body', { ...lb, fixed_input: nextFixed })
+}
+
+function readLoopBodyFixedInputField(key: string, schema: Record<string, any>): string | number {
+  const value = currentLoopBodyFixedInputs()[key]
+  if (value == null) {
+    if (schema.default != null) return schema.default
+    return schema.type === 'number' || schema.type === 'integer' ? 0 : ''
+  }
+  if (typeof value === 'number') return value
+  if (typeof value === 'boolean') return String(value)
+  return String(value)
+}
+
+function onLoopLoopBodyInput(raw: string | number) {
+  const text = String(raw ?? '')
+  loopLoopBodyRaw.value = text
+  const s = text.trim()
+  if (!s) {
+    updateConfig('loop_body', { ...DEFAULT_LOOP_BODY })
+    loopLoopBodyParseError.value = ''
+    syncLoopLoopBodyRaw()
+    syncLoopBodyFixedInputRaw()
+    return
+  }
+  try {
+    const parsed = JSON.parse(s)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      loopLoopBodyParseError.value = t('workflow_editor.loop_body_parse_error')
+      return
+    }
+    loopLoopBodyParseError.value = ''
+    updateConfig('loop_body', parsed as Record<string, unknown>)
+    syncLoopBodyFixedInputRaw()
+  } catch {
+    loopLoopBodyParseError.value = t('workflow_editor.json_syntax_error')
+  }
+}
+
 async function loadLlmVlmModels() {
   loadingModels.value = true
   try {
@@ -299,19 +597,35 @@ async function loadTools() {
   }
 }
 
+async function loadEmbeddingModels() {
+  if (loadingEmbeddingModels.value) return
+  loadingEmbeddingModels.value = true
+  try {
+    embeddingModels.value = await listEmbeddingModels()
+  } catch {
+    embeddingModels.value = []
+  } finally {
+    loadingEmbeddingModels.value = false
+  }
+}
+
 watch(
   () => resolvedNode.value?.data?.type,
   (type) => {
     if (type === 'llm') loadLlmVlmModels()
     if (type === 'agent') loadAgents()
-    if (type === 'skill') loadTools()
+    if (type === 'skill' || type === 'loop') loadTools()
+    if (type === 'loop') loadAgents()
+    if (type === 'embedding') loadEmbeddingModels()
   },
   { immediate: true }
 )
 onMounted(() => {
   if (resolvedNode.value?.data?.type === 'llm') loadLlmVlmModels()
   if (resolvedNode.value?.data?.type === 'agent') loadAgents()
-  if (resolvedNode.value?.data?.type === 'skill') loadTools()
+  if (resolvedNode.value?.data?.type === 'skill' || resolvedNode.value?.data?.type === 'loop') loadTools()
+  if (resolvedNode.value?.data?.type === 'loop') loadAgents()
+  if (resolvedNode.value?.data?.type === 'embedding') loadEmbeddingModels()
 })
 
 function updateConfig(key: string, value: unknown) {
@@ -809,6 +1123,26 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
   }
   return errs
 })
+
+const loopBodyToolInputFieldErrors = computed<Record<string, string>>(() => {
+  const errs: Record<string, string> = {}
+  for (const [fieldName, schema] of loopBodyToolSchemaProperties.value) {
+    const value = currentLoopBodyFixedInputs()[fieldName]
+    if (value == null) continue
+    if (typeof value === 'string') {
+      const s = value.trim()
+      if (!s) continue
+      if (isVariableMapping(s) || isExpressionMapping(s)) continue
+      if ((schema.type === 'number' || schema.type === 'integer') && Number.isNaN(Number(s))) {
+        errs[fieldName] = t('workflow_editor.tool_input_number_type_error')
+      }
+      if (schema.type === 'boolean' && !['true', 'false'].includes(s.toLowerCase())) {
+        errs[fieldName] = t('workflow_editor.tool_input_boolean_type_error')
+      }
+    }
+  }
+  return errs
+})
 </script>
 
 <template>
@@ -1113,8 +1447,8 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
         </div>
       </template>
 
-      <!-- Prompt Template：Basic 分组 -->
-      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'prompt_template'">
+      <!-- Prompt Template / System Prompt：Basic 分组 -->
+      <template v-else-if="resolvedNode && (resolvedNode.data?.type === 'prompt_template' || resolvedNode.data?.type === 'system_prompt')">
         <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
           <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
             <span>{{ t('workflow_editor.section_basic') }}</span>
@@ -1130,10 +1464,179 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
             />
             <p class="text-sm font-medium leading-none">{{ t('workflow_editor.prompt_role') }}</p>
             <Input
-              :model-value="(config().role as string) ?? 'user'"
+              :model-value="(config().role as string) ?? (resolvedNode.data?.type === 'system_prompt' ? 'system' : 'user')"
               :placeholder="t('workflow_editor.prompt_role_placeholder')"
               @update:model-value="updateConfig('role', $event)"
             />
+          </div>
+        </details>
+      </template>
+
+      <!-- Embedding -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'embedding'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.embedding_model') }}</p>
+            <select
+              class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              :disabled="loadingEmbeddingModels"
+              :value="(config().model_id as string) ?? ''"
+              @change="(e: Event) => {
+                const v = (e.target as HTMLSelectElement).value
+                const m = embeddingModels.find((x) => x.id === v)
+                mergeConfig({ model_id: v, model_display_name: m?.name || v })
+              }"
+            >
+              <option value="">{{ t('workflow_editor.embedding_model_placeholder') }}</option>
+              <option v-for="m in embeddingModels" :key="m.id" :value="m.id">
+                {{ m.name }} ({{ m.embedding_dim }}d)
+              </option>
+            </select>
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.embedding_models_hint') }}</p>
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.embedding_input_text') }}</p>
+            <Textarea
+              :model-value="(config().input_text as string) ?? ''"
+              :placeholder="t('workflow_editor.embedding_input_text_placeholder')"
+              rows="4"
+              @update:model-value="updateConfig('input_text', $event)"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.embedding_input_text_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- 变量 -> global.workflow_variables -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'variable'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.variable_map_json') }}</p>
+            <Textarea
+              :model-value="JSON.stringify((config().variables as Record<string, unknown>) ?? {}, null, 2)"
+              rows="8"
+              class="text-xs font-mono"
+              :placeholder="t('workflow_editor.variable_map_placeholder')"
+              @update:model-value="(value) => {
+                try {
+                  updateConfig('variables', JSON.parse(String(value || '{}')))
+                } catch {
+                  // keep editable until valid JSON
+                }
+              }"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.variable_map_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- 并行限流 -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'parallel'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.parallel_max_parallel') }}</p>
+            <Input
+              type="number"
+              min="1"
+              class="h-9"
+              :model-value="String((config().max_parallel as number) ?? 5)"
+              @update:model-value="(v) => updateConfig('max_parallel', Number(v) || 5)"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.parallel_limit_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- HTTP（http.request 工具） -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'http_request'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.http_url') }}</p>
+            <Input
+              :model-value="(config().url as string) ?? ''"
+              :placeholder="t('workflow_editor.http_url_placeholder')"
+              @update:model-value="updateConfig('url', $event)"
+            />
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.http_method') }}</p>
+            <select
+              class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              :value="(config().method as string) || 'GET'"
+              @change="(e: Event) => updateConfig('method', (e.target as HTMLSelectElement).value)"
+            >
+              <option v-for="m in ['GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS']" :key="m" :value="m">{{ m }}</option>
+            </select>
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.http_timeout') }}</p>
+            <Input
+              type="number"
+              min="1"
+              class="h-9"
+              :model-value="String((config().timeout as number) ?? 30)"
+              @update:model-value="(v) => updateConfig('timeout', Number(v) || 30)"
+            />
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.http_body_json') }}</p>
+            <Textarea
+              :model-value="typeof config().body === 'object' && config().body !== null ? JSON.stringify(config().body, null, 2) : String((config().body as string) ?? '')"
+              rows="6"
+              class="text-xs font-mono"
+              :placeholder="t('workflow_editor.http_body_placeholder')"
+              @update:model-value="(value) => {
+                const s = String(value ?? '').trim()
+                if (!s) { updateConfig('body', undefined); return }
+                try {
+                  updateConfig('body', JSON.parse(s))
+                } catch {
+                  updateConfig('body', s)
+                }
+              }"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.http_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- Python（python.run 工具） -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'python'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.python_code') }}</p>
+            <label class="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                class="h-3.5 w-3.5 rounded border-muted-foreground"
+                :checked="config().code_from_upstream === true"
+                @change="
+                  updateConfig('code_from_upstream', ($event.target as HTMLInputElement).checked)
+                "
+              />
+              <span>{{ t('workflow_editor.python_code_from_upstream') }}</span>
+            </label>
+            <p class="text-xs text-muted-foreground pl-5">{{ t('workflow_editor.python_code_from_upstream_hint') }}</p>
+            <Textarea
+              :model-value="(config().code as string) ?? ''"
+              :placeholder="t('workflow_editor.python_code_placeholder')"
+              rows="12"
+              class="text-xs font-mono"
+              @update:model-value="updateConfig('code', $event)"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.python_hint') }}</p>
           </div>
         </details>
       </template>
@@ -1341,6 +1844,224 @@ const toolInputFieldErrors = computed<Record<string, string>>(() => {
               :model-value="(config().max_iterations as number) ?? 5"
               @update:model-value="updateConfig('max_iterations', parseInt(String($event), 10) || 5)"
             />
+            <div class="border-t border-border/60 pt-3 mt-2 space-y-2">
+              <p class="text-sm font-medium leading-none">{{ t('workflow_editor.loop_body_section') }}</p>
+              <div class="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  :variant="loopBodyUiMode === 'tool' ? 'default' : 'outline'"
+                  class="h-8 text-xs"
+                  @click="setLoopBodyUiMode('tool')"
+                >
+                  {{ t('workflow_editor.loop_body_mode_tool') }}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  :variant="loopBodyUiMode === 'agent' ? 'default' : 'outline'"
+                  class="h-8 text-xs"
+                  @click="setLoopBodyUiMode('agent')"
+                >
+                  {{ t('workflow_editor.loop_body_mode_agent') }}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  :variant="loopBodyUiMode === 'advanced' ? 'default' : 'outline'"
+                  class="h-8 text-xs"
+                  @click="setLoopBodyUiMode('advanced')"
+                >
+                  {{ t('workflow_editor.loop_body_mode_advanced') }}
+                </Button>
+              </div>
+              <template v-if="loopBodyUiMode === 'tool'">
+                <Input
+                  v-model="loopBodyToolSearch"
+                  class="h-9"
+                  :placeholder="t('workflow_editor.search_tools_placeholder')"
+                />
+                <select
+                  class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  :disabled="loadingTools"
+                  :value="currentLoopBodyToolName"
+                  @change="onLoopBodyToolChange($event)"
+                >
+                  <option value="">{{ t('workflow_editor.skill_tool_placeholder') }}</option>
+                  <option v-for="tool in filteredLoopBodyTools" :key="tool.name" :value="tool.name">
+                    {{ tool.ui?.display_name || tool.name }}
+                  </option>
+                </select>
+                <template v-if="currentLoopBodyToolName">
+                  <div
+                    v-if="loopBodyToolSchemaProperties.length > 0"
+                    class="space-y-3 pt-2 border-t border-border/40"
+                  >
+                    <p class="text-sm font-medium leading-none">{{ t('workflow_editor.loop_body_tool_inputs') }}</p>
+                    <div
+                      v-for="[fieldName, schema] in loopBodyToolSchemaProperties"
+                      :key="fieldName"
+                      class="space-y-2"
+                    >
+                      <p class="text-xs font-medium text-muted-foreground">
+                        {{ fieldName }}
+                        <span
+                          v-if="
+                            Array.isArray(loopBodyToolInputSchema.required) &&
+                            loopBodyToolInputSchema.required.includes(fieldName)
+                          "
+                          class="text-destructive"
+                          >*</span>
+                      </p>
+                      <select
+                        v-if="Array.isArray(schema.enum)"
+                        class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                        :value="
+                          String(currentLoopBodyFixedInputs()[fieldName] ?? schema.default ?? '')
+                        "
+                        @change="
+                          (e: Event) =>
+                            updateLoopBodyFixedInputField(
+                              fieldName,
+                              parseToolInputValue((e.target as HTMLSelectElement).value, schema)
+                            )
+                        "
+                      >
+                        <option v-for="option in schema.enum" :key="String(option)" :value="String(option)">
+                          {{ String(option) }}
+                        </option>
+                      </select>
+                      <Textarea
+                        v-else-if="schema.type === 'object' || schema.type === 'array'"
+                        :model-value="
+                          JSON.stringify(
+                            currentLoopBodyFixedInputs()[fieldName] ??
+                              schema.default ??
+                              (schema.type === 'array' ? [] : {}),
+                            null,
+                            2
+                          )
+                        "
+                        rows="4"
+                        class="text-xs font-mono"
+                        @update:model-value="
+                          (value) => {
+                            try {
+                              updateLoopBodyFixedInputField(
+                                fieldName,
+                                JSON.parse(String(value || (schema.type === 'array' ? '[]' : '{}')))
+                              )
+                            } catch {
+                              /* keep editable until valid JSON */
+                            }
+                          }
+                        "
+                      />
+                      <div v-else-if="schema.type === 'boolean'" class="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          class="h-4 w-4"
+                          :checked="
+                            Boolean(currentLoopBodyFixedInputs()[fieldName] ?? schema.default ?? false)
+                          "
+                          @change="
+                            (e: Event) =>
+                              updateLoopBodyFixedInputField(
+                                fieldName,
+                                (e.target as HTMLInputElement).checked
+                              )
+                          "
+                        />
+                        <span class="text-sm">{{ schema.description || t('workflow_editor.enabled') }}</span>
+                      </div>
+                      <Input
+                        v-else
+                        type="text"
+                        :model-value="readLoopBodyFixedInputField(fieldName, schema)"
+                        :placeholder="schema.description || fieldName"
+                        @update:model-value="
+                          (value) =>
+                            updateLoopBodyFixedInputField(
+                              fieldName,
+                              parseToolInputValue(String(value ?? ''), schema)
+                            )
+                        "
+                      />
+                      <p class="text-[11px] text-muted-foreground">
+                        {{ t('workflow_editor.tool_input_mapping_hint') }}
+                      </p>
+                      <p v-if="loopBodyToolInputFieldErrors[fieldName]" class="text-xs text-destructive">
+                        {{ loopBodyToolInputFieldErrors[fieldName] }}
+                      </p>
+                      <p v-if="schema.description" class="text-xs text-muted-foreground">{{ schema.description }}</p>
+                    </div>
+                  </div>
+                  <div class="space-y-2 pt-2 border-t border-border/40">
+                    <p class="text-sm font-medium leading-none">{{ t('workflow_editor.loop_body_fixed_input_section') }}</p>
+                    <Textarea
+                      :model-value="loopBodyFixedInputRaw"
+                      :placeholder="t('workflow_editor.loop_body_fixed_input_placeholder')"
+                      :rows="loopBodyToolSchemaProperties.length > 0 ? 5 : 8"
+                      class="text-xs font-mono"
+                      spellcheck="false"
+                      @update:model-value="onLoopBodyFixedInputInput"
+                    />
+                    <p v-if="loopBodyFixedInputParseError" class="text-xs text-destructive">
+                      {{ loopBodyFixedInputParseError }}
+                    </p>
+                    <p class="text-xs text-muted-foreground">{{ t('workflow_editor.loop_body_fixed_input_hint') }}</p>
+                  </div>
+                </template>
+              </template>
+              <template v-else-if="loopBodyUiMode === 'agent'">
+                <p class="text-xs font-medium text-muted-foreground">{{ t('workflow_editor.loop_body_agent_role') }}</p>
+                <select
+                  class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  :value="currentLoopBodyAgentRole"
+                  @change="onLoopBodyAgentRoleChange($event)"
+                >
+                  <option value="agent">agent</option>
+                  <option value="manager">manager</option>
+                  <option value="worker">worker</option>
+                  <option value="reflector">reflector</option>
+                </select>
+                <Input
+                  v-model="loopBodyAgentSearch"
+                  class="h-9"
+                  :placeholder="t('workflow_editor.search_agents_placeholder')"
+                />
+                <select
+                  class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  :disabled="loadingAgents"
+                  :value="currentLoopBodyAgentId"
+                  @change="onLoopBodyAgentIdChange($event)"
+                >
+                  <option value="">{{ t('workflow_editor.loop_body_agent_placeholder') }}</option>
+                  <option v-for="ag in filteredLoopBodyAgents" :key="ag.agent_id" :value="ag.agent_id">
+                    {{ agentDisplayName(ag) }}
+                  </option>
+                </select>
+              </template>
+              <template v-else>
+                <p class="text-sm font-medium leading-none">{{ t('workflow_editor.loop_body_json') }}</p>
+                <Textarea
+                  :model-value="loopLoopBodyRaw"
+                  :placeholder="t('workflow_editor.loop_body_json_placeholder')"
+                  rows="10"
+                  class="text-xs font-mono min-h-[160px]"
+                  spellcheck="false"
+                  @update:model-value="onLoopLoopBodyInput"
+                />
+                <p v-if="loopLoopBodyParseError" class="text-xs text-destructive">{{ loopLoopBodyParseError }}</p>
+              </template>
+              <p class="text-xs text-muted-foreground">
+                {{
+                  loopBodyUiMode === 'advanced'
+                    ? t('workflow_editor.loop_body_json_hint')
+                    : t('workflow_editor.loop_body_form_hint')
+                }}
+              </p>
+            </div>
           </div>
         </details>
         <details class="config-section border rounded-lg border-border/60 bg-muted/20 mt-2">

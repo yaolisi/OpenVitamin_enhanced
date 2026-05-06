@@ -21,6 +21,7 @@ from core.workflows.repository import (
     WorkflowVersionRepository,
 )
 from core.workflows.governance.execution_manager import ExecutionManager
+from core.workflows.runtime.graph_runtime_adapter import GraphRuntimeAdapter
 from config.settings import settings
 from log import logger
 
@@ -74,7 +75,14 @@ class WorkflowExecutionService:
                 "Workflow execution blocked by preflight validation: "
                 + "; ".join(preflight_errors)
             )
-        
+
+        compat_errors = GraphRuntimeAdapter.validate_compatibility(version)
+        if compat_errors:
+            raise ValueError(
+                "Workflow execution blocked by runtime compatibility: "
+                + "; ".join(compat_errors)
+            )
+
         wf_row = self.workflow_repository.get_by_id(request.workflow_id)
         if not wf_row:
             raise ValueError(f"Workflow not found: {request.workflow_id}")
