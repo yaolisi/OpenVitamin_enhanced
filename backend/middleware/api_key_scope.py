@@ -9,9 +9,9 @@ import time
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from config.settings import settings
 from core.security.deps import should_enforce_api_key_scopes
@@ -118,10 +118,14 @@ def unrevoke_api_key(api_key: str) -> List[str]:
     return get_revoked_api_keys()
 
 
-class ApiKeyScopeMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app):
-        super().__init__(app)
-        self._header = getattr(settings, "api_rate_limit_api_key_header", "X-Api-Key")
+_API_SCOPE_HEADER = getattr(settings, "api_rate_limit_api_key_header", "X-Api-Key")
+
+
+class ApiKeyScopeMiddleware:
+    """API Key scope 校验中间件（纯 ASGI，避免 BaseHTTPMiddleware 嵌套过深导致流式响应兼容性问题）"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
     def _required_scope(self, method: str, path: str) -> str | None:
         m = method.upper()
@@ -181,47 +185,59 @@ class ApiKeyScopeMiddleware(BaseHTTPMiddleware):
             return True
         return resource_id in normalized
 
-    async def dispatch(self, request: Request, call_next):
-        # 未配置 api_keys_json / api_key_scopes_json 时不拦截（本地默认零配置）
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
         if not should_enforce_api_key_scopes():
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
         required = self._required_scope(request.method, request.url.path)
         if not required:
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
-        api_key = (request.headers.get(self._header) or "").strip()
+        api_key = (request.headers.get(_API_SCOPE_HEADER) or "").strip()
         if not api_key:
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=401,
                 content={
                     "detail": "missing api key",
-                    "header": self._header,
+                    "header": _API_SCOPE_HEADER,
                 },
             )
+            await response(scope, receive, send)
+            return
 
         meta = self._resolve_key_meta(api_key)
         if self._is_revoked(api_key, meta):
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=403,
                 content={
                     "detail": "api key revoked",
                     "path": request.url.path,
                 },
             )
+            await response(scope, receive, send)
+            return
 
         if _is_expired(str(meta.get("expires_at", ""))):
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=401,
                 content={
                     "detail": "api key expired",
                     "path": request.url.path,
                 },
             )
+            await response(scope, receive, send)
+            return
 
         scopes = self._resolve_scopes(api_key, meta)
         if required not in scopes and "admin" not in scopes:
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=403,
                 content={
                     "detail": "insufficient api key scope",
@@ -229,6 +245,8 @@ class ApiKeyScopeMiddleware(BaseHTTPMiddleware):
                     "path": request.url.path,
                 },
             )
+            await response(scope, receive, send)
+            return
 
         resource_name, resource_id = self._extract_resource_target(request.url.path)
         if (
@@ -237,7 +255,7 @@ class ApiKeyScopeMiddleware(BaseHTTPMiddleware):
             and "admin" not in scopes
             and not self._resource_allowed(meta, resource_name, resource_id)
         ):
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=403,
                 content={
                     "detail": "resource access denied",
@@ -246,7 +264,9 @@ class ApiKeyScopeMiddleware(BaseHTTPMiddleware):
                     "path": request.url.path,
                 },
             )
+            await response(scope, receive, send)
+            return
 
         request.state.api_key_scopes = scopes
         request.state.api_key_meta = meta
-        return await call_next(request)
+        await self.app(scope, receive, send)

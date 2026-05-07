@@ -4,21 +4,30 @@ Tenant context middleware.
 """
 from __future__ import annotations
 
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from config.settings import settings
 from middleware.tenant_paths import is_tenant_enforcement_protected_path
 
 
-class TenantContextMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app):
-        super().__init__(app)
-        self._header = getattr(settings, "tenant_header_name", "X-Tenant-Id")
+_HEADER = getattr(settings, "tenant_header_name", "X-Tenant-Id")
 
-    async def dispatch(self, request: Request, call_next):
-        header_tenant_id = (request.headers.get(self._header) or "").strip()
+
+class TenantContextMiddleware:
+    """租户上下文中间件（纯 ASGI，避免 BaseHTTPMiddleware 嵌套过深导致流式响应兼容性问题）"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
+        header_tenant_id = (request.headers.get(_HEADER) or "").strip()
         tenant_id = (header_tenant_id or getattr(settings, "tenant_default_id", "default")).strip()
         if not tenant_id:
             tenant_id = getattr(settings, "tenant_default_id", "default")
@@ -27,13 +36,14 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if getattr(settings, "tenant_enforcement_enabled", False) and is_tenant_enforcement_protected_path(
             request.url.path
         ):
-            # 受保护控制面必须显式携带租户头；允许使用 default 租户值。
             if not header_tenant_id:
-                return JSONResponse(
+                response = JSONResponse(
                     status_code=400,
                     content={
                         "detail": "tenant id required for protected path",
                         "path": request.url.path,
                     },
                 )
-        return await call_next(request)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
