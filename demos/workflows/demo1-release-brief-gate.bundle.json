@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "demo_id": "release-brief-gate",
+  "name": "Demo 1 · 发布简报门禁",
+  "description": "澄清 → 计划 → 人工审批 → 执行（LLM/Agent）→ 验收检查点 → 输出。演示 HITL 与 Checkpoint。",
+  "workflow_name": "Demo · 发布简报门禁",
+  "tags": ["demo", "multi-agent", "approval", "checkpoint"],
+  "agent_placeholders": {
+    "execute_writer": {
+      "node_id": "execute",
+      "display_name": "发布写手",
+      "hint": "可选：将 execute 节点改为 agent 并绑定此 Agent（model_tier: thorough）"
+    }
+  },
+  "dag": {
+    "entry_node": "start",
+    "global_config": {
+      "demo_id": "release-brief-gate"
+    },
+    "nodes": [
+      {
+        "id": "start",
+        "type": "input",
+        "name": "Start",
+        "config": { "workflow_node_type": "start" },
+        "position": { "x": 80, "y": 200 }
+      },
+      {
+        "id": "input_brief",
+        "type": "input",
+        "name": "Brief",
+        "config": {
+          "workflow_node_type": "input",
+          "input_key": "brief",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "brief": { "type": "string" }
+            },
+            "required": ["brief"]
+          }
+        },
+        "position": { "x": 240, "y": 200 }
+      },
+      {
+        "id": "clarify",
+        "type": "llm",
+        "name": "Clarify",
+        "config": {
+          "model_tier": "standard",
+          "temperature": 0.4,
+          "prompt": "澄清需求：列出目标、约束、非目标、待确认问题。输入简报：\n\n{{global.input_data.brief}}"
+        },
+        "position": { "x": 440, "y": 200 }
+      },
+      {
+        "id": "plan",
+        "type": "prompt_template",
+        "name": "Plan Template",
+        "config": {
+          "workflow_node_type": "prompt_template",
+          "role": "user",
+          "template": "根据澄清结果输出分步实施计划（含验收标准），Markdown 即可：\n\n{{prev.text}}"
+        },
+        "position": { "x": 640, "y": 200 }
+      },
+      {
+        "id": "approval_plan",
+        "type": "tool",
+        "name": "Plan Approval",
+        "config": {
+          "workflow_node_type": "approval",
+          "title": "确认实施计划",
+          "description": "请审核计划后再继续执行；驳回将阻断下游。"
+        },
+        "position": { "x": 840, "y": 200 }
+      },
+      {
+        "id": "execute",
+        "type": "llm",
+        "name": "Execute",
+        "config": {
+          "model_tier": "thorough",
+          "temperature": 0.3,
+          "prompt": "按计划撰写发布简报，输出 JSON，必须包含非空字段 text 与 summary。计划上下文：\n\n{{prev.text}}"
+        },
+        "position": { "x": 1040, "y": 200 }
+      },
+      {
+        "id": "checkpoint_verify",
+        "type": "tool",
+        "name": "Verify",
+        "config": {
+          "workflow_node_type": "checkpoint",
+          "description": "执行结果须含 text、summary，且上游无 error",
+          "required_keys": ["text", "summary"],
+          "forbid_error_key": true
+        },
+        "position": { "x": 1240, "y": 200 }
+      },
+      {
+        "id": "output_deliverable",
+        "type": "output",
+        "name": "Deliverable",
+        "config": {
+          "workflow_node_type": "output",
+          "output_key": "deliverable"
+        },
+        "position": { "x": 1440, "y": 200 }
+      }
+    ],
+    "edges": [
+      { "from_node": "start", "to_node": "input_brief" },
+      { "from_node": "input_brief", "to_node": "clarify" },
+      { "from_node": "clarify", "to_node": "plan" },
+      { "from_node": "plan", "to_node": "approval_plan" },
+      { "from_node": "approval_plan", "to_node": "execute" },
+      { "from_node": "execute", "to_node": "checkpoint_verify" },
+      { "from_node": "checkpoint_verify", "to_node": "output_deliverable" }
+    ]
+  },
+  "sample_input": {
+    "brief": "下月 v1.2 发布公告，面向开发者，强调工作流编排与多 Agent 控制能力。"
+  }
+}

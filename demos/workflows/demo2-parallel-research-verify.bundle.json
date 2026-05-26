@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "demo_id": "parallel-research-verify",
+  "name": "Demo 2 · 并行双源调研验证环",
+  "description": "Fork 扇出 Web 调研员 + KB 分析员 → Join 汇聚 → Verify Loop 迭代验收 → 输出。",
+  "workflow_name": "Demo · 并行双源调研",
+  "tags": ["demo", "multi-agent", "fork-join", "verify-loop", "rag"],
+  "agent_placeholders": {
+    "branch_web": {
+      "node_id": "branch_web",
+      "display_name": "Web 调研员",
+      "hint": "建议 Skill：builtin_web.search；绑定后替换本节点 type=agent"
+    },
+    "branch_kb": {
+      "node_id": "branch_kb",
+      "display_name": "KB 分析员",
+      "hint": "建议 Skill：builtin_kb.query；需先在 /knowledge 建库并索引文档"
+    }
+  },
+  "dag": {
+    "entry_node": "start",
+    "global_config": {
+      "demo_id": "parallel-research-verify"
+    },
+    "nodes": [
+      {
+        "id": "start",
+        "type": "input",
+        "name": "Start",
+        "config": { "workflow_node_type": "start" },
+        "position": { "x": 80, "y": 200 }
+      },
+      {
+        "id": "input_topic",
+        "type": "input",
+        "name": "Topic",
+        "config": {
+          "workflow_node_type": "input",
+          "input_key": "topic",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "topic": { "type": "string" }
+            },
+            "required": ["topic"]
+          }
+        },
+        "position": { "x": 240, "y": 200 }
+      },
+      {
+        "id": "fork_parallel",
+        "type": "tool",
+        "name": "Fork",
+        "config": {
+          "workflow_node_type": "fork",
+          "branch_hint": "web + kb parallel"
+        },
+        "position": { "x": 440, "y": 200 }
+      },
+      {
+        "id": "branch_web",
+        "type": "llm",
+        "name": "Web Research (LLM)",
+        "config": {
+          "model_tier": "standard",
+          "temperature": 0.4,
+          "prompt": "作为 Web 调研员，围绕主题给出 5 条要点与来源线索（可合理推断）。主题：{{global.input_data.topic}}\n\n输出 JSON：{ \"text\": \"...\", \"sources\": [\"...\"] }"
+        },
+        "position": { "x": 660, "y": 120 }
+      },
+      {
+        "id": "branch_kb",
+        "type": "llm",
+        "name": "KB Analyst (LLM)",
+        "config": {
+          "model_tier": "standard",
+          "temperature": 0.3,
+          "prompt": "作为知识库分析员，基于主题给出 5 条结构化要点（若无可检索 KB，请基于通用知识并标注「待接 KB」）。主题：{{global.input_data.topic}}\n\n输出 JSON：{ \"text\": \"...\", \"sources\": [\"kb:...\"] }"
+        },
+        "position": { "x": 660, "y": 280 }
+      },
+      {
+        "id": "join_merge",
+        "type": "tool",
+        "name": "Join",
+        "config": {
+          "workflow_node_type": "join",
+          "dependency_mode": "all",
+          "merge_mode": "flat"
+        },
+        "position": { "x": 880, "y": 200 }
+      },
+      {
+        "id": "verify_ralph",
+        "type": "tool",
+        "name": "Ralph Verify",
+        "config": {
+          "workflow_node_type": "verify_loop",
+          "max_iterations": 3,
+          "required_keys": ["text", "sources"],
+          "forbid_error_key": true,
+          "loop_body": {
+            "type": "llm",
+            "model_tier": "thorough",
+            "temperature": 0.3,
+            "prompt": "综合并行分支结果 branches，撰写最终调研摘要。必须输出 JSON，含非空 text 与 sources 数组。\n\n主题：{{global.input_data.topic}}\n\n分支汇总：{{branches}}\n\n若上一轮验收失败，请修正：{{prev}}"
+          }
+        },
+        "position": { "x": 1100, "y": 200 }
+      },
+      {
+        "id": "output_result",
+        "type": "output",
+        "name": "Result",
+        "config": {
+          "workflow_node_type": "output",
+          "output_key": "research_result"
+        },
+        "position": { "x": 1320, "y": 200 }
+      }
+    ],
+    "edges": [
+      { "from_node": "start", "to_node": "input_topic" },
+      { "from_node": "input_topic", "to_node": "fork_parallel" },
+      { "from_node": "fork_parallel", "to_node": "branch_web" },
+      { "from_node": "fork_parallel", "to_node": "branch_kb" },
+      { "from_node": "branch_web", "to_node": "join_merge" },
+      { "from_node": "branch_kb", "to_node": "join_merge" },
+      { "from_node": "join_merge", "to_node": "verify_ralph" },
+      { "from_node": "verify_ralph", "to_node": "output_result" }
+    ]
+  },
+  "sample_input": {
+    "topic": "Perilla 工作流编排与多 Agent 控制相比纯 Chat 的优势"
+  }
+}

@@ -60,6 +60,10 @@ Suggested first UI path:
 
 - `/models` -> `/chat` -> `/images` -> `/agents` -> `/workflow`
 
+Skills & MCP (use in Agent / workflow Skill nodes): **`tutorials/tutorial.md`** §**8.4–8.5** and **`tutorials/tutorial-index.md` §1.1**.
+
+Workflow orchestration (Fork/Join, checkpoint, model tiers, OmX templates): **`tutorials/tutorial-index.md` §1.2** and [`docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md`](docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md) (config: [`WORKFLOW_NODE_CONFIG_GUIDE.md`](docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md); local cases: [`WORKFLOW_TEST_CASES_LOCAL.md`](docs/workflow/WORKFLOW_TEST_CASES_LOCAL.md)).
+
 ---
 
 ## 3) Developer path (build-test-release)
@@ -111,6 +115,7 @@ Useful anchors:
 - Validation commands: [`#5-validation-commands`](docs/GETTING_STARTED_EN.md#5-validation-commands)
 - Troubleshooting FAQ: [`#6-troubleshooting-faq`](docs/GETTING_STARTED_EN.md#6-troubleshooting-faq)
 - Production checklist: [`#7-minimal-production-checklist`](docs/GETTING_STARTED_EN.md#7-minimal-production-checklist)
+- Workflow orchestration: [`docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md`](docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md) (node config: [`WORKFLOW_NODE_CONFIG_GUIDE.md`](docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md))
 
 ### Multi-tenant HTTP (summary)
 

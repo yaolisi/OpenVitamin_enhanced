@@ -42,6 +42,10 @@ import {
   buildOrchestrationGraph,
   type OrchestrationTemplateId,
 } from './editor/orchestrationTemplates'
+import {
+  listDemoWorkflowBundles,
+  buildDemoWorkflowGraph,
+} from './editor/demoWorkflowBundles'
 
 const route = useRoute()
 const router = useRouter()
@@ -226,6 +230,13 @@ const selectedTemplateId = ref<ToolCompositionTemplateId>('travel_planning')
 const templates = listToolCompositionTemplates()
 const orchestrationTemplates = listOrchestrationTemplates()
 const selectedOrchestrationTemplateId = ref<OrchestrationTemplateId>('clarify_plan_verify')
+const demoWorkflowBundles = listDemoWorkflowBundles()
+const selectedDemoWorkflowId = ref(demoWorkflowBundles[0]?.demo_id ?? 'release-brief-gate')
+const selectedDemoPlaybookHint = computed(() =>
+  selectedDemoWorkflowId.value === 'parallel-research-verify'
+    ? 'tutorials/demo-playbook-02-parallel-research.md'
+    : 'tutorials/demo-playbook-01-release-brief.md',
+)
 const backendRecommendedTemplates = ref<ToolCompositionRecommendationItem[]>([])
 const recommendedTemplates = computed(() => {
   if (backendRecommendedTemplates.value.length > 0) {
@@ -633,6 +644,17 @@ function runPreflightCheck() {
 
 function applyOrchestrationTemplate() {
   const graph = buildOrchestrationGraph(selectedOrchestrationTemplateId.value)
+  editorNodes.value = graph.nodes
+  editorEdges.value = graph.edges
+  selectedNodeId.value = null
+  selectedEdge.value = null
+  validationErrors.value = []
+}
+
+function applyDemoWorkflow() {
+  const graph = buildDemoWorkflowGraph(selectedDemoWorkflowId.value)
+  if (!graph) return
+  workflowName.value = graph.workflowName
   editorNodes.value = graph.nodes
   editorEdges.value = graph.edges
   selectedNodeId.value = null
@@ -1101,6 +1123,29 @@ onUnmounted(() => {
       </Button>
       <span class="text-xs text-muted-foreground">
         {{ orchestrationTemplates.find((x) => x.id === selectedOrchestrationTemplateId)?.description }}
+      </span>
+    </div>
+    <div class="px-6 py-3 border-b border-border/40 bg-emerald-500/5 flex items-center gap-3 flex-wrap">
+      <span class="text-sm font-medium">{{ t('workflow_page.demo_projects') }}</span>
+      <select
+        v-model="selectedDemoWorkflowId"
+        :aria-label="t('workflow_page.select_demo_project_aria')"
+        class="h-8 min-w-[280px] rounded-md border border-input bg-background px-2 text-sm"
+      >
+        <option
+          v-for="demo in demoWorkflowBundles"
+          :key="demo.demo_id"
+          :value="demo.demo_id"
+        >
+          {{ demo.name }}
+        </option>
+      </select>
+      <Button variant="outline" size="sm" @click="applyDemoWorkflow">
+        {{ t('workflow_page.import_demo_project') }}
+      </Button>
+      <span class="text-xs text-muted-foreground">
+        {{ demoWorkflowBundles.find((x) => x.demo_id === selectedDemoWorkflowId)?.description }}
+        · {{ t('workflow_page.demo_playbook_hint') }}: <code class="text-[11px]">{{ selectedDemoPlaybookHint }}</code>
       </span>
     </div>
     <div class="px-6 py-3 border-b border-border/40 bg-muted/20">

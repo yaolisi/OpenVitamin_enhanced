@@ -31,6 +31,18 @@
 
 实操最短路径（与上表互补）：[tutorial-beginner-playbook.md §4.2](tutorial-beginner-playbook.md)「新增 MCP Server 并验证可用」——文内已链至 **§8.4～§8.5**。
 
+### 1.2 工作流编排（画布 / 节点）
+
+与 **[tutorial.md](tutorial.md)** 第 **9** 章（API + UI）及 **docs/workflow/** 对应；新手建议先 UI 导入模板再 Run。
+
+| 任务 | 文档 |
+|------|------|
+| 能力概览、OmX 对照、5 套一键模板 | [docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md](../docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md) |
+| 节点 JSON 模板（llm / fork / join / checkpoint / verify_loop 等） | [docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md](../docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md) |
+| 本地联调 Case（含 Fork/Join、Ralph 验证环） | [docs/workflow/WORKFLOW_TEST_CASES_LOCAL.md](../docs/workflow/WORKFLOW_TEST_CASES_LOCAL.md) |
+| 主教程：创建/执行 API + **§9.7 画布编排** | [tutorial.md](tutorial.md) 第 **9** 章 |
+| 新人 `/workflow` 体验步骤 | [tutorial-beginner-playbook.md](tutorial-beginner-playbook.md) 第 **3** 节 |
+
 ---
 
 ## 2. 发版前检查
@@ -246,7 +258,7 @@ PYTHONPATH=backend python3 backend/scripts/test_execution_kernel_regression.py
 - 追踪头净化与限流响应去敏  
 - 生产护栏（自动收敛、高危阻断、`SECURITY_GUARDRAILS_STRICT`）  
 - tenant / security 双回归 + CI  
-- Workflow 编辑器搜索与大图优化；知识库列表分页；统一错误提示映射  
+- Workflow 编辑器搜索与大图优化；**Fork/Join、Checkpoint、Verify Loop、model_tier、OmX 编排模板**（见 **§1.2**）；知识库列表分页；统一错误提示映射  
 
 ---
 

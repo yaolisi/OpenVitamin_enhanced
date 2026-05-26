@@ -26,6 +26,9 @@
 | 刚上手 | [tutorial-quickstart.md](tutorial-quickstart.md) → [tutorial-beginner-playbook.md](tutorial-beginner-playbook.md) |
 | 配置**本地 / 云端**模型、**账号** API Key 与租户 | [tutorial-index.md](tutorial-index.md) **§1.1** → [tutorial.md](tutorial.md) 第 **8.1～8.3** 节；极简摘要见 [tutorial-quickstart.md](tutorial-quickstart.md) |
 | **Skill / MCP**（技能库、Agent、工作流 Skill 节点、`/settings/mcp` 导入） | [tutorial-index.md](tutorial-index.md) **§1.1** → [tutorial.md](tutorial.md) 第 **8.4～8.5** 节；极简见 [tutorial-quickstart.md](tutorial-quickstart.md) **「Skill 与 MCP（可选）」** |
+| **工作流编排**（Fork/Join、验收检查点、model_tier、OmX 模板、并行限流） | [tutorial-index.md](tutorial-index.md) **§1.2** → [docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md](../docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md) |
+| **Join 长期不执行** / 分支未齐 | [docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md](../docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md) §3.13、`§5` 常见报错 |
+| **Checkpoint / 验证环** 失败 | [docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md](../docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md) §3.14～3.15 |
 | 写接口 **403**（含 CSRF） | [tutorial.md](tutorial.md) → **常见错误** → 403 / CSRF 小节 |
 | **404**（资源刚创建却查不到） | [tutorial.md](tutorial.md) → **多租户**；核对 `X-Tenant-Id` |
 | **429** | 限流与 Agent 上传并发；见主教程对应小节 |

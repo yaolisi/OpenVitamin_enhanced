@@ -62,6 +62,8 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 
 技能与 MCP（导入后在 Agent / 工作流 Skill 节点中使用）：见 **`tutorials/tutorial.md`** 第 **8.4～8.5** 节与 **`tutorials/tutorial-index.md §1.1`**。
 
+工作流编排（Fork/Join、验收检查点、模型分档、OmX 模板）：见 **`tutorials/tutorial-index.md §1.2`** 与 **`docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md`**（配置 JSON 见 **`WORKFLOW_NODE_CONFIG_GUIDE.md`**，本地 Case 见 **`WORKFLOW_TEST_CASES_LOCAL.md`**）。
+
 ---
 
 ## 3) 研发路径（开发-测试-发布）
@@ -113,6 +115,7 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 - 中文命令：[`#5-常用验证命令`](docs/GETTING_STARTED_ZH.md#5-常用验证命令)
 - 中文 FAQ：[`#6-故障排查-faq`](docs/GETTING_STARTED_ZH.md#6-故障排查-faq)
 - 中文发布清单：[`#7-生产发布最小清单`](docs/GETTING_STARTED_ZH.md#7-生产发布最小清单)
+- 工作流编排：[`docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md`](docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md)（节点配置：[`WORKFLOW_NODE_CONFIG_GUIDE.md`](docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md)）
 
 ### 多租户 HTTP（摘要）
 

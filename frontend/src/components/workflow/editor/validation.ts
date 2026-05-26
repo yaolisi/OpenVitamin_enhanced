@@ -298,14 +298,17 @@ export function validateWorkflowNodes(
     }
 
     if (type === 'skill') {
-      const tool = String(config.tool_name ?? config.tool_id ?? '').trim()
-      if (!tool) {
-        errors.push({
-          nodeId: node.id,
-          nodeLabel: label,
-          message: 'Skill 节点：请选择或填写工具（tool_name）',
-          messageKey: 'workflow_editor.skill_tool_name_required',
-        })
+      const skillWnt = String(config.workflow_node_type ?? '').trim().toLowerCase()
+      if (skillWnt !== 'approval') {
+        const tool = String(config.tool_name ?? config.tool_id ?? '').trim()
+        if (!tool) {
+          errors.push({
+            nodeId: node.id,
+            nodeLabel: label,
+            message: 'Skill 节点：请选择或填写工具（tool_name）',
+            messageKey: 'workflow_editor.skill_tool_name_required',
+          })
+        }
       }
     }
 
