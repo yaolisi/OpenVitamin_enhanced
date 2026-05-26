@@ -1,6 +1,6 @@
 # Workflow 本地联调完整测试 Case（基于现有模型与智能体）
 
-更新时间：2026-03-17
+更新时间：2026-05-26
 
 ## 1. 目标
 
@@ -491,3 +491,62 @@ DAG：
 - 每轮状态在 timeline 可见；
 - `execution.output_data.loop_case_result` 非空且比初稿更结构化；
 - Stop 按钮在循环执行中可生效。
+
+---
+
+## 12. Case D：Fork/Join 并行小队（推荐）
+
+### 12.1 目标
+
+验证 **扇出 → 双路 LLM 并行 → 汇聚 → 验收** 链路（对齐 OmX `$team`）。
+
+### 12.2 最快路径
+
+1. 打开 Workflow **新建/编辑** 页。  
+2. 在 **「高价值编排模板（OmX）」** 选择 **「并行小队（Fork/Join）」** → **导入编排模板**。  
+3. 为两条 LLM 分支确认 `model_tier` 或 `model_id`（需本机 `GET /api/models` 可用）。  
+4. 保存并发布版本 → Run，输入：
+
+```json
+{
+  "task": "对比 Rust 与 Go 在 CLI 工具场景的优劣"
+}
+```
+
+### 12.3 通过标准
+
+- Fork 下游两条 LLM 在 Timeline 中 **重叠或接近并行** 进入 RUNNING；  
+- Join 在 **两条分支均 SUCCESS** 后才执行；  
+- Checkpoint 通过后到达 Output；`execution.output_data.result` 非空。
+
+---
+
+## 13. Case E：Ralph 验证环
+
+### 13.1 目标
+
+验证 **Verify Loop** 在验收未通过时会重试，通过后一次输出。
+
+### 13.2 最快路径
+
+1. 导入编排模板 **「Ralph 验证环」**。  
+2. 将 `verify_loop.loop_body` 中 LLM 配好 `model_id` 或 `model_tier: thorough`。  
+3. 确认 `required_keys: ["text"]`。  
+4. Run，输入 `{ "task": "用三句话解释什么是工作流编排" }`。
+
+### 13.3 通过标准
+
+- 节点输出含 `verify_loop_passed: true` 与 `iterations`（≤ `max_iterations`）；  
+- 若故意把 `required_keys` 设为不可能满足的字段，应看到迭代耗尽后 `verify_loop_failed`。
+
+---
+
+## 14. 相关单测（开发机）
+
+```bash
+# 后端
+cd backend && python -m pytest tests/test_workflow_checkpoint_and_tier.py -q
+
+# 前端校验
+cd frontend && npm run test:unit -- tests/unit/workflowValidationExtended.spec.ts
+```

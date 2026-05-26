@@ -1,21 +1,18 @@
 # Workflow 节点配置指南（实操版）
 
-更新时间：2026-03-17
+更新时间：2026-05-26
 
 ## 1. 适用范围
 
 本文用于本地联调时快速配置 Workflow 节点，覆盖当前常用节点：
 
-- `start`
-- `input`
-- `output`
-- `llm`
-- `agent`
-- `tool`
-- `condition`
-- `loop`
-- `script`
-- `replan`
+- `start` / `input` / `output` / `variable`
+- `llm`（含 `model_tier`）/ `embedding` / `agent`
+- `prompt_template` / `system_prompt`（持久化为 `prompt_template` + `role=system`）
+- `condition` / `loop` / `fork` / `join` / `parallel`（并行限流）
+- `checkpoint` / `verify_loop`
+- `http_request` / `python` / `shell` / `tool`
+- `script` / `replan` / `approval` / `sub_workflow`
 
 ---
 
@@ -117,9 +114,20 @@
 
 建议：
 
-- 优先设 `model_id`
+- **二选一**：显式 `model_id`，或 `model_tier`（`low` | `standard` | `thorough`），由 `ModelSelector` 解析模型
 - 长文本任务适当提高 `max_tokens`
-- `prompt_template` 中只引用已存在字段
+- `prompt` / `prompt_template` 中只引用已存在字段
+
+`model_tier` 示例：
+
+```json
+{
+  "workflow_node_type": "llm",
+  "model_tier": "thorough",
+  "prompt": "请输出 JSON，含 text 与 summary 字段：${input.task}",
+  "temperature": 0.3
+}
+```
 
 ---
 
@@ -258,11 +266,143 @@
 
 ---
 
-## 4. 推荐最小可跑模板（A/B/C）
+## 3.11 parallel（并行限流）
+
+用途：限制处于某并行域内的 **最大同时 RUNNING 节点数**（不是 Fork 扇出）。
+
+```json
+{
+  "workflow_node_type": "parallel",
+  "max_parallel": 5
+}
+```
+
+---
+
+## 3.12 fork（扇出）
+
+用途：标记并行分支起点；从本节点拉出 **多条 SUCCESS 边** 到不同下游即可并行执行。
+
+```json
+{
+  "workflow_node_type": "fork",
+  "branch_hint": "research | implement"
+}
+```
+
+---
+
+## 3.13 join（汇聚）
+
+用途：等待上游分支完成后合并；调度器为 Join 注入 `branches: { "<nodeId>": <output> }`。
+
+```json
+{
+  "workflow_node_type": "join",
+  "dependency_mode": "all",
+  "merge_mode": "flat"
+}
+```
+
+- `dependency_mode`：`all`（默认，等待全部入边）| `any`
+- `merge_mode`：`flat`（扁平合并 + branches）| `branches_only`
+
+---
+
+## 3.14 checkpoint（验收检查点）
+
+用途：对上游输出做 **确定性** 验收；未通过时节点失败并阻断后续步骤。
+
+```json
+{
+  "workflow_node_type": "checkpoint",
+  "description": "交付物须含 text",
+  "required_keys": ["text", "summary"],
+  "min_nonempty_fields": 0,
+  "forbid_error_key": true
+}
+```
+
+---
+
+## 3.15 verify_loop（Ralph 验证环）
+
+用途：重复执行 `loop_body`，每轮按 checkpoint 规则验收，通过即退出。
+
+```json
+{
+  "workflow_node_type": "verify_loop",
+  "max_iterations": 5,
+  "required_keys": ["text"],
+  "forbid_error_key": true,
+  "loop_body": {
+    "type": "llm",
+    "model_tier": "thorough",
+    "prompt": "完成任务，输出 JSON 含 text：${input.task}"
+  }
+}
+```
+
+`loop_body.type` 支持：`llm` | `tool` | `agent`（及 manager/worker/reflector）。
+
+---
+
+## 3.16 embedding / http_request / python / variable
+
+**Embedding**（须 `model_id`）：
+
+```json
+{
+  "workflow_node_type": "embedding",
+  "model_id": "<embedding-model-id>",
+  "input_text": "${input.text}"
+}
+```
+
+**HTTP**（经 `http.request` 工具，须 `url`）：
+
+```json
+{
+  "workflow_node_type": "http_request",
+  "tool_name": "http.request",
+  "url": "https://api.example.com/data",
+  "method": "GET",
+  "timeout": 30
+}
+```
+
+**Python**（仅 `python.run`，须 `code`）：
+
+```json
+{
+  "workflow_node_type": "python",
+  "code": "print({'text': 'ok'})"
+}
+```
+
+**Variable**（写入全局 `workflow_variables`）：
+
+```json
+{
+  "workflow_node_type": "variable",
+  "variables": {
+    "topic": "${input.query}",
+    "lang": "zh"
+  }
+}
+```
+
+---
+
+## 4. 推荐最小可跑模板（A/B/C/D/E）
 
 1. **A（基础）**：`start -> input -> agent -> output`
 2. **B（分支）**：`start -> input -> condition -> (agent|llm) -> output`
 3. **C（迭代）**：`start -> input -> llm -> loop -> llm -> output`
+4. **D（并行小队）**：`start -> input -> fork -> (llm|llm) -> join -> checkpoint -> output`
+5. **E（Ralph）**：`start -> input -> verify_loop -> output`
+
+也可在编辑器使用 **「高价值编排模板（OmX）」** 一键导入 D/E 等链路。
 
 ---
 
@@ -283,3 +423,15 @@
 4. 状态长时间 `pending/running`
 - 原因：并发排队、长耗时节点、或状态回填延迟。
 - 处理：看 run 页 logs + 后端 `ExecutionManager` 告警；必要时 `reconcile`。
+
+5. `Checkpoint node ... requires 'required_keys' or min_nonempty_fields`
+- 原因：发布/执行前校验未配置验收条件。
+- 处理：为 checkpoint / verify_loop 配置 `required_keys` 或 `min_nonempty_fields > 0`。
+
+6. `LLM node missing model_id or model_tier`
+- 原因：LLM 未选模型也未选分档。
+- 处理：设置 `model_id` 或 `model_tier`（low/standard/thorough）。
+
+7. Join 长期不执行
+- 原因：`dependency_mode=all` 时仍有分支未完成或失败。
+- 处理：检查 Fork 下游各分支是否均 SUCCESS 到达 Join；或改为 `dependency_mode=any`（慎用）。

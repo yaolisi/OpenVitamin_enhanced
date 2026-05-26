@@ -33,6 +33,13 @@
 | **Knowledge** | Knowledge    | 连接知识库，执行 RAG           |
 | **Logic**  | Condition       | 分支条件                      |
 | **Logic**  | Loop            | 循环（如 Self Refine）         |
+| **Logic**  | Parallel limit  | 并行限流（`max_parallel`）     |
+| **Logic**  | Fork / Join     | 扇出 / 汇聚（`dependency_mode`） |
+| **Logic**  | Checkpoint      | 验收门禁（`required_keys`）    |
+| **Logic**  | Verify Loop     | Ralph 式迭代 + 验收            |
+| **Data**   | Variable        | 写入 `workflow_variables`      |
+| **AI**     | Embedding       | 文本向量化（网关 embed）        |
+| **Tool**   | HTTP / Python   | `http.request` / `python.run` |
 | **Output** | Output          | 多种输出形态（Chat/File/Webhook/API） |
 
 说明：**System Prompt** 可合并进 Prompt Template（通过配置区分 role），或单独作为节点类型，由实现阶段决定。
@@ -101,8 +108,9 @@ Write a news summary about:
 
 | 配置项       | 类型   | 说明 |
 |--------------|--------|------|
-| model        | string | **运行时模型别名（推荐）**，例如 `local:qwen3-8b`（经 Inference Gateway 路由） |
-| model_id     | string | **编辑器兼容字段**：模型 ID（本地或云端）。最终需映射到 `model` |
+| model_id     | string | **推荐**：模型 ID（本地或云端），经 Inference Gateway 路由 |
+| model_tier   | string | **可选**：`low` / `standard` / `thorough`，无 `model_id` 时由 ModelSelector 解析 |
+| model        | string | 遗留字段，持久化时归一为 `model_id` |
 | model_display_name | string | 展示用名称 |
 | temperature  | number | 默认 0.7 |
 | top_p        | number | 默认 0.9 |
@@ -378,7 +386,9 @@ Write a news summary about:
 | Loop           | loop               | 已有，需落实迭代与 output_key |
 | Output         | output             | 用 config 区分 Chat/File/Webhook/API（当前编辑器未实现需新增） |
 
-**可合并或延后**：System Prompt（并入 Prompt Template 或单独类型）、Variable（作为画布级或节点级配置）、Parallel（用多边 + 汇聚语义表达）。
+**已实现（2026-05）**：System Prompt（快捷入口 → `prompt_template` + `role=system`）、Variable、Parallel 限流、Fork/Join、Checkpoint、Verify Loop、Embedding、HTTP、Python（`python.run`）、LLM `model_tier`、编辑器 OmX 编排模板。
+
+**仍待扩展**：Schedule Trigger、Knowledge 专用节点、子图级 worktree 隔离（CLI 场景，非 Web 网关范围）。
 
 ---
 
@@ -388,7 +398,15 @@ Write a news summary about:
 
 | Editor 节点类型 | Runtime NodeType | 关键 config（Editor） | 关键 config（Runtime） | 备注 |
 |---|---|---|---|---|
-| llm | llm | `model_id` / `temperature` / `max_tokens` | `model` / `temperature` / `max_tokens` | `model_id` 需映射为 `model`（alias） |
+| llm | llm | `model_id` 或 `model_tier` | 解析后的 `model` | `model_tier` → ModelSelector |
+| fork | tool | `branch_hint` | `workflow_node_type=fork` | 多边扇出 |
+| join | tool | `dependency_mode` / `merge_mode` | `workflow_node_type=join` | 调度器注入 `branches` |
+| checkpoint | tool | `required_keys` / `min_nonempty_fields` | 同左 | 失败返回 `error` |
+| verify_loop | tool | `loop_body` + 验收字段 | `workflow_node_type=verify_loop` | 迭代直至 checkpoint 通过 |
+| embedding | tool | `model_id` / `input_text` | 同左 | InferenceClient.embed |
+| http_request | tool | `url` / `method` / … | `tool_name=http.request` | 禁止裸 requests |
+| python | script | `code` | `tool_name=python.run` | 非 shell |
+| parallel | tool | `max_parallel` | 同左 | 限流非扇出 |
 | agent | 待定 | `agent_id` / `input_mapping` | 待定 | 需要先确定是专用 handler 还是 Tool 封装，当前不应写死 |
 | tool | tool | `tool_name` / `inputs` | `tool_name` / `inputs` | ToolRegistry 负责 schema/permission 校验 |
 | script | script（或 tool） | `command` | `tool_name=builtin_shell.run` + `command` | 仍走权限控制 |
@@ -409,9 +427,9 @@ Write a news summary about:
    - Loop：定义固定次数与条件终止的执行语义及 output_key 传递。
 
 3. **P2（体验与扩展）**  
-   - 多段 Prompt、System vs User 的区分。  
-   - Loop 的并行/汇聚、Schedule 的重试与幂等。  
-   - 多 Output 的优先级与顺序约定。
+   - Schedule 的重试与幂等。  
+   - 多 Output 的优先级与顺序约定。  
+   - Fork/Join 的可视化「扇出/汇聚」辅助连线（当前靠多边 + 节点语义）。
 
 ---
 
@@ -421,7 +439,8 @@ Write a news summary about:
 |------------|------|
 | 2025-02-02 | 初稿：节点类型、配置项、数据流与实施建议 |
 | 2026-03-15 | 补充：Runtime Contract、权限/Workspace、变量语法与 Editor→Runtime 映射 |
+| 2026-05-26 | 已实现：Checkpoint、model_tier、Fork/Join、Verify Loop、Embedding/HTTP/Python、OmX 编排模板 |
 
 ---
 
-*文档状态：供评审，待确认后进入开发阶段。*
+*文档状态：与当前编辑器/运行时实现对齐；细节以 `WORKFLOW_NODE_CONFIG_GUIDE.md` 为准。*
