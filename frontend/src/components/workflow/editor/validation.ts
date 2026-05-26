@@ -104,12 +104,94 @@ export function validateWorkflowNodes(
     if (type === 'llm') {
       const modelId = String(config.model_id ?? '').trim()
       const legacyModel = String(config.model ?? '').trim()
-      if (!modelId && !legacyModel) {
+      const tier = String(config.model_tier ?? '').trim().toLowerCase()
+      const validTier = tier === 'low' || tier === 'standard' || tier === 'thorough'
+      if (!modelId && !legacyModel && !validTier) {
         errors.push({
           nodeId: node.id,
           nodeLabel: label,
-          message: 'LLM 节点：请选择模型（model_id）',
-          messageKey: 'workflow_editor.llm_model_required',
+          message: 'LLM 节点：请选择模型或模型分档（low / standard / thorough）',
+          messageKey: 'workflow_editor.llm_model_or_tier_required',
+        })
+      }
+    }
+
+    if (type === 'join') {
+      const mode = String(config.dependency_mode ?? 'all').trim().toLowerCase()
+      if (mode !== 'all' && mode !== 'any') {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: 'Join 节点：dependency_mode 须为 all 或 any',
+          messageKey: 'workflow_editor.join_dependency_mode_invalid',
+        })
+      }
+    }
+
+    if (type === 'verify_loop') {
+      const keys = config.required_keys
+      const hasKeys = Array.isArray(keys) && keys.length > 0
+      let minFields = 0
+      try {
+        minFields = Number(config.min_nonempty_fields ?? 0)
+      } catch {
+        minFields = 0
+      }
+      const acc = config.acceptance
+      if (typeof acc === 'object' && acc !== null && !Array.isArray(acc)) {
+        const ak = (acc as Record<string, unknown>).required_keys
+        if (Array.isArray(ak) && ak.length) {
+          // ok
+        } else {
+          try {
+            minFields = Math.max(minFields, Number((acc as Record<string, unknown>).min_nonempty_fields ?? 0))
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      if (!hasKeys && !(minFields > 0)) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: '验证环：须配置 required_keys 或 min_nonempty_fields',
+          messageKey: 'workflow_editor.verify_loop_criteria_required',
+        })
+      }
+      const body = config.loop_body
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: '验证环：loop_body 须为对象',
+          messageKey: 'workflow_editor.verify_loop_body_required',
+        })
+      }
+    }
+
+    if (type === 'checkpoint') {
+      const keys = config.required_keys
+      const hasKeys = Array.isArray(keys) && keys.length > 0
+      let minFields = 0
+      try {
+        minFields = Number(config.min_nonempty_fields ?? 0)
+      } catch {
+        minFields = 0
+      }
+      if (!hasKeys && !(minFields > 0)) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: '验收节点：请配置 required_keys 或 min_nonempty_fields > 0',
+          messageKey: 'workflow_editor.checkpoint_criteria_required',
+        })
+      }
+      if (keys !== undefined && keys !== null && keys !== '' && !Array.isArray(keys)) {
+        errors.push({
+          nodeId: node.id,
+          nodeLabel: label,
+          message: '验收节点：required_keys 须为 JSON 数组',
+          messageKey: 'workflow_editor.checkpoint_keys_array_required',
         })
       }
     }

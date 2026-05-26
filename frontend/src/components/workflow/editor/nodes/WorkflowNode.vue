@@ -16,6 +16,9 @@ import {
   MessageSquare,
   Variable,
   Copy,
+  GitFork,
+  GitMerge,
+  ShieldCheck,
   Sparkles,
   LogIn,
   LogOut,
@@ -39,6 +42,10 @@ const iconMap: Record<string, typeof Play> = {
   condition: GitBranch,
   loop: Repeat,
   parallel: Copy,
+  fork: GitFork,
+  join: GitMerge,
+  verify_loop: ShieldCheck,
+  checkpoint: ShieldCheck,
   sub_workflow: Boxes,
   skill: Sparkles,
   http_request: Globe,
@@ -61,6 +68,10 @@ const colorMap: Record<string, string> = {
   condition: 'from-emerald-500 to-emerald-600 border-emerald-500/30 bg-emerald-500/10',
   loop: 'from-teal-500 to-teal-600 border-teal-500/30 bg-teal-500/10',
   parallel: 'from-lime-600 to-lime-700 border-lime-600/30 bg-lime-600/10',
+  fork: 'from-violet-600 to-purple-600 border-violet-600/30 bg-violet-600/10',
+  join: 'from-purple-600 to-fuchsia-600 border-purple-600/30 bg-purple-600/10',
+  verify_loop: 'from-rose-600 to-red-600 border-rose-600/30 bg-rose-600/10',
+  checkpoint: 'from-rose-500 to-rose-600 border-rose-500/30 bg-rose-500/10',
   sub_workflow: 'from-sky-500 to-sky-600 border-sky-500/30 bg-sky-500/10',
   skill: 'from-orange-500 to-orange-600 border-orange-500/30 bg-orange-500/10',
   http_request: 'from-orange-600 to-red-600 border-orange-600/30 bg-orange-600/10',
@@ -78,7 +89,24 @@ const nodeSubtitle = computed(() => {
   const cfg = d?.config ?? {}
   if (d?.type === 'llm') {
     const name = (cfg.model_display_name as string) || (cfg.model_id as string)
-    return name || ''
+    if (name) return name
+    const tier = String(cfg.model_tier ?? '').trim()
+    return tier ? `tier:${tier}` : ''
+  }
+  if (d?.type === 'join') {
+    const mode = String(cfg.dependency_mode ?? 'all')
+    const n = cfg.branch_count
+    return n !== undefined && n !== null ? `join:${n}` : mode
+  }
+  if (d?.type === 'verify_loop') {
+    return `max:${cfg.max_iterations ?? 5}`
+  }
+  if (d?.type === 'checkpoint') {
+    const desc = String(cfg.description ?? '').trim()
+    if (desc) return desc.slice(0, 40)
+    const keys = cfg.required_keys
+    if (Array.isArray(keys) && keys.length) return keys.join(', ')
+    return ''
   }
   if (d?.type === 'agent') {
     const name = (cfg.agent_display_name as string) || (cfg.agent_id as string)

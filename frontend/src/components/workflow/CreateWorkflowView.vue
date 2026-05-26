@@ -30,6 +30,11 @@ import {
   trackTemplateUsage,
   type ToolCompositionTemplateId,
 } from './editor/toolCompositionTemplates'
+import {
+  listOrchestrationTemplates,
+  buildOrchestrationGraph,
+  type OrchestrationTemplateId,
+} from './editor/orchestrationTemplates'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -70,6 +75,8 @@ const validationErrors = ref<ValidationError[]>([])
 const draftRestorePending = ref<EditorSnapshot | null>(null)
 const selectedTemplateId = ref<ToolCompositionTemplateId>('travel_planning')
 const templates = listToolCompositionTemplates()
+const orchestrationTemplates = listOrchestrationTemplates()
+const selectedOrchestrationTemplateId = ref<OrchestrationTemplateId>('clarify_plan_verify')
 const backendRecommendedTemplates = ref<ToolCompositionRecommendationItem[]>([])
 const recommendedTemplates = computed(() => {
   if (backendRecommendedTemplates.value.length > 0) {
@@ -476,6 +483,15 @@ function runPreflightCheck() {
   validationErrors.value = [...baseCheck.errors, ...preflight.errors]
 }
 
+function applyOrchestrationTemplate() {
+  const graph = buildOrchestrationGraph(selectedOrchestrationTemplateId.value)
+  editorNodes.value = graph.nodes
+  editorEdges.value = graph.edges
+  selectedNode.value = null
+  selectedEdge.value = null
+  validationErrors.value = []
+}
+
 function applyTemplate() {
   const graph = buildTemplateGraph(selectedTemplateId.value)
   editorNodes.value = graph.nodes
@@ -750,6 +766,28 @@ onUnmounted(() => {
       <div v-if="recommendationUiMessage" class="text-xs text-muted-foreground">
         {{ recommendationUiMessage }}
       </div>
+    </div>
+    <div class="px-6 py-3 border-b border-border/40 bg-muted/10 flex items-center gap-3 flex-wrap">
+      <span class="text-sm font-medium">{{ t('workflow_page.orchestration_templates') }}</span>
+      <select
+        v-model="selectedOrchestrationTemplateId"
+        :aria-label="t('workflow_page.select_orchestration_template_aria')"
+        class="h-8 min-w-[260px] rounded-md border border-input bg-background px-2 text-sm"
+      >
+        <option
+          v-for="tpl in orchestrationTemplates"
+          :key="tpl.id"
+          :value="tpl.id"
+        >
+          {{ tpl.name }}
+        </option>
+      </select>
+      <Button variant="outline" size="sm" @click="applyOrchestrationTemplate">
+        {{ t('workflow_page.import_orchestration_template') }}
+      </Button>
+      <span class="text-xs text-muted-foreground">
+        {{ orchestrationTemplates.find((x) => x.id === selectedOrchestrationTemplateId)?.description }}
+      </span>
     </div>
 
     <!-- 校验错误面板：点击定位节点 -->

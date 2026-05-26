@@ -1436,6 +1436,10 @@ class Scheduler:
 
         node_map = {n.node_id: n for n in all_nodes}
         upstream_merged: Dict[str, Any] = {}
+        node_def = graph_def.get_node(node_id)
+        node_cfg = (node_def.config if node_def and isinstance(node_def.config, dict) else {}) or {}
+        workflow_node_type = str(node_cfg.get("workflow_node_type") or "").strip().lower()
+        join_branches: Dict[str, Any] = {}
 
         for edge in incoming_edges:
             source = node_map.get(edge.from_node)
@@ -1445,11 +1449,18 @@ class Scheduler:
             source_output = source.output_data if isinstance(source.output_data, dict) else source.output_data
             if not self._edge_trigger_satisfied(edge.on, source_state, source_output):
                 continue
+            if workflow_node_type == "join":
+                if isinstance(source_output, dict):
+                    join_branches[edge.from_node] = self._sanitize_upstream_output(source_output)
+                elif source_output is not None:
+                    join_branches[edge.from_node] = source_output
             if isinstance(source_output, dict):
                 upstream_merged.update(self._sanitize_upstream_output(source_output))
             elif source_output is not None:
                 upstream_merged[edge.from_node] = source_output
 
+        if workflow_node_type == "join" and join_branches:
+            upstream_merged["branches"] = join_branches
         if not upstream_merged:
             return base_input
         return {**upstream_merged, **base_input}
@@ -1529,6 +1540,8 @@ class Scheduler:
         node_cfg = (node_def.config if node_def and isinstance(node_def.config, dict) else {}) or {}
         workflow_node_type = str(node_cfg.get("workflow_node_type") or "").strip().lower()
         dependency_mode = str(node_cfg.get("dependency_mode") or "").strip().lower()
+        if not dependency_mode and workflow_node_type == "join":
+            dependency_mode = "all"
         if not dependency_mode and workflow_node_type == "output":
             # Output 默认作为汇聚节点：多入边时默认 any，单入边保持 all 语义等价。
             # 如需严格等待所有上游，前端可显式配置 dependency_mode=all。
@@ -1589,6 +1602,8 @@ class Scheduler:
         node_cfg = (node_def.config if node_def and isinstance(node_def.config, dict) else {}) or {}
         workflow_node_type = str(node_cfg.get("workflow_node_type") or "").strip().lower()
         dependency_mode = str(node_cfg.get("dependency_mode") or "").strip().lower()
+        if not dependency_mode and workflow_node_type == "join":
+            dependency_mode = "all"
         if not dependency_mode and workflow_node_type == "output":
             dependency_mode = "any" if len(incoming_edges) > 1 else "all"
         if dependency_mode not in {"all", "any"}:

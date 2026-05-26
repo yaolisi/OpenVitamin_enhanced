@@ -37,6 +37,11 @@ import {
   trackTemplateUsage,
   type ToolCompositionTemplateId,
 } from './editor/toolCompositionTemplates'
+import {
+  listOrchestrationTemplates,
+  buildOrchestrationGraph,
+  type OrchestrationTemplateId,
+} from './editor/orchestrationTemplates'
 
 const route = useRoute()
 const router = useRouter()
@@ -219,6 +224,8 @@ const governanceHealthyThreshold = ref(0.1)
 const governanceWarningThreshold = ref(0.3)
 const selectedTemplateId = ref<ToolCompositionTemplateId>('travel_planning')
 const templates = listToolCompositionTemplates()
+const orchestrationTemplates = listOrchestrationTemplates()
+const selectedOrchestrationTemplateId = ref<OrchestrationTemplateId>('clarify_plan_verify')
 const backendRecommendedTemplates = ref<ToolCompositionRecommendationItem[]>([])
 const recommendedTemplates = computed(() => {
   if (backendRecommendedTemplates.value.length > 0) {
@@ -622,6 +629,15 @@ function runPreflightCheck() {
   const preflight = validateWorkflowPreflight(nodes, edges)
   const errors = [...baseCheck.errors, ...preflight.errors]
   validationErrors.value = errors
+}
+
+function applyOrchestrationTemplate() {
+  const graph = buildOrchestrationGraph(selectedOrchestrationTemplateId.value)
+  editorNodes.value = graph.nodes
+  editorEdges.value = graph.edges
+  selectedNodeId.value = null
+  selectedEdge.value = null
+  validationErrors.value = []
 }
 
 function applyTemplate() {
@@ -1069,6 +1085,23 @@ onUnmounted(() => {
           {{ node.label }} · {{ node.toolName }}
         </button>
       </div>
+    </div>
+    <div class="px-6 py-3 border-b border-border/40 bg-muted/10 flex items-center gap-3 flex-wrap">
+      <span class="text-sm font-medium">{{ t('workflow_page.orchestration_templates') }}</span>
+      <select
+        v-model="selectedOrchestrationTemplateId"
+        class="h-8 min-w-[260px] rounded-md border border-input bg-background px-2 text-sm"
+      >
+        <option v-for="tpl in orchestrationTemplates" :key="tpl.id" :value="tpl.id">
+          {{ tpl.name }}
+        </option>
+      </select>
+      <Button variant="outline" size="sm" @click="applyOrchestrationTemplate">
+        {{ t('workflow_page.import_orchestration_template') }}
+      </Button>
+      <span class="text-xs text-muted-foreground">
+        {{ orchestrationTemplates.find((x) => x.id === selectedOrchestrationTemplateId)?.description }}
+      </span>
     </div>
     <div class="px-6 py-3 border-b border-border/40 bg-muted/20">
       <div class="text-sm font-medium mb-2">{{ t('workflow_page.reflector_default_policy_global') }}</div>

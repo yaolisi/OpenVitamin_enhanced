@@ -32,6 +32,7 @@ from core.workflows.recommendation import WorkflowToolCompositionRecommender
 from core.workflows.runtime.subworkflow import build_child_input, apply_output_mapping
 from core.system.settings_store import get_system_settings_store
 from core.inference.client.inference_client import InferenceClient
+from core.models.selector import ModelSelector
 from core.tools.registry import ToolRegistry
 from core.tools.context import ToolContext
 from core.agent_runtime.definition import get_agent_registry
@@ -98,6 +99,12 @@ class WorkflowRuntime:
     """
     AGENT_NODE_MAX_CALL_DEPTH = 2
     AGENT_NODE_DEFAULT_MAX_CALLS = 20
+    # LLM 分档路由：与 OmX agent-tiers 对齐，映射到 ModelSelector.model_require
+    LLM_MODEL_TIER_REQUIRE: Dict[str, str] = {
+        "low": "fast",
+        "standard": "chat",
+        "thorough": "reasoning",
+    }
 
     @staticmethod
     def _repo_tid(ex: WorkflowExecution) -> str:
@@ -603,6 +610,103 @@ class WorkflowRuntime:
         merged = {**(input_data or {}), **tool_input}
         return await self._execute_tool_node(tool_cfg, merged, context)
 
+    @classmethod
+    def _resolve_llm_model(cls, cfg: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+        """
+        解析 LLM 模型：显式 model_id/model 优先；否则按 model_tier 走能力路由。
+        返回 (model_id, error_message)。
+        """
+        model_id = str(cfg.get("model_id") or "").strip()
+        legacy_model = str(cfg.get("model") or "").strip()
+        if model_id:
+            return model_id, None
+        if legacy_model:
+            return legacy_model, None
+        tier = str(cfg.get("model_tier") or "").strip().lower()
+        if not tier:
+            return None, "LLM node missing model_id or model_tier"
+        require = cls.LLM_MODEL_TIER_REQUIRE.get(tier)
+        if not require:
+            return None, f"LLM node has unsupported model_tier '{tier}'"
+        try:
+            descriptor = ModelSelector().resolve(model_require=require)
+            return descriptor.id, None
+        except Exception as exc:
+            logger.warning(
+                "[WorkflowRuntime] model_tier=%s require=%s resolution failed: %s",
+                tier,
+                require,
+                exc,
+            )
+            return None, f"LLM model_tier '{tier}' could not resolve: {exc}"
+
+    @staticmethod
+    def _handle_checkpoint_node(
+        cfg: Dict[str, Any], input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """验收检查点：对上游输出做确定性 pass/fail 判定（对齐 ultrawork acceptance criteria）。"""
+        payload = input_data if isinstance(input_data, dict) else {}
+        failures: List[str] = []
+        description = str(cfg.get("description") or "").strip()
+
+        required_keys = cfg.get("required_keys")
+        if isinstance(required_keys, list):
+            for raw_key in required_keys:
+                key = str(raw_key).strip()
+                if not key:
+                    continue
+                if key not in payload:
+                    failures.append(f"missing required key: {key}")
+                    continue
+                val = payload.get(key)
+                if val is None:
+                    failures.append(f"null value for key: {key}")
+                elif isinstance(val, str) and not val.strip():
+                    failures.append(f"empty string for key: {key}")
+                elif isinstance(val, (list, dict)) and len(val) == 0:
+                    failures.append(f"empty collection for key: {key}")
+
+        try:
+            min_fields = int(cfg.get("min_nonempty_fields") or 0)
+        except (TypeError, ValueError):
+            min_fields = 0
+        if min_fields > 0:
+            non_empty = 0
+            for val in payload.values():
+                if val is None:
+                    continue
+                if isinstance(val, str):
+                    if val.strip():
+                        non_empty += 1
+                elif isinstance(val, (list, dict)):
+                    if len(val) > 0:
+                        non_empty += 1
+                else:
+                    non_empty += 1
+            if non_empty < min_fields:
+                failures.append(
+                    f"expected at least {min_fields} non-empty fields, got {non_empty}"
+                )
+
+        forbid_error_key = cfg.get("forbid_error_key", True)
+        if forbid_error_key and "error" in payload and payload.get("error"):
+            failures.append("upstream payload contains error")
+
+        if failures:
+            return {
+                "type": "checkpoint_failed",
+                "passed": False,
+                "description": description,
+                "failures": failures,
+                "error": "; ".join(failures),
+            }
+        return {
+            "type": "checkpoint_passed",
+            "passed": True,
+            "description": description,
+            "failures": [],
+        }
+
     async def _tool_handler(
         self, node_def: NodeDefinition, input_data: Dict[str, Any], context: GraphContext
     ) -> Dict[str, Any]:
@@ -655,6 +759,19 @@ class WorkflowRuntime:
             return await self._handle_http_request_node(
                 cfg=cfg, input_data=input_data, context=context
             )
+        if workflow_node_type == "checkpoint":
+            return self._handle_checkpoint_node(cfg, input_data)
+        if workflow_node_type == "fork":
+            return self._handle_fork_node(node_def, cfg, input_data)
+        if workflow_node_type == "join":
+            return self._handle_join_node(cfg, input_data)
+        if workflow_node_type == "verify_loop":
+            return await self._execute_verify_loop_node(
+                node_def=node_def,
+                input_data=input_data,
+                context=context,
+                cfg=cfg,
+            )
         if workflow_node_type == "approval":
             return self._handle_approval_node(node_def, context)
         result = await self._execute_tool_node(cfg, input_data, context)
@@ -705,12 +822,12 @@ class WorkflowRuntime:
     ) -> Dict[str, Any]:
         self._ensure_execution_not_cancelled(context)
         cfg = node_def.config or {}
-        model_id = cfg.get("model_id")
+        model_id_cfg = cfg.get("model_id")
         legacy_model = cfg.get("model")
-        model = model_id or legacy_model
-        if not model:
-            return {"error": "LLM node missing model"}
-        if model_id and legacy_model and model_id != legacy_model:
+        model, model_err = self._resolve_llm_model(cfg)
+        if model_err or not model:
+            return {"error": model_err or "LLM node missing model"}
+        if model_id_cfg and legacy_model and model_id_cfg != legacy_model:
             logger.warning(
                 "[WorkflowRuntime] LLM node %s has both model_id=%s and legacy model=%s, using model_id",
                 node_def.id,
@@ -991,6 +1108,116 @@ class WorkflowRuntime:
             },
         }
 
+    @staticmethod
+    def _handle_fork_node(
+        node_def: NodeDefinition,
+        cfg: Dict[str, Any],
+        input_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """扇出起点：透传输入，标记并行分支可调度（下游多 SUCCESS 边自然并行）。"""
+        payload = dict(input_data or {})
+        return {
+            **payload,
+            "type": "fork_result",
+            "fork_ready": True,
+            "__workflow_fork_meta": {
+                "node_id": str(node_def.id),
+                "branch_hint": cfg.get("branch_hint"),
+            },
+        }
+
+    @staticmethod
+    def _handle_join_node(cfg: Dict[str, Any], input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """汇聚节点：合并各上游分支（Scheduler 注入 branches）；默认 dependency_mode=all。"""
+        payload = dict(input_data or {})
+        branches = payload.get("branches")
+        if not isinstance(branches, dict):
+            branches = {}
+        flat = {k: v for k, v in payload.items() if k != "branches"}
+        merge_mode = str(cfg.get("merge_mode") or "flat").strip().lower()
+        out: Dict[str, Any] = {
+            "type": "join_result",
+            "branches": branches,
+            "branch_count": len(branches),
+            "join_ready": True,
+            "__workflow_join_meta": {
+                "merge_mode": merge_mode,
+                "branch_ids": list(branches.keys()),
+            },
+        }
+        if merge_mode != "branches_only":
+            out.update(flat)
+        return out
+
+    async def _execute_verify_loop_node(
+        self,
+        *,
+        node_def: NodeDefinition,
+        input_data: Dict[str, Any],
+        context: GraphContext,
+        cfg: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Ralph 式验证环：重复执行 loop_body，每轮用 checkpoint 规则验收，通过即退出。
+        """
+        max_iterations = max(1, min(50, self._coerce_int(cfg.get("max_iterations"), 5)))
+        body_cfg = cfg.get("loop_body")
+        if not isinstance(body_cfg, dict):
+            return {"error": "Verify loop node missing loop_body object config"}
+
+        acceptance_cfg: Dict[str, Any] = {
+            "workflow_node_type": "checkpoint",
+            "required_keys": cfg.get("required_keys") or [],
+            "min_nonempty_fields": cfg.get("min_nonempty_fields") or 0,
+            "forbid_error_key": cfg.get("forbid_error_key", True),
+            "description": cfg.get("acceptance_description") or cfg.get("description"),
+        }
+        if isinstance(cfg.get("acceptance"), dict):
+            acceptance_cfg.update(cfg["acceptance"])
+
+        last_output: Dict[str, Any] = {}
+        last_failures: List[str] = []
+
+        for iteration in range(1, max_iterations + 1):
+            self._ensure_execution_not_cancelled(context)
+            merged_body_input = {**(input_data or {}), **last_output}
+            try:
+                body_output = await self._execute_loop_body(
+                    node_def=node_def,
+                    body_cfg=body_cfg,
+                    input_data=merged_body_input,
+                    context=context,
+                )
+            except Exception as exc:
+                last_failures = [f"iteration {iteration}: {exc}"]
+                last_output = {"error": str(exc)}
+                continue
+
+            if not isinstance(body_output, dict):
+                body_output = {"output": body_output}
+            last_output = body_output
+
+            cp = self._handle_checkpoint_node(acceptance_cfg, body_output)
+            if cp.get("passed"):
+                return {
+                    **body_output,
+                    "type": "verify_loop_result",
+                    "verify_loop_passed": True,
+                    "iterations": iteration,
+                    "acceptance": cp,
+                }
+            last_failures = list(cp.get("failures") or [cp.get("error") or "checkpoint failed"])
+
+        return {
+            "type": "verify_loop_failed",
+            "verify_loop_passed": False,
+            "iterations": max_iterations,
+            "failures": last_failures,
+            "last_output": last_output,
+            "error": "; ".join(str(f) for f in last_failures if f)
+            or f"verify loop exhausted after {max_iterations} iterations",
+        }
+
     def _execute_parallel_control_node(
         self,
         *,
@@ -1033,6 +1260,12 @@ class WorkflowRuntime:
                 context=context,
                 cfg={**body_cfg, "workflow_node_type": body_type},
             )
+        if body_type == "llm":
+            proxy_def = type(node_def)(**{**node_def.model_dump(), "type": "llm", "config": body_cfg})
+            result = await self._llm_handler(proxy_def, input_data, context)
+            if isinstance(result, dict) and result.get("error"):
+                raise RuntimeError(str(result.get("error")))
+            return result if isinstance(result, dict) else {"output": result}
         raise ValueError(f"LOOP_NODE_CONFIG_ERROR: unsupported loop_body.type '{body_type}'")
 
     @staticmethod

@@ -1206,6 +1206,29 @@ const loopBodyToolInputFieldErrors = computed<Record<string, string>>(() => {
           </summary>
           <div class="px-3 pb-3 pt-0 space-y-2">
         <div class="space-y-2">
+          <p class="text-sm font-medium leading-none">{{ t('workflow_editor.llm_model_tier') }}</p>
+          <select
+            class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            :value="(config().model_tier as string) || ''"
+            @change="(e: Event) => {
+              const v = (e.target as HTMLSelectElement).value
+              const patch: Record<string, unknown> = { model_tier: v || undefined }
+              if (v) {
+                patch.model_id = undefined
+                patch.model_display_name = undefined
+                patch.model = undefined
+              }
+              emit('update:config', currentNodeId, { ...config(), ...patch })
+            }"
+          >
+            <option value="">{{ t('workflow_editor.llm_model_tier_none') }}</option>
+            <option value="low">{{ t('workflow_editor.llm_model_tier_low') }}</option>
+            <option value="standard">{{ t('workflow_editor.llm_model_tier_standard') }}</option>
+            <option value="thorough">{{ t('workflow_editor.llm_model_tier_thorough') }}</option>
+          </select>
+          <p class="text-xs text-muted-foreground">{{ t('workflow_editor.llm_model_tier_hint') }}</p>
+        </div>
+        <div class="space-y-2">
           <p class="text-sm font-medium leading-none">{{ t('workflow_editor.llm_model_name') }}</p>
           <Input
             v-model="modelSearch"
@@ -1222,8 +1245,10 @@ const loopBodyToolInputFieldErrors = computed<Record<string, string>>(() => {
               const patch: Record<string, unknown> = {
                 model_id: v || undefined,
                 model_display_name: m ? modelDisplayName(m) : '',
-                // 归一化：切换模型时清理 legacy 字段
                 model: undefined,
+              }
+              if (v) {
+                patch.model_tier = undefined
               }
               emit('update:config', currentNodeId, { ...config(), ...patch })
             }"
@@ -1553,6 +1578,149 @@ const loopBodyToolInputFieldErrors = computed<Record<string, string>>(() => {
               @update:model-value="(v) => updateConfig('max_parallel', Number(v) || 5)"
             />
             <p class="text-xs text-muted-foreground">{{ t('workflow_editor.parallel_limit_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- Fork 扇出 -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'fork'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.fork_branch_hint') }}</p>
+            <Input
+              :model-value="(config().branch_hint as string) ?? ''"
+              :placeholder="t('workflow_editor.fork_branch_hint_placeholder')"
+              @update:model-value="updateConfig('branch_hint', $event)"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.fork_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- Join 汇聚 -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'join'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.join_dependency_mode') }}</p>
+            <select
+              class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              :value="(config().dependency_mode as string) || 'all'"
+              @change="(e: Event) => updateConfig('dependency_mode', (e.target as HTMLSelectElement).value)"
+            >
+              <option value="all">{{ t('workflow_editor.join_mode_all') }}</option>
+              <option value="any">{{ t('workflow_editor.join_mode_any') }}</option>
+            </select>
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.join_merge_mode') }}</p>
+            <select
+              class="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              :value="(config().merge_mode as string) || 'flat'"
+              @change="(e: Event) => updateConfig('merge_mode', (e.target as HTMLSelectElement).value)"
+            >
+              <option value="flat">{{ t('workflow_editor.join_merge_flat') }}</option>
+              <option value="branches_only">{{ t('workflow_editor.join_merge_branches_only') }}</option>
+            </select>
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.join_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- Ralph 验证环 -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'verify_loop'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.verify_loop_max_iterations') }}</p>
+            <Input
+              type="number"
+              min="1"
+              max="50"
+              class="h-9"
+              :model-value="String((config().max_iterations as number) ?? 5)"
+              @update:model-value="(v) => updateConfig('max_iterations', Number(v) || 5)"
+            />
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.verify_loop_required_keys') }}</p>
+            <Textarea
+              :model-value="JSON.stringify((config().required_keys as string[]) ?? ['text'], null, 2)"
+              rows="3"
+              class="text-xs font-mono"
+              @update:model-value="(value) => {
+                try {
+                  const parsed = JSON.parse(String(value || '[]'))
+                  if (Array.isArray(parsed)) updateConfig('required_keys', parsed)
+                } catch { /* editing */ }
+              }"
+            />
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.verify_loop_loop_body') }}</p>
+            <Textarea
+              :model-value="JSON.stringify((config().loop_body as Record<string, unknown>) ?? {}, null, 2)"
+              rows="10"
+              class="text-xs font-mono"
+              @update:model-value="(value) => {
+                try {
+                  updateConfig('loop_body', JSON.parse(String(value || '{}')))
+                } catch { /* editing */ }
+              }"
+            />
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.verify_loop_hint') }}</p>
+          </div>
+        </details>
+      </template>
+
+      <!-- 验收检查点 -->
+      <template v-else-if="resolvedNode && resolvedNode.data?.type === 'checkpoint'">
+        <details class="config-section border rounded-lg border-border/60 bg-muted/20" open>
+          <summary class="config-section-summary px-3 py-2 text-sm font-medium cursor-pointer list-none flex items-center justify-between hover:bg-muted/40 rounded-t-lg [&::-webkit-details-marker]:hidden">
+            <span>{{ t('workflow_editor.section_basic') }}</span>
+            <span class="config-section-chevron text-muted-foreground transition-transform duration-200 select-none">▼</span>
+          </summary>
+          <div class="px-3 pb-3 pt-0 space-y-2">
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.checkpoint_description') }}</p>
+            <Input
+              :model-value="(config().description as string) ?? ''"
+              :placeholder="t('workflow_editor.checkpoint_description_placeholder')"
+              @update:model-value="updateConfig('description', $event)"
+            />
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.checkpoint_required_keys') }}</p>
+            <Textarea
+              :model-value="JSON.stringify((config().required_keys as string[]) ?? [], null, 2)"
+              rows="4"
+              class="text-xs font-mono"
+              :placeholder="t('workflow_editor.checkpoint_required_keys_placeholder')"
+              @update:model-value="(value) => {
+                try {
+                  const parsed = JSON.parse(String(value || '[]'))
+                  if (Array.isArray(parsed)) updateConfig('required_keys', parsed)
+                } catch { /* keep editing */ }
+              }"
+            />
+            <p class="text-sm font-medium leading-none">{{ t('workflow_editor.checkpoint_min_fields') }}</p>
+            <Input
+              type="number"
+              min="0"
+              class="h-9"
+              :model-value="String((config().min_nonempty_fields as number) ?? 0)"
+              @update:model-value="(v) => updateConfig('min_nonempty_fields', Number(v) || 0)"
+            />
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                :checked="(config().forbid_error_key as boolean) !== false"
+                @change="(e: Event) => updateConfig('forbid_error_key', (e.target as HTMLInputElement).checked)"
+              />
+              {{ t('workflow_editor.checkpoint_forbid_error') }}
+            </label>
+            <p class="text-xs text-muted-foreground">{{ t('workflow_editor.checkpoint_hint') }}</p>
           </div>
         </details>
       </template>

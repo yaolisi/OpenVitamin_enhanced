@@ -127,6 +127,34 @@ function defaultConfigForType(nodeType: WorkflowNodeData['type']): Record<string
       return { workflow_node_type: 'variable', variables: {} }
     case 'parallel':
       return { workflow_node_type: 'parallel', max_parallel: 5 }
+    case 'fork':
+      return { workflow_node_type: 'fork', branch_hint: '' }
+    case 'join':
+      return {
+        workflow_node_type: 'join',
+        dependency_mode: 'all',
+        merge_mode: 'flat',
+      }
+    case 'verify_loop':
+      return {
+        workflow_node_type: 'verify_loop',
+        max_iterations: 5,
+        required_keys: ['text'],
+        forbid_error_key: true,
+        loop_body: {
+          type: 'llm',
+          model_tier: 'standard',
+          prompt: '',
+        },
+      }
+    case 'checkpoint':
+      return {
+        workflow_node_type: 'checkpoint',
+        description: '',
+        required_keys: [],
+        min_nonempty_fields: 0,
+        forbid_error_key: true,
+      }
     case 'loop':
       return {
         workflow_node_type: 'loop',

@@ -17,6 +17,10 @@ const EDITOR_TO_RUNTIME_TYPE: Record<EditorNodeType, string> = {
   condition: 'condition',
   loop: 'loop',
   parallel: 'parallel',
+  fork: 'fork',
+  join: 'join',
+  verify_loop: 'verify_loop',
+  checkpoint: 'tool',
   sub_workflow: 'tool',
   skill: 'tool',
   http_request: 'tool',
@@ -32,6 +36,10 @@ const RUNTIME_TO_EDITOR_TYPE: Record<string, EditorNodeType> = {
   prompt_template: 'prompt_template',
   variable: 'variable',
   parallel: 'parallel',
+  fork: 'fork',
+  join: 'join',
+  verify_loop: 'verify_loop',
+  checkpoint: 'checkpoint',
   output: 'output',
   condition: 'condition',
   loop: 'loop',
@@ -48,6 +56,10 @@ const EDITOR_NODE_LABEL_KEY_MAP: Partial<Record<EditorNodeType, string>> = {
   system_prompt: 'workflow_editor.node_system_prompt',
   variable: 'workflow_editor.node_variable',
   parallel: 'workflow_editor.node_parallel',
+  fork: 'workflow_editor.node_fork',
+  join: 'workflow_editor.node_join',
+  verify_loop: 'workflow_editor.node_verify_loop',
+  checkpoint: 'workflow_editor.node_checkpoint',
   input: 'workflow_editor.node_input',
   output: 'workflow_editor.node_output',
   condition: 'workflow_editor.node_condition',
@@ -88,6 +100,10 @@ export function inferEditorNodeType(node: WorkflowNodePayload): EditorNodeType {
   }
   if (wnt === 'prompt_template') return 'prompt_template'
   if (wnt === 'python') return 'python'
+  if (wnt === 'checkpoint') return 'checkpoint'
+  if (wnt === 'fork') return 'fork'
+  if (wnt === 'join') return 'join'
+  if (wnt === 'verify_loop') return 'verify_loop'
   const mapped = RUNTIME_TO_EDITOR_TYPE[rtLower]
   if (mapped) return mapped
   return 'skill'
@@ -130,6 +146,33 @@ export function toWorkflowDag(
 
     if (editorType === 'parallel') {
       config.workflow_node_type = 'parallel'
+    }
+
+    if (editorType === 'checkpoint') {
+      config.workflow_node_type = 'checkpoint'
+    }
+
+    if (editorType === 'fork') {
+      config.workflow_node_type = 'fork'
+    }
+
+    if (editorType === 'join') {
+      config.workflow_node_type = 'join'
+      if (!config.dependency_mode) {
+        config.dependency_mode = 'all'
+      }
+    }
+
+    if (editorType === 'verify_loop') {
+      config.workflow_node_type = 'verify_loop'
+      const lb = config.loop_body
+      if (!lb || typeof lb !== 'object' || Array.isArray(lb)) {
+        config.loop_body = {
+          type: 'llm',
+          model_tier: 'standard',
+          prompt: '根据任务迭代改进，输出 JSON 含 text 字段。',
+        }
+      }
     }
 
     if (editorType === 'loop') {

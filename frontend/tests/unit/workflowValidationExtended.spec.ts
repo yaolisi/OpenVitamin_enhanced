@@ -15,7 +15,24 @@ describe('validateWorkflowNodes — embedding / http / variable', () => {
     ] as Node<WorkflowNodeData>[]
     const r = validateWorkflowNodes(nodes)
     expect(r.valid).toBe(false)
-    expect(r.errors.some((e) => e.messageKey === 'workflow_editor.llm_model_required')).toBe(true)
+    expect(r.errors.some((e) => e.messageKey === 'workflow_editor.llm_model_or_tier_required')).toBe(true)
+  })
+
+  it('accepts llm when model_tier is set', () => {
+    const nodes = [
+      {
+        id: 'llm-tier',
+        type: 'workflow',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'llm',
+          label: 'Llm',
+          config: { model_tier: 'standard' },
+        },
+      },
+    ] as Node<WorkflowNodeData>[]
+    const r = validateWorkflowNodes(nodes)
+    expect(r.valid).toBe(true)
   })
 
   it('accepts llm when legacy model is set', () => {
@@ -33,7 +50,7 @@ describe('validateWorkflowNodes — embedding / http / variable', () => {
     ] as Node<WorkflowNodeData>[]
     const r = validateWorkflowNodes(nodes)
     expect(r.valid).toBe(true)
-    expect(r.errors.some((e) => e.messageKey === 'workflow_editor.llm_model_required')).toBe(false)
+    expect(r.errors.some((e) => e.messageKey === 'workflow_editor.llm_model_or_tier_required')).toBe(false)
   })
 
   it('requires embedding model_id', () => {

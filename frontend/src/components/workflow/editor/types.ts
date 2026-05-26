@@ -16,6 +16,10 @@ export type EditorNodeType =
   | 'condition'
   | 'loop'
   | 'parallel'
+  | 'fork'
+  | 'join'
+  | 'verify_loop'
+  | 'checkpoint'
   | 'sub_workflow'
   | 'skill'
   | 'http_request'
@@ -64,6 +68,10 @@ export const NODE_LIBRARY: NodeLibraryItem[] = [
   { type: 'loop', labelKey: 'workflow_editor.node_loop', label: 'Loop', icon: 'repeat', category: 'logic' },
   { type: 'sub_workflow', labelKey: 'workflow_editor.node_sub_workflow', label: 'Sub-workflow', icon: 'boxes', category: 'logic' },
   { type: 'parallel', labelKey: 'workflow_editor.node_parallel', label: 'Parallel', icon: 'copy', category: 'logic' },
+  { type: 'fork', labelKey: 'workflow_editor.node_fork', label: 'Fork', icon: 'git-fork', category: 'logic' },
+  { type: 'join', labelKey: 'workflow_editor.node_join', label: 'Join', icon: 'git-merge', category: 'logic' },
+  { type: 'verify_loop', labelKey: 'workflow_editor.node_verify_loop', label: 'Verify Loop', icon: 'shield-check', category: 'logic' },
+  { type: 'checkpoint', labelKey: 'workflow_editor.node_checkpoint', label: 'Checkpoint', icon: 'shield-check', category: 'logic' },
   // Tool
   { type: 'skill', labelKey: 'workflow_editor.node_skill', label: 'Skill', icon: 'sparkles', category: 'tool' },
   { type: 'http_request', labelKey: 'workflow_editor.node_http_request', label: 'HTTP Request', icon: 'globe', category: 'tool' },

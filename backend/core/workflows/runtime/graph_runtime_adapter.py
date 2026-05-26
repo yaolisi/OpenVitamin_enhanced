@@ -43,6 +43,10 @@ class GraphRuntimeAdapter:
         "approval": NodeType.TOOL,
         "sub_workflow": NodeType.TOOL,
         "parallel": NodeType.TOOL,
+        "fork": NodeType.TOOL,
+        "join": NodeType.TOOL,
+        "verify_loop": NodeType.TOOL,
+        "checkpoint": NodeType.TOOL,
         "embedding": NodeType.TOOL,
         "prompt_template": NodeType.TOOL,
         "variable": NodeType.TOOL,
@@ -100,10 +104,15 @@ class GraphRuntimeAdapter:
             "approval",
             "sub_workflow",
             "parallel",
+            "fork",
+            "join",
+            "verify_loop",
+            "checkpoint",
             "embedding",
             "prompt_template",
             "variable",
             "http_request",
+            "checkpoint",
             "python",
             "condition",
             "loop",
@@ -469,8 +478,13 @@ class GraphRuntimeAdapter:
                 config = node.config or {}
                 model_id = str(config.get("model_id") or "").strip()
                 legacy_model = str(config.get("model") or "").strip()
+                tier = str(config.get("model_tier") or "").strip().lower()
                 if not model_id and not legacy_model:
-                    errors.append(f"LLM node {node.id} missing 'model_id' or 'model' config")
+                    if tier not in {"low", "standard", "thorough"}:
+                        errors.append(
+                            f"LLM node {node.id} missing 'model_id', 'model', or valid 'model_tier' "
+                            f"(low|standard|thorough)"
+                        )
             
             elif normalized_type == "tool":
                 config = node.config or {}
@@ -548,6 +562,72 @@ class GraphRuntimeAdapter:
                 url = str(config.get("url") or "").strip()
                 if not url:
                     errors.append(f"HTTP request node {node.id} missing 'url' config")
+
+            elif normalized_type == "checkpoint":
+                config = node.config or {}
+                required_keys = config.get("required_keys")
+                min_fields = config.get("min_nonempty_fields")
+                has_keys = isinstance(required_keys, list) and len(required_keys) > 0
+                try:
+                    has_min = int(min_fields or 0) > 0
+                except (TypeError, ValueError):
+                    has_min = False
+                if not has_keys and not has_min:
+                    errors.append(
+                        f"Checkpoint node {node.id} requires 'required_keys' or min_nonempty_fields > 0"
+                    )
+                if required_keys is not None and not isinstance(required_keys, list):
+                    errors.append(
+                        f"Checkpoint node {node.id} config.required_keys must be a list"
+                    )
+
+            elif normalized_type == "join":
+                config = node.config or {}
+                mode = str(config.get("dependency_mode") or "all").strip().lower()
+                if mode not in {"all", "any"}:
+                    errors.append(
+                        f"Join node {node.id} config.dependency_mode must be 'all' or 'any'"
+                    )
+
+            elif normalized_type == "verify_loop":
+                config = node.config or {}
+                body_cfg = config.get("loop_body")
+                if not isinstance(body_cfg, dict):
+                    errors.append(f"Verify loop node {node.id} missing 'loop_body' object config")
+                else:
+                    body_type = str(body_cfg.get("type") or "tool").strip().lower()
+                    if body_type == "tool":
+                        tool_name = str(body_cfg.get("tool_name") or body_cfg.get("tool_id") or "").strip()
+                        if not tool_name:
+                            errors.append(
+                                f"Verify loop node {node.id} loop_body requires tool_name when type is tool"
+                            )
+                    elif body_type == "llm":
+                        model_id = str(body_cfg.get("model_id") or body_cfg.get("model") or "").strip()
+                        tier = str(body_cfg.get("model_tier") or "").strip().lower()
+                        if not model_id and tier not in {"low", "standard", "thorough"}:
+                            errors.append(
+                                f"Verify loop node {node.id} loop_body LLM requires model_id or model_tier"
+                            )
+                acc = config.get("acceptance")
+                req = config.get("required_keys")
+                if isinstance(acc, dict):
+                    req = acc.get("required_keys") or req
+                has_keys = isinstance(req, list) and len(req) > 0
+                try:
+                    has_min = int(config.get("min_nonempty_fields") or 0) > 0
+                except (TypeError, ValueError):
+                    has_min = False
+                if isinstance(acc, dict):
+                    try:
+                        has_min = has_min or int(acc.get("min_nonempty_fields") or 0) > 0
+                    except (TypeError, ValueError):
+                        pass
+                if not has_keys and not has_min:
+                    errors.append(
+                        f"Verify loop node {node.id} requires acceptance criteria "
+                        f"(required_keys or min_nonempty_fields)"
+                    )
 
             elif normalized_type == "variable":
                 config = node.config or {}
