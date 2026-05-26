@@ -43,6 +43,15 @@
 | 主教程：创建/执行 API + **§9.7 画布编排** | [tutorial.md](tutorial.md) 第 **9** 章 |
 | 新人 `/workflow` 体验步骤 | [tutorial-beginner-playbook.md](tutorial-beginner-playbook.md) 第 **3** 节 |
 
+### 1.3 多智能体演示项目（可导入 JSON + Playbook）
+
+| Demo | 能力 | JSON | Playbook |
+|------|------|------|----------|
+| **发布简报门禁** | 审批 + Checkpoint + 模型分档 | [demo1-release-brief-gate.bundle.json](../demos/workflows/demo1-release-brief-gate.bundle.json) | [demo-playbook-01-release-brief.md](demo-playbook-01-release-brief.md) |
+| **并行双源调研** | Fork/Join + Verify Loop +（可选）RAG | [demo2-parallel-research-verify.bundle.json](../demos/workflows/demo2-parallel-research-verify.bundle.json) | [demo-playbook-02-parallel-research.md](demo-playbook-02-parallel-research.md) |
+
+导入：Workflow **新建/编辑** 页 **「演示项目（多智能体）」**；或 `scripts/import_demo_workflow.py`（见 [demos/workflows/README.md](../demos/workflows/README.md)）。
+
 ---
 
 ## 2. 发版前检查
