@@ -20,6 +20,11 @@ def build_import_catalog() -> list[dict[str, Any]]:
                 "description": row["description"],
                 "schema_version": row.get("schema_version"),
                 "includes": ["knowledge_base", "skills", "mcp", "agents", "workflow"],
+                "tags": row.get("tags") or [],
+                "estimated_minutes": row.get("estimated_minutes"),
+                "playbook_url": row.get("playbook_url"),
+                "scene": row.get("scene"),
+                "recommended_eval_suite": row.get("recommended_eval_suite"),
             }
         )
     for row in list_workflow_bundle_manifests():

@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from core.demos.import_options import ImportRunOptions
+
 from sqlalchemy.orm import Session
 
 from core.demos.bundle_registry import load_platform_bundle
@@ -66,9 +68,14 @@ def execute_catalog_import(
     user_id: str,
     tenant_id: str,
     namespace: Optional[str],
-    publish_workflows: bool,
-    wait_document_index: bool,
+    options: Optional[ImportRunOptions] = None,
+    publish_workflows: bool = False,
+    wait_document_index: bool = True,
 ) -> ImportResult:
+    opts = options or ImportRunOptions(
+        publish_workflows=publish_workflows,
+        wait_document_index=wait_document_index,
+    )
     if kind == "platform":
         bundle, bundle_dir = load_platform_bundle(bundle_id)
         return import_platform_bundle(
@@ -78,8 +85,11 @@ def execute_catalog_import(
             user_id=user_id,
             tenant_id=tenant_id,
             namespace=namespace,
-            publish_workflows=publish_workflows,
-            wait_document_index=wait_document_index,
+            publish_workflows=opts.publish_workflows,
+            wait_document_index=opts.wait_document_index,
+            conflict_strategy=opts.conflict_strategy,
+            on_progress=opts.on_progress,
+            run_publish_gate=opts.run_publish_gate,
         )
     bundle = load_workflow_bundle(bundle_id)
     return import_workflow_bundle_data(
@@ -89,7 +99,7 @@ def execute_catalog_import(
         user_id=user_id,
         tenant_id=tenant_id,
         namespace=namespace,
-        publish=publish_workflows,
+        publish=opts.publish_workflows,
     )
 
 
@@ -102,10 +112,15 @@ def execute_upload_import(
     user_id: str,
     tenant_id: str,
     namespace: Optional[str],
-    publish_workflows: bool,
-    wait_document_index: bool,
+    options: Optional[ImportRunOptions] = None,
+    publish_workflows: bool = False,
+    wait_document_index: bool = True,
     extra_warnings: Optional[list[str]] = None,
 ) -> ImportResult:
+    opts = options or ImportRunOptions(
+        publish_workflows=publish_workflows,
+        wait_document_index=wait_document_index,
+    )
     warnings = list(extra_warnings or [])
     _normalize_upload_documents(bundle, bundle_dir, warnings)
     resolved = validate_bundle(bundle, kind=kind)
@@ -118,8 +133,11 @@ def execute_upload_import(
             user_id=user_id,
             tenant_id=tenant_id,
             namespace=namespace,
-            publish_workflows=publish_workflows,
-            wait_document_index=wait_document_index,
+            publish_workflows=opts.publish_workflows,
+            wait_document_index=opts.wait_document_index,
+            conflict_strategy=opts.conflict_strategy,
+            on_progress=opts.on_progress,
+            run_publish_gate=opts.run_publish_gate,
         )
         result.warnings = warnings + result.warnings
         return result
@@ -130,7 +148,17 @@ def execute_upload_import(
         user_id=user_id,
         tenant_id=tenant_id,
         namespace=namespace,
-        publish=publish_workflows,
+        publish=opts.publish_workflows,
     )
     result.warnings = warnings + result.warnings
     return result
+
+
+def default_platform_import_steps() -> list[tuple[str, str]]:
+    return [
+        ("knowledge_bases", "knowledge_bases"),
+        ("skills", "skills"),
+        ("mcp_servers", "mcp_servers"),
+        ("agents", "agents"),
+        ("workflows", "workflows"),
+    ]

@@ -1,11 +1,12 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
-export type ViewType = 'chat' | 'workflow' | 'images' | 'models' | 'knowledge' | 'agents' | 'skills' | 'logs' | 'settings'
+export type ViewType = 'chat' | 'workflow' | 'images' | 'models' | 'knowledge' | 'agents' | 'skills' | 'logs' | 'settings' | 'import'
 
 // 路由名称到 ViewType 的映射
 const routeNameToViewType: Record<string, ViewType> = {
   'chat': 'chat',
+  'bundle-import': 'import',
   'workflow': 'workflow',
   'workflow-create': 'workflow',
   'workflow-detail': 'workflow',

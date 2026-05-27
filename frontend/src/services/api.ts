@@ -4088,6 +4088,19 @@ export interface ImportCatalogItem {
   includes: string[]
   recommended_platform_bundle_id?: string | null
   canvas_mode?: string | null
+  tags?: string[]
+  estimated_minutes?: number | null
+  playbook_url?: string | null
+  scene?: string | null
+  recommended_eval_suite?: string | null
+}
+
+export interface ImportPreflightCheck {
+  id: string
+  ok: boolean
+  level: string
+  message: string
+  action_url?: string
 }
 
 export interface ImportRunResponse {
@@ -4105,10 +4118,87 @@ export interface ImportRunResponse {
   agents_url_hints?: Record<string, string>
   skills_url_hints?: Record<string, string>
   mcp_url_hints?: Record<string, string>
+  next_steps?: Array<{ id: string; label: string; href?: string }>
+  job_id?: string | null
+  tenant_id?: string | null
+  curl_hint?: string | null
+}
+
+export interface ImportPreviewResponse {
+  ok: boolean
+  bundle_id?: string
+  kind?: string
+  summary: Record<string, number>
+  conflicts: Array<{ kind: string; key: string; message: string }>
+  environment: { ready: boolean; checks: ImportPreflightCheck[] }
+  next_steps_preview: Array<{ id: string; label: string; href?: string; href_hint?: string }>
+  estimated_index_seconds: number
+  recommended_eval_suite?: string | null
+  curl_hint?: string | null
+}
+
+export interface ExportDiscoverItem {
+  kind: string
+  id: string
+  label: string
+  selected: boolean
+}
+
+export interface ImportJobStatus {
+  job_id: string
+  status: string
+  steps: Array<{ id: string; label: string; status: string; detail?: string }>
+  result?: ImportRunResponse
+  error?: string
 }
 
 export async function getImportCatalog(): Promise<{ items: ImportCatalogItem[] }> {
   const response = await apiFetch(`${API_BASE_URL}/api/v1/import/catalog`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function getImportPreflight(): Promise<{
+  ready: boolean
+  tenant_id: string
+  checks: ImportPreflightCheck[]
+}> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/preflight`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function previewImportBundle(body: {
+  bundle?: Record<string, unknown>
+  kind?: ImportKind
+  bundle_id?: string
+  catalog_kind?: ImportKind
+}): Promise<ImportPreviewResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/preview`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { message?: string }).message || response.statusText)
+  }
+  return response.json()
+}
+
+export async function diffImportBundle(bundle: Record<string, unknown>): Promise<{
+  will_create: Record<string, number>
+  conflicts: Array<{ kind: string; key: string; message: string }>
+}> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/diff`, {
+    method: 'POST',
+    body: JSON.stringify({ bundle }),
+  })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function getImportJobStatus(jobId: string): Promise<ImportJobStatus> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/jobs/${encodeURIComponent(jobId)}`)
   if (!response.ok) throw new Error(`API error: ${response.statusText}`)
   return response.json()
 }
@@ -4119,6 +4209,9 @@ export async function runOneClickImport(body: {
   publish_workflows?: boolean
   wait_document_index?: boolean
   namespace?: string
+  conflict_strategy?: 'skip' | 'duplicate'
+  run_publish_gate?: boolean
+  use_async_job?: boolean
 }): Promise<ImportRunResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/v1/import/run`, {
     method: 'POST',
@@ -4128,6 +4221,9 @@ export async function runOneClickImport(body: {
       publish_workflows: body.publish_workflows ?? false,
       wait_document_index: body.wait_document_index ?? true,
       namespace: body.namespace,
+      conflict_strategy: body.conflict_strategy ?? 'skip',
+      run_publish_gate: body.run_publish_gate ?? true,
+      use_async_job: body.use_async_job ?? false,
     }),
   })
   if (!response.ok) {
@@ -4166,6 +4262,9 @@ export async function runOneClickImportFromBody(body: {
   publish_workflows?: boolean
   wait_document_index?: boolean
   namespace?: string
+  conflict_strategy?: 'skip' | 'duplicate'
+  run_publish_gate?: boolean
+  use_async_job?: boolean
 }): Promise<ImportRunResponse> {
   const response = await apiFetch(`${API_BASE_URL}/api/v1/import/run-body`, {
     method: 'POST',
@@ -4175,6 +4274,9 @@ export async function runOneClickImportFromBody(body: {
       publish_workflows: body.publish_workflows ?? false,
       wait_document_index: body.wait_document_index ?? true,
       namespace: body.namespace,
+      conflict_strategy: body.conflict_strategy ?? 'skip',
+      run_publish_gate: body.run_publish_gate ?? true,
+      use_async_job: body.use_async_job ?? false,
     }),
   })
   if (!response.ok) {
@@ -4194,6 +4296,7 @@ export interface ExportDiscoverResponse {
   knowledge_base_ids: string[]
   skill_ids: string[]
   mcp_server_ids: string[]
+  items?: ExportDiscoverItem[]
 }
 
 export interface ExportBundleJsonResponse {
@@ -4289,6 +4392,8 @@ export async function uploadImportBundle(
     publish_workflows?: boolean
     wait_document_index?: boolean
     namespace?: string
+    conflict_strategy?: 'skip' | 'duplicate'
+    run_publish_gate?: boolean
   },
 ): Promise<ImportRunResponse> {
   const form = new FormData()
@@ -4297,6 +4402,8 @@ export async function uploadImportBundle(
   if (options?.publish_workflows) form.append('publish_workflows', 'true')
   if (options?.wait_document_index === false) form.append('wait_document_index', 'false')
   if (options?.namespace) form.append('namespace', options.namespace)
+  if (options?.conflict_strategy) form.append('conflict_strategy', options.conflict_strategy)
+  if (options?.run_publish_gate === false) form.append('run_publish_gate', 'false')
   const response = await apiFetch(`${API_BASE_URL}/api/v1/import/upload`, {
     method: 'POST',
     body: form,

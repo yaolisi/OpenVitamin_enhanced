@@ -4,6 +4,12 @@
   "bundle_id": "release-brief-gate",
   "name": "演示包 · 发布简报门禁（多 Agent）",
   "description": "需求澄清/发布写手 Agent、简报验收 Prompt Skill、MCP 模板配置，配合审批与 Checkpoint。",
+  "ui_hints": {
+    "tags": ["demo", "release", "multi-agent"],
+    "estimated_minutes": 6,
+    "scene": "发布简报与审批门禁",
+    "playbook_url": "/tutorials/demo-playbook-01-release-brief.md"
+  },
   "builtin_skill_catalog": [],
   "skills": [
     {

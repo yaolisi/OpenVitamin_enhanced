@@ -41,20 +41,7 @@ curl -s http://127.0.0.1:8000/api/v1/import/catalog | jq .
 
 curl -s -X POST "http://127.0.0.1:8000/api/v1/import/run" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: default" \
   -d '{"kind":"platform","bundle_id":"rag-research-verify","wait_document_index":true}'
-
-# 上传 ZIP（含 documents/）
-curl -s -X POST "http://127.0.0.1:8000/api/v1/import/upload" \
-  -H "X-Tenant-Id: default" \
-  -F "file=@./my-export.zip"
-
-# 从工作流导出 ZIP
-curl -sS -X POST "http://127.0.0.1:8000/api/v1/import/export?download=true" \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: default" \
-  -o my-export.zip \
-  -d '{"kind":"platform","format":"zip","bundle_id":"my-export","name":"快照","workflow_ids":["<workflow-uuid>"]}'
 
 # 兼容旧路径：
 curl -s -X POST "http://127.0.0.1:8000/api/v1/demos/platform-bundles/rag-research-verify/import" \
@@ -84,6 +71,4 @@ PUBLISH=1 PYTHONPATH=backend python3 scripts/import_platform_demo_bundle.py rag-
 
 1. 复制 `rag-research-verify.platform-bundle.json` 并修改 `bundle_id`
 2. 使用 `$import:<bundle_key>` 在 `rag_ids`、`agent_id` 等字段引用本包内资源
-3. 将 JSON 放在本目录，前端/API 会自动出现在 **内置目录**；或 **导出** 当前环境后修改再 **上传 ZIP**
-
-完整 Schema、导出字段与 ZIP 布局见 [BUNDLE_SCHEMA.md](./BUNDLE_SCHEMA.md)。
+3. 将 JSON 放在本目录，前端/API 会自动出现在清单中

@@ -29,8 +29,25 @@ onMounted(() => {
     <!-- Main content: flex-1 + min-w-0 确保与侧边栏并排且正确收缩 -->
     <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
       <router-view v-slot="{ Component, route }">
-        <keep-alive :include="['ChatView', 'WorkflowView', 'AgentsView', 'ModelsView', 'KnowledgeView', 'SkillsView', 'SettingsGeneralView', 'SettingsBackendView', 'SettingsObjectDetectionView', 'SettingsAsrView', 'SettingsBackupView', 'SettingsRuntimeView', 'SettingsModelBackupView']">
-          <component :is="Component" :key="route.path" />
+        <keep-alive
+          :include="[
+            'ChatView',
+            'BundleImportView',
+            'WorkflowView',
+            'AgentsView',
+            'ModelsView',
+            'KnowledgeView',
+            'SkillsView',
+            'SettingsGeneralView',
+            'SettingsBackendView',
+            'SettingsObjectDetectionView',
+            'SettingsAsrView',
+            'SettingsBackupView',
+            'SettingsRuntimeView',
+            'SettingsModelBackupView',
+          ]"
+        >
+          <component :is="Component" :key="route.name ?? route.path" class="flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden" />
         </keep-alive>
       </router-view>
     </div>

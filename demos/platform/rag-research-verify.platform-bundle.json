@@ -4,6 +4,12 @@
   "bundle_id": "rag-research-verify",
   "name": "演示包 · RAG 并行调研（Agent + 知识库 + 工作流）",
   "description": "一键导入：样例知识库、自定义 Skill、MCP 模板、Web/KB 双 Agent、Fork/Join + Verify Loop 工作流。",
+  "ui_hints": {
+    "tags": ["demo", "rag", "multi-agent"],
+    "estimated_minutes": 8,
+    "scene": "内网 PoC / 多 Agent 并行调研",
+    "playbook_url": "/tutorials/demo-playbook-02-parallel-research.md"
+  },
   "builtin_skill_catalog": ["builtin_web.search", "builtin_kb.query"],
   "skills": [
     {

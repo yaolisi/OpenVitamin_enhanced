@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Save, Play, Rocket, History, Undo2, Redo2, Loader2, ChevronDown } from 'lucide-vue-next'
+import { ArrowLeft, Save, Play, Rocket, History, Undo2, Redo2, Loader2, ChevronDown, Download } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -478,6 +478,13 @@ function dismissDraftRestore() {
 
 function goBack() {
   router.push({ name: 'workflow-detail', params: { id: workflowId } })
+}
+
+function exportWorkflowBundle() {
+  router.push({
+    name: 'bundle-import',
+    query: { mode: 'export', workflowId },
+  })
 }
 
 function confirmGovernanceRiskBeforeSave(): boolean {
@@ -1079,6 +1086,10 @@ onUnmounted(() => {
         <Button variant="outline" size="sm" class="gap-2" :disabled="redoStack.length === 0" @click="redo">
           <Redo2 class="w-4 h-4" />
           {{ t('workflow_page.redo') }}
+        </Button>
+        <Button variant="outline" size="sm" class="gap-2" :title="t('import.export_from_workflow_tip')" @click="exportWorkflowBundle">
+          <Download class="w-4 h-4" />
+          {{ t('import.export_from_workflow') }}
         </Button>
         <Button variant="outline" size="sm" class="gap-2" @click="runPreflightCheck">
           {{ t('workflow_page.preflight_check_before_run') }}

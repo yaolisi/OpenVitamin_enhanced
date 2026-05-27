@@ -24,12 +24,18 @@ def list_platform_bundle_manifests() -> list[dict[str, Any]]:
         except (OSError, json.JSONDecodeError):
             continue
         bundle_id = str(data.get("bundle_id") or path.stem.replace(".platform-bundle", ""))
+        ui = data.get("ui_hints") if isinstance(data.get("ui_hints"), dict) else {}
         out.append(
             {
                 "bundle_id": bundle_id,
                 "name": str(data.get("name") or bundle_id),
                 "description": str(data.get("description") or ""),
                 "schema_version": data.get("schema_version"),
+                "tags": list(ui.get("tags") or data.get("tags") or []),
+                "estimated_minutes": ui.get("estimated_minutes"),
+                "playbook_url": ui.get("playbook_url"),
+                "scene": ui.get("scene"),
+                "recommended_eval_suite": data.get("recommended_eval_suite") or ui.get("recommended_eval_suite"),
             }
         )
     return out

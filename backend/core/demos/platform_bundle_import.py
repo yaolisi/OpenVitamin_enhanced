@@ -7,7 +7,9 @@ import hashlib
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+ProgressCallback = Callable[[str, str, str], None]
 
 from log import logger
 from sqlalchemy.orm import Session
@@ -213,7 +215,13 @@ def _create_agent_from_spec(
     return agent_id
 
 
-def _create_skill_from_spec(spec: dict[str, Any], *, id_map: dict[str, str]) -> str:
+def _create_skill_from_spec(
+    spec: dict[str, Any],
+    *,
+    id_map: dict[str, str],
+    conflict_strategy: str = "skip",
+) -> str:
+    from core.demos.bundle_conflicts import apply_skill_conflict_strategy
     from core.skills.registry import SkillRegistry
     from core.skills.store import get_skill_store
 
@@ -222,9 +230,16 @@ def _create_skill_from_spec(spec: dict[str, Any], *, id_map: dict[str, str]) -> 
         raise ValueError("skills[].bundle_key is required")
     store = get_skill_store()
     desired_id = str(spec.get("skill_id") or "").strip() or None
-    if desired_id and store.get(desired_id):
+    existing = apply_skill_conflict_strategy(
+        spec, strategy=conflict_strategy, id_map=id_map  # type: ignore[arg-type]
+    )
+    if existing:
+        return existing
+    if conflict_strategy == "skip" and desired_id and store.get(desired_id):
         id_map[bkey] = desired_id
         return desired_id
+    if conflict_strategy == "duplicate":
+        desired_id = None
     definition = deep_resolve_import_refs(dict(spec.get("definition") or {}), id_map)
     skill = store.create(
         name=str(spec.get("name") or bkey),
@@ -309,7 +324,13 @@ def import_platform_bundle(
     namespace: Optional[str] = None,
     publish_workflows: bool = False,
     wait_document_index: bool = True,
+    conflict_strategy: str = "skip",
+    on_progress: Optional[ProgressCallback] = None,
+    run_publish_gate: bool = True,
 ) -> PlatformBundleImportResult:
+    def _prog(step: str, status: str, detail: str = "") -> None:
+        if on_progress:
+            on_progress(step, status, detail)
     if int(bundle.get("schema_version") or 0) != 1:
         raise ValueError("Unsupported platform bundle schema_version (expected 1)")
     bundle_id = str(bundle.get("bundle_id") or "unknown")
@@ -317,6 +338,7 @@ def import_platform_bundle(
     id_map: dict[str, str] = {}
     ns = (namespace or tenant_id or "default").strip()
 
+    _prog("knowledge_bases", "running")
     for kb_spec in bundle.get("knowledge_bases") or []:
         if not isinstance(kb_spec, dict):
             continue
@@ -372,20 +394,27 @@ def import_platform_bundle(
                 wait_index=wait_document_index,
             )
             result.documents_indexed.append(doc_id)
+    _prog("knowledge_bases", "done")
 
+    _prog("skills", "running")
     for skill_spec in bundle.get("skills") or []:
         if not isinstance(skill_spec, dict):
             continue
         bkey = str(skill_spec.get("bundle_key") or "")
-        skill_id = _create_skill_from_spec(skill_spec, id_map=id_map)
+        skill_id = _create_skill_from_spec(
+            skill_spec, id_map=id_map, conflict_strategy=conflict_strategy
+        )
         result.skills[bkey] = skill_id
+    _prog("skills", "done")
 
+    _prog("mcp_servers", "running")
     for mcp_spec in bundle.get("mcp_servers") or []:
         if not isinstance(mcp_spec, dict):
             continue
         bkey = str(mcp_spec.get("bundle_key") or "")
         sid = _create_mcp_server_from_spec(mcp_spec, tenant_id=tenant_id, id_map=id_map)
         result.mcp_servers[bkey] = sid
+    _prog("mcp_servers", "done")
 
     for imp_spec in bundle.get("mcp_tool_imports") or []:
         if not isinstance(imp_spec, dict):
@@ -422,6 +451,7 @@ def import_platform_bundle(
         if err:
             result.warnings.append(f"MCP tool import ({server_key}): {err}")
 
+    _prog("agents", "running")
     for agent_spec in bundle.get("agents") or []:
         if not isinstance(agent_spec, dict):
             continue
@@ -436,9 +466,11 @@ def import_platform_bundle(
         )
         id_map[bkey] = agent_id
         result.agents[bkey] = agent_id
+    _prog("agents", "done")
 
     wf_service = WorkflowService(db)
     ver_service = WorkflowVersionService(db)
+    _prog("workflows", "running")
     for wf_spec in bundle.get("workflows") or []:
         if not isinstance(wf_spec, dict):
             continue
@@ -482,7 +514,24 @@ def import_platform_bundle(
         result.workflows[bkey] = wf_id
         result.workflow_versions[bkey] = version.version_id
         if publish_workflows:
-            ver_service.publish_version(version.version_id, user_id)
-            result.published[bkey] = True
+            allowed = True
+            if run_publish_gate:
+                from core.workflows.publish_gate import evaluate_publish_gate
+
+                gate = evaluate_publish_gate(
+                    db,
+                    workflow_id=wf_id,
+                    version_id=version.version_id,
+                    tenant_id=tenant_id,
+                )
+                allowed = bool(gate.get("allowed"))
+                if not allowed:
+                    result.warnings.append(
+                        f"Publish gate blocked workflow {bkey}: {gate.get('message') or 'not allowed'}"
+                    )
+            if allowed:
+                ver_service.publish_version(version.version_id, user_id)
+                result.published[bkey] = True
+    _prog("workflows", "done")
 
     return result
