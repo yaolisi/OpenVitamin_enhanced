@@ -17,6 +17,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/auth/callback',
+    name: 'auth-callback',
+    component: () => import('@/views/AuthCallbackView.vue'),
+    meta: {
+      title: 'Sign in'
+    }
+  },
+  {
     path: '/workflow',
     name: 'workflow',
     component: () => import('@/views/WorkflowView.vue'),
@@ -311,6 +319,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/SettingsGeneralView.vue'),
     meta: {
       title: 'General Settings'
+    }
+  },
+  {
+    path: '/settings/enterprise',
+    name: 'settings-enterprise',
+    component: () => import('@/views/SettingsEnterpriseView.vue'),
+    meta: {
+      title: 'Enterprise Settings'
     }
   },
   {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWorkflowNewRunQuery } from '@/utils/workflowRunNavigation'
+import { buildWorkflowNewRunQuery, buildWorkflowRunPresetQuery } from '@/utils/workflowRunNavigation'
 
 describe('buildWorkflowNewRunQuery', () => {
   it('preserves preset keys and sets auto_start + t', () => {
@@ -31,5 +31,19 @@ describe('buildWorkflowNewRunQuery', () => {
     expect(q.history_only).toBeUndefined()
     expect(q.auto_start).toBe('1')
     expect(q.version_id).toBe('v1')
+  })
+})
+
+describe('buildWorkflowRunPresetQuery', () => {
+  it('serializes input_data and global_context', () => {
+    const q = buildWorkflowRunPresetQuery({
+      inputData: { brief: 'test' },
+      globalContext: { correlation_id: 'corr_abc' },
+      versionId: 'v-1',
+    })
+    expect(JSON.parse(String(q.input_data))).toEqual({ brief: 'test' })
+    expect(JSON.parse(String(q.global_context))).toEqual({ correlation_id: 'corr_abc' })
+    expect(q.version_id).toBe('v-1')
+    expect(q.auto_start).toBe('1')
   })
 })

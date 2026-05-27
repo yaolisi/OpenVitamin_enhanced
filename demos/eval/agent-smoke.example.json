@@ -1,0 +1,19 @@
+{
+  "suite_id": "agent-smoke",
+  "cases": [
+    {
+      "id": "agent-exists",
+      "target": "agent",
+      "agent_id": "REPLACE_WITH_YOUR_AGENT_ID",
+      "execute": false,
+      "expect": {}
+    },
+    {
+      "id": "workflow-published",
+      "target": "workflow",
+      "workflow_id": "REPLACE_WITH_YOUR_WORKFLOW_ID",
+      "execute": false,
+      "expect": { "state": "pending" }
+    }
+  ]
+}

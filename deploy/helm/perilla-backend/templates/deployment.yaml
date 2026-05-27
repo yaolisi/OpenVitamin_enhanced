@@ -367,6 +367,46 @@ spec:
             - name: AUDIT_LOG_INCLUDE_GET
               value: {{ .Values.env.auditLogIncludeGet | quote }}
             {{- end }}
+            {{- if .Values.env.oidcEnabled }}
+            - name: OIDC_ENABLED
+              value: {{ .Values.env.oidcEnabled | quote }}
+            {{- end }}
+            {{- if .Values.env.oidcIssuer }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.env.oidcIssuer | quote }}
+            {{- end }}
+            {{- if .Values.env.oidcJwksUrl }}
+            - name: OIDC_JWKS_URL
+              value: {{ .Values.env.oidcJwksUrl | quote }}
+            {{- end }}
+            {{- if .Values.env.oidcAudience }}
+            - name: OIDC_AUDIENCE
+              value: {{ .Values.env.oidcAudience | quote }}
+            {{- end }}
+            {{- if .Values.env.secretResolverMode }}
+            - name: SECRET_RESOLVER_MODE
+              value: {{ .Values.env.secretResolverMode | quote }}
+            {{- end }}
+            {{- if .Values.env.secretFileRoots }}
+            - name: SECRET_FILE_ROOTS
+              value: {{ .Values.env.secretFileRoots | quote }}
+            {{- end }}
+            {{- if .Values.env.haProfile }}
+            - name: HA_PROFILE
+              value: {{ .Values.env.haProfile | quote }}
+            {{- end }}
+            {{- if .Values.env.otelEnabled }}
+            - name: OTEL_ENABLED
+              value: {{ .Values.env.otelEnabled | quote }}
+            {{- end }}
+            {{- if .Values.env.otelExporterOtlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.env.otelExporterOtlpEndpoint | quote }}
+            {{- end }}
+            {{- if .Values.env.otelServiceName }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.env.otelServiceName | quote }}
+            {{- end }}
             {{- if .Values.env.apiKeyScopesJson }}
             - name: API_KEY_SCOPES_JSON
               value: {{ .Values.env.apiKeyScopesJson | quote }}

@@ -41,6 +41,7 @@ const routeNameToViewType: Record<string, ViewType> = {
   'logs': 'logs',
   'settings': 'settings',
   'settings-general': 'settings',
+  'settings-enterprise': 'settings',
   'settings-backup': 'settings',
   'settings-model-backup': 'settings',
   'settings-backend': 'settings',

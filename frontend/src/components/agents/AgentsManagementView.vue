@@ -52,6 +52,7 @@ import { useSystemMetrics } from '@/composables/useSystemMetrics'
 import { useSystemConfigWithDebounce } from '@/composables/useSystemConfigWithDebounce'
 import { readRagMultiHopEnabledFromModelParams } from '@/utils/agentRagModelParams'
 import { formatAgentMutationErrorMessage } from '@/utils/agentMutationMessages'
+import AgentCreateWizard from '@/components/agents/AgentCreateWizard.vue'
 // Loading State
 const loading = ref(true)
 /** listAgents + listModels 拉取失败 */
@@ -382,8 +383,14 @@ const filteredAgents = computed(() => {
   return result
 })
 
+const wizardOpen = ref(false)
+
 const handleCreateAgent = () => {
-  router.push('/agents/create')
+  wizardOpen.value = true
+}
+
+const handleWizardCreated = async () => {
+  await fetchAgents(false)
 }
 
 const nlOpen = ref(false)
@@ -505,13 +512,37 @@ const handleDeleteAgent = async (agentId: string, agentName: string) => {
             <Wand2 class="w-4 h-4" />
             {{ t('agents.nl.open') }}
           </Button>
+          <Button
+            variant="outline"
+            class="h-10 px-4 gap-2 rounded-lg border-border"
+            @click="router.push('/agents/create')"
+          >
+            {{ t('agents.wizard.expert_mode') }}
+          </Button>
           <Button @click="handleCreateAgent" class="bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 px-4 gap-2 rounded-lg shadow-lg shadow-blue-500/20">
             <Plus class="w-4 h-4" />
-            {{ t('agents.create_button') }}
+            {{ t('agents.wizard.open') }}
           </Button>
         </div>
       </div>
     </header>
+
+    <div class="px-8 pb-4 shrink-0">
+      <div
+        class="rounded-xl border border-indigo-500/25 bg-indigo-500/5 px-4 py-3 text-sm text-muted-foreground flex flex-wrap items-center gap-3"
+      >
+        <Layers2 class="w-4 h-4 text-indigo-500 shrink-0" />
+        <span class="flex-1 min-w-[200px]">{{ t('agents.platform_collaboration_hint') }}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-8 shrink-0"
+          @click="router.push({ name: 'workflow-create' })"
+        >
+          {{ t('agents.platform_collaboration_workflow') }}
+        </Button>
+      </div>
+    </div>
 
     <div v-if="agentsListError && !loading" class="px-8 pb-4 shrink-0">
       <div
@@ -897,6 +928,8 @@ const handleDeleteAgent = async (agentId: string, agentName: string) => {
         {{ t('agents.footer.last_heartbeat') }}: {{ lastHeartbeat }}
       </div>
     </footer>
+
+    <AgentCreateWizard v-model:open="wizardOpen" @created="handleWizardCreated" />
   </div>
 </template>
 

@@ -2368,9 +2368,14 @@ def _detect_model_version_governance_capability() -> bool:
 
 
 def _detect_sso_integration_capability() -> bool:
-    """Phase 3: enterprise identity boundary — enforced RBAC and/or tenant isolation (beyond API-key-only dev)."""
+    """Phase 3: enterprise identity boundary — OIDC and/or enforced RBAC / tenant isolation."""
     if not callable(require_authenticated_platform_admin):
         return False
+    oidc_on = bool(getattr(settings, "oidc_enabled", False))
+    issuer = (getattr(settings, "oidc_issuer", "") or "").strip()
+    jwks = (getattr(settings, "oidc_jwks_url", "") or "").strip()
+    if oidc_on and (issuer or jwks):
+        return True
     rbac_stack = bool(getattr(settings, "rbac_enabled", False)) and bool(getattr(settings, "rbac_enforcement", False))
     tenant_stack = bool(getattr(settings, "tenant_enforcement_enabled", False))
     return rbac_stack or tenant_stack

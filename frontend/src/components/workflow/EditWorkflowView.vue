@@ -660,6 +660,7 @@ function applyDemoWorkflow() {
   selectedNodeId.value = null
   selectedEdge.value = null
   validationErrors.value = []
+  runPreflightCheck()
 }
 
 function applyTemplate() {

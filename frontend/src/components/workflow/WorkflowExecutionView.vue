@@ -31,6 +31,10 @@ import {
   getWorkflowExecutionStatus,
   listWorkflowExecutionErrors,
   getCollaborationSessionsByCorrelation,
+  downloadWorkflowComplianceReport,
+  downloadWorkflowCompliancePdf,
+  getWorkflowPreflight,
+  type PreflightResponse,
   listWorkflowExecutions,
   reconcileWorkflowExecution,
   runWorkflow,
@@ -46,6 +50,9 @@ import {
   type CorrelationSummaryResponse,
 } from '@/services/api'
 import { normalizeExecutionStatus, normalizeNodeStatus, statusBadgeClass } from './status'
+import { buildDefaultCollaborationGlobalContext } from '@/utils/collaborationContext'
+import PreflightPanel from '@/components/shared/PreflightPanel.vue'
+import TraceOpsPanel from '@/components/shared/TraceOpsPanel.vue'
 import {
   mergeWorkflowExecutionDelta,
   StatusDeltaSchemaVersionError,
@@ -121,6 +128,10 @@ const lastFailureBundleBlob = ref<Blob | null>(null)
 const failureZipExpectedHexOverride = ref('')
 const failureBundleZipInputRef = ref<HTMLInputElement | null>(null)
 const failureReportExporting = ref(false)
+const complianceReportExporting = ref(false)
+const serverPreflight = ref<PreflightResponse | null>(null)
+const serverPreflightLoading = ref(false)
+const serverPreflightError = ref<string | null>(null)
 const failureBundleExporting = ref(false)
 const errorFilterErrorType = ref('')
 const errorFilterFailureStrategy = ref('')
@@ -975,6 +986,45 @@ async function exportFailureReportJson() {
   }
 }
 
+async function exportComplianceReportPdf() {
+  const exec = currentExecution.value
+  if (!exec) return
+  complianceReportExporting.value = true
+  try {
+    const blob = await downloadWorkflowCompliancePdf(workflowId, exec.execution_id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `compliance-wf-${workflowId.slice(0, 8)}-ex-${exec.execution_id.slice(0, 8)}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+    failureExportNote.value = t('workflow_run.compliance_export_pdf_note')
+  } catch (e) {
+    errorLogsError.value = String((e as Error)?.message || e)
+  } finally {
+    complianceReportExporting.value = false
+  }
+}
+
+async function exportComplianceReportJson() {
+  const exec = currentExecution.value
+  if (!exec) return
+  complianceReportExporting.value = true
+  failureExportNote.value = null
+  try {
+    const report = await downloadWorkflowComplianceReport(workflowId, exec.execution_id)
+    const filename = `compliance-wf-${workflowId.slice(0, 8)}-ex-${exec.execution_id.slice(0, 8)}.json`
+    downloadTextFile(filename, JSON.stringify(report, null, 2), 'application/json')
+    failureExportNote.value = t('workflow_run.compliance_export_note')
+  } catch (e) {
+    errorLogsError.value = String(
+      (e as Error)?.message || e || t('workflow_run.compliance_export_error'),
+    )
+  } finally {
+    complianceReportExporting.value = false
+  }
+}
+
 async function exportFailureBundleZip() {
   const exec = currentExecution.value
   if (!exec) return
@@ -1645,6 +1695,14 @@ function firstRouteQueryString(key: string): string {
   return String(v ?? '').trim()
 }
 
+function fillCollaborationGlobalContext() {
+  if (historyOnly.value) return
+  const preset = buildDefaultCollaborationGlobalContext(
+    executionCollaboration.value.orchestrator || undefined,
+  )
+  runGlobalContextJson.value = JSON.stringify(preset, null, 2)
+}
+
 function hydrateRunInputsFromRoute() {
   const qIn = firstRouteQueryString('input_data')
   const qGlob = firstRouteQueryString('global_context')
@@ -1714,6 +1772,26 @@ function buildRunPayloadForApi():
   return { ok: true, input_data: a.obj, global_context: b.obj }
 }
 
+async function runServerPreflight() {
+  serverPreflightLoading.value = true
+  serverPreflightError.value = null
+  try {
+    serverPreflight.value = await getWorkflowPreflight(
+      workflowId,
+      runVersionId.value.trim() || undefined,
+    )
+    if (!serverPreflight.value.ready) {
+      const failed = serverPreflight.value.checks.filter((c) => !c.ok && c.severity === 'error')
+      serverPreflightError.value =
+        failed[0]?.hint || failed[0]?.check || t('workflow_run.server_preflight_failed')
+    }
+  } catch (e) {
+    serverPreflightError.value = String((e as Error)?.message || e)
+  } finally {
+    serverPreflightLoading.value = false
+  }
+}
+
 async function startExecution() {
   if (runStartInFlight.value || loading.value) return
   runError.value = null
@@ -1726,6 +1804,24 @@ async function startExecution() {
     if (!payload.ok) {
       runError.value = payload.message
       return
+    }
+    if (!historyOnly.value) {
+      try {
+        const pf = await getWorkflowPreflight(
+          workflowId,
+          runVersionId.value.trim() || undefined,
+        )
+        serverPreflight.value = pf
+        if (!pf.ready) {
+          const failed = pf.checks.filter((c) => !c.ok && c.severity === 'error')
+          runError.value =
+            failed[0]?.hint || failed[0]?.check || t('workflow_run.server_preflight_failed')
+          return
+        }
+      } catch (e) {
+        runError.value = String((e as Error)?.message || e)
+        return
+      }
     }
     currentRunIdempotencyKey.value =
       currentRunIdempotencyKey.value ||
@@ -1932,6 +2028,17 @@ onUnmounted(() => {
           <Button
             type="button"
             v-if="!isRunning && !historyOnly"
+            variant="outline"
+            class="gap-2 border-slate-700 bg-slate-900/60 text-xs"
+            :disabled="serverPreflightLoading || loading"
+            @click="() => { void runServerPreflight() }"
+          >
+            <Loader2 v-if="serverPreflightLoading" class="w-4 h-4 animate-spin" />
+            {{ t('workflow_run.server_preflight') }}
+          </Button>
+          <Button
+            type="button"
+            v-if="!isRunning && !historyOnly"
             class="gap-2 bg-blue-600 hover:bg-blue-700"
             :disabled="loading"
             @click="startExecution"
@@ -2009,7 +2116,19 @@ onUnmounted(() => {
             />
           </label>
           <label class="flex flex-col gap-1 min-w-0">
-            <span class="text-slate-400">{{ t('workflow_run.run_inputs_global') }}</span>
+            <span class="flex items-center justify-between gap-2 text-slate-400">
+              <span>{{ t('workflow_run.run_inputs_global') }}</span>
+              <Button
+                v-if="!historyOnly"
+                type="button"
+                variant="outline"
+                size="sm"
+                class="h-7 text-[10px] px-2 border-slate-600"
+                @click="fillCollaborationGlobalContext"
+              >
+                {{ t('workflow_run.fill_collaboration_context') }}
+              </Button>
+            </span>
             <Textarea
               v-model="runGlobalContextJson"
               class="min-h-[100px] font-mono text-[11px] bg-slate-950 border-slate-700"
@@ -2019,6 +2138,14 @@ onUnmounted(() => {
           </label>
         </div>
       </details>
+      <div class="mt-3 grid gap-3 lg:grid-cols-2">
+        <PreflightPanel
+          :preflight="serverPreflight"
+          :loading="serverPreflightLoading"
+          :error="serverPreflightError"
+        />
+        <TraceOpsPanel :correlation-id="executionCollaboration.correlationId || undefined" />
+      </div>
       <div v-if="runError" class="mt-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
         {{ runError }}
       </div>
@@ -2772,6 +2899,30 @@ onUnmounted(() => {
                     ? t('workflow_run.failure_export_bundling')
                     : t('workflow_run.failure_export_bundle')
                 }}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="h-7 border-emerald-500/30 bg-slate-900/60 text-[11px] text-emerald-200"
+                :disabled="!currentExecution || complianceReportExporting"
+                @click="() => { void exportComplianceReportJson() }"
+              >
+                {{
+                  complianceReportExporting
+                    ? t('workflow_run.compliance_exporting')
+                    : t('workflow_run.compliance_export')
+                }}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="h-7 border-emerald-500/30 bg-slate-900/60 text-[11px] text-emerald-200"
+                :disabled="!currentExecution || complianceReportExporting"
+                @click="() => { void exportComplianceReportPdf() }"
+              >
+                {{ t('workflow_run.compliance_export_pdf') }}
               </Button>
               <Button
                 type="button"

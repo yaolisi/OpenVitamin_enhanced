@@ -58,7 +58,7 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 
 Suggested first UI path:
 
-- `/models` -> `/chat` -> `/images` -> `/agents` -> `/workflow`
+- `/models` -> `/chat` -> `/agents` -> `/workflow` (image generation under **Tools** in the sidebar)
 
 Skills & MCP (use in Agent / workflow Skill nodes): **`tutorials/tutorial.md`** §**8.4–8.5** and **`tutorials/tutorial-index.md` §1.1**.
 

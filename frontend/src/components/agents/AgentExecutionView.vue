@@ -67,6 +67,8 @@ import {
   listSkills,
   asrTranscribe,
   getCollaborationSessionsByCorrelation,
+  getAgentPreflight,
+  type PreflightResponse,
   type AgentDefinition, 
   type AgentSession, 
   type AgentTraceEvent,
@@ -88,6 +90,8 @@ import {
   readRagMultiHopEnabledFromModelParams,
 } from '@/utils/agentRagModelParams'
 import { formatAgentMutationErrorMessage } from '@/utils/agentMutationMessages'
+import PreflightPanel from '@/components/shared/PreflightPanel.vue'
+import TraceOpsPanel from '@/components/shared/TraceOpsPanel.vue'
 
 function messageContentToString(content: Message['content'] | undefined | null): string {
   if (content == null) return ''
@@ -215,6 +219,9 @@ const asrLoading = ref(false)
 const asrError = ref<string | null>(null)
 /** POST /run、/run/with-files 失败时的可读提示（与结构化 AgentApiError 对齐） */
 const runSubmitError = ref<string | null>(null)
+const serverPreflight = ref<PreflightResponse | null>(null)
+const serverPreflightLoading = ref(false)
+const serverPreflightError = ref<string | null>(null)
 /** GET /api/agents/:id 失败 */
 const agentFetchError = ref<string | null>(null)
 let mediaRecorder: MediaRecorder | null = null
@@ -444,10 +451,40 @@ const handleDeleteSession = async (sessionId: string) => {
   }
 }
 
+async function runServerPreflight() {
+  serverPreflightLoading.value = true
+  serverPreflightError.value = null
+  try {
+    serverPreflight.value = await getAgentPreflight(agentId)
+    if (!serverPreflight.value.ready) {
+      const failed = serverPreflight.value.checks.filter((c) => !c.ok && c.severity === 'error')
+      serverPreflightError.value =
+        failed[0]?.hint || failed[0]?.check || t('workflow_run.server_preflight_failed')
+    }
+  } catch (e) {
+    serverPreflightError.value = String((e as Error)?.message || e)
+  } finally {
+    serverPreflightLoading.value = false
+  }
+}
+
 const handleSendMessage = async () => {
   if ((!userInput.value.trim() && uploadedFiles.value.length === 0) || isRunning.value) return
 
   runSubmitError.value = null
+  try {
+    const pf = await getAgentPreflight(agentId)
+    serverPreflight.value = pf
+    if (!pf.ready) {
+      const failed = pf.checks.filter((c) => !c.ok && c.severity === 'error')
+      runSubmitError.value =
+        failed[0]?.hint || failed[0]?.check || t('workflow_run.server_preflight_failed')
+      return
+    }
+  } catch (e) {
+    runSubmitError.value = String((e as Error)?.message || e)
+    return
+  }
 
   // Build message content with file references
   let messageContent = userInput.value.trim()
@@ -1620,6 +1657,16 @@ watch(() => {
                 </button>
               </div>
             </div>
+
+            <PreflightPanel
+              :preflight="serverPreflight"
+              :loading="serverPreflightLoading"
+              :error="serverPreflightError"
+            />
+            <TraceOpsPanel
+              :trace-id="session?.trace_id"
+              :correlation-id="sessionCollaboration?.correlation_id"
+            />
 
             <div
               v-if="runSubmitError"

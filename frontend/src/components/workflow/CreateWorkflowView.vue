@@ -15,7 +15,6 @@ import { validateWorkflowNodes, validateWorkflowPreflight, type ValidationError 
 import {
   createWorkflow,
   createWorkflowVersion,
-  runWorkflow as runWorkflowApi,
   getToolCompositionRecommendations,
   recordToolCompositionUsage,
   type ToolCompositionRecommendationItem,
@@ -39,6 +38,7 @@ import {
   listDemoWorkflowBundles,
   buildDemoWorkflowGraph,
 } from './editor/demoWorkflowBundles'
+import { buildWorkflowRunPresetQuery } from '@/utils/workflowRunNavigation'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -88,6 +88,7 @@ const selectedDemoPlaybookHint = computed(() =>
     ? 'tutorials/demo-playbook-02-parallel-research.md'
     : 'tutorials/demo-playbook-01-release-brief.md',
 )
+const pendingDemoSampleInput = ref<Record<string, unknown> | null>(null)
 const backendRecommendedTemplates = ref<ToolCompositionRecommendationItem[]>([])
 const recommendedTemplates = computed(() => {
   if (backendRecommendedTemplates.value.length > 0) {
@@ -384,22 +385,21 @@ async function runWorkflow() {
   }
   
   isRunning.value = true
-  
+
+  const sample = pendingDemoSampleInput.value
+  const runQuery = buildWorkflowRunPresetQuery({
+    inputData: sample ?? {},
+    globalContext: {},
+    versionId: savedVersionId.value || undefined,
+    autoStart: true,
+  })
+
   try {
-    const execution = await runWorkflowApi(
-      savedWorkflowId.value!,
-      {
-        version_id: savedVersionId.value || undefined,
-        input_data: {},
-        global_context: {},
-        trigger_type: 'manual',
-      },
-      false
-    )
-    
-    alert(t('workflow.run_started', { executionId: execution.execution_id }))
-    // Optionally navigate to execution detail page
-    // router.push({ name: 'workflow-execution', params: { id: execution.execution_id } })
+    await router.push({
+      name: 'workflow-run',
+      params: { id: savedWorkflowId.value! },
+      query: runQuery,
+    })
   } catch (error) {
     console.error('Failed to run workflow:', error)
     const msg = error instanceof Error ? error.message : String(error)
@@ -512,6 +512,9 @@ function applyDemoWorkflow() {
   selectedNode.value = null
   selectedEdge.value = null
   validationErrors.value = []
+  pendingDemoSampleInput.value =
+    graph.sampleInput && Object.keys(graph.sampleInput).length > 0 ? { ...graph.sampleInput } : null
+  runPreflightCheck()
 }
 
 function applyTemplate() {
@@ -832,6 +835,9 @@ onUnmounted(() => {
       <span class="text-xs text-muted-foreground">
         {{ demoWorkflowBundles.find((x) => x.demo_id === selectedDemoWorkflowId)?.description }}
         · {{ t('workflow_page.demo_playbook_hint') }}: <code class="text-[11px]">{{ selectedDemoPlaybookHint }}</code>
+        <template v-if="pendingDemoSampleInput">
+          · {{ t('workflow_page.demo_sample_input_ready') }}
+        </template>
       </span>
     </div>
 

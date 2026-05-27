@@ -167,6 +167,21 @@ env:
   # 逗号分隔路径前缀；勿设为单独 "/"（生产护栏会拦截）
   auditLogPathPrefixes: ""
   auditLogIncludeGet: ""
+  # --- 企业：OIDC / KMS / OTel / HA（见 /api/v1/enterprise/capabilities）---
+  oidcEnabled: ""
+  oidcIssuer: ""
+  oidcJwksUrl: ""
+  oidcAudience: ""
+  oidcRoleClaim: ""
+  oidcAdminRoles: ""
+  oidcOperatorRoles: ""
+  oidcDefaultRole: ""
+  secretResolverMode: ""
+  secretFileRoots: ""
+  haProfile: ""
+  otelEnabled: ""
+  otelExporterOtlpEndpoint: ""
+  otelServiceName: ""
   # --- API Key 作用域 / 注册表与租户（JSON 较长时优先 Secret）---
   apiKeyScopesJson: ""
   apiKeysJson: ""

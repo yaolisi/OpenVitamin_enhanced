@@ -35,20 +35,30 @@ onMounted(() => {
   void refreshSystemConfig()
 })
 
-// Navigation items grouped by category
+// 平台主轴：对话 → 智能体 → 工作流 → 知识/技能/模型；文生图归入「工具」分组
 const navGroups = computed(() => [
   {
-    id: 'primary',
-    label: '',
+    id: 'platform',
+    label: t('nav.platform'),
     items: [
       { id: 'chat' as ViewType, label: t('nav.chat'), icon: MessageSquare },
-      { id: 'images' as ViewType, label: t('nav.images'), icon: Image },
       { id: 'agents' as ViewType, label: t('nav.agents'), icon: Bot },
       { id: 'workflow' as ViewType, label: t('nav.workflow'), icon: Workflow },
+    ],
+  },
+  {
+    id: 'capabilities',
+    label: t('nav.capabilities'),
+    items: [
       { id: 'knowledge' as ViewType, label: t('nav.knowledge'), icon: BookOpen },
       { id: 'skills' as ViewType, label: t('nav.skills'), icon: Sparkles },
       { id: 'models' as ViewType, label: t('nav.models'), icon: Database },
-    ]
+    ],
+  },
+  {
+    id: 'tools',
+    label: t('nav.tools'),
+    items: [{ id: 'images' as ViewType, label: t('nav.image_generation'), icon: Image }],
   },
   {
     id: 'system',
@@ -56,8 +66,8 @@ const navGroups = computed(() => [
     items: [
       { id: 'logs' as ViewType, label: t('nav.logs'), icon: BarChart3 },
       { id: 'settings' as ViewType, label: t('nav.settings'), icon: Settings },
-    ]
-  }
+    ],
+  },
 ])
 </script>
 

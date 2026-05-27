@@ -37,9 +37,9 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 
 1. `/models`：确认模型可见与状态正常
 2. `/chat`：发起基础对话，请求是否稳定返回
-3. `/images`：触发一次文生图任务并查看历史
-4. `/agents`：创建/编辑一个工具型 Agent 并运行
-5. `/workflow`：新建或打开工作流 → 在 **「高价值编排模板（OmX）」** 导入 **验收门禁** 或 **并行小队（Fork/Join）** → 保存并 Run，在 Timeline 观察节点状态（细节见 [tutorial-index.md §1.2](tutorial-index.md)、[docs/workflow/WORKFLOW_TEST_CASES_LOCAL.md](../docs/workflow/WORKFLOW_TEST_CASES_LOCAL.md)）
+3. `/agents`：创建/编辑一个工具型 Agent 并运行（运行页可查看 **correlation_id** 多 Agent 协同）
+4. `/workflow`：新建或打开工作流 → **「演示项目（多智能体）」** 或 **「高价值编排模板（OmX）」** 导入 → 保存并 Run（Demo 会预填示例入参；运行页可 **填充协同上下文**）
+5. （可选）`/images` **文生图**：侧栏 **「工具」** 分组内，需要出图时再使用
 
 可选扩展（与 Skill/MCP 相关）：在 **`/settings/mcp`** 按 **[tutorial.md §8.5](tutorial.md)** 导入工具为技能后，到 **`/skills`** 与 Agent / 工作流 **Skill** 节点验证（步骤细节见 **§8.4**）。
 

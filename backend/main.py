@@ -54,6 +54,11 @@ from api.events import router as events_router
 from api.collaboration import router as collaboration_router
 from api.workflows import router as workflows_router
 from api.audit import router as audit_router
+from api.auth_oidc import router as auth_oidc_router
+from api.enterprise import router as enterprise_router
+from api.eval import router as eval_router
+from api.ops import router as ops_router
+from api.preflight import router as preflight_router
 from api.mcp import router as mcp_router
 from api.errors import register_error_handlers
 from core.security.deps import require_authenticated_platform_admin
@@ -1148,7 +1153,7 @@ app.add_middleware(TenantApiKeyBindingMiddleware)
 app.add_middleware(ApiKeyScopeMiddleware)
 app.add_middleware(CSRFMiddleware)
 
-if getattr(settings, "rbac_enabled", False):
+if getattr(settings, "rbac_enabled", False) or getattr(settings, "oidc_enabled", False):
     app.add_middleware(RBACContextMiddleware, api_key_header=_api_key_hdr)
 
 app.add_middleware(UserContextMiddleware)
@@ -1226,8 +1231,20 @@ app.include_router(events_router)
 app.include_router(collaboration_router)
 app.include_router(workflows_router)
 app.include_router(audit_router)
+app.include_router(enterprise_router)
+app.include_router(preflight_router)
+app.include_router(eval_router)
+app.include_router(ops_router)
+app.include_router(auth_oidc_router)
 app.include_router(mcp_router)
 _configure_prometheus_metrics(app)
+
+try:
+    from core.observability.otel import configure_opentelemetry
+
+    configure_opentelemetry(app)
+except Exception as _otel_exc:
+    logger.warning("[OTel] configure skipped: %s", _otel_exc)
 
 
 @app.get("/")
@@ -1542,6 +1559,12 @@ async def _assemble_health_ready_payload(request: Request) -> tuple[dict, List[s
     _apply_health_ready_event_bus_degraded_metric(eb_reasons)
     _apply_health_ready_inference_cache_redis_degraded_metric(ic_reasons)
     _apply_health_ready_api_rate_limit_redis_degraded_metric(arl_reasons)
+    try:
+        from core.enterprise.capabilities import enterprise_health_snapshot
+
+        payload["enterprise"] = enterprise_health_snapshot()
+    except Exception:
+        pass
     return payload, eb_reasons, ic_reasons, arl_reasons
 
 

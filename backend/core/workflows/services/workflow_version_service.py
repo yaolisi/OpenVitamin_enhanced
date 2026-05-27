@@ -15,7 +15,7 @@ from core.workflows.models import (
     WorkflowNode,
     WorkflowEdge
 )
-from core.workflows.repository import WorkflowVersionRepository
+from core.workflows.repository import WorkflowRepository, WorkflowVersionRepository
 from core.workflows.runtime.graph_runtime_adapter import GraphRuntimeAdapter
 from core.system.settings_store import get_system_settings_store
 from config.settings import settings
@@ -287,6 +287,26 @@ class WorkflowVersionService:
         version = self.repository.get_version_by_id(version_id)
         if not version:
             return None
+
+        if bool(getattr(settings, "workflow_publish_gate_enforced", True)):
+            from core.workflows.publish_gate import evaluate_publish_gate
+
+            wf_row = WorkflowRepository(self.db).get_by_id(version.workflow_id)
+            tid = str(getattr(wf_row, "namespace", None) or "default") if wf_row else "default"
+            gate = evaluate_publish_gate(
+                self.db,
+                workflow_id=version.workflow_id,
+                version_id=version_id,
+                tenant_id=tid,
+            )
+            if not gate.get("allowed"):
+                issues = gate.get("issues") or []
+                raise ValueError(
+                    "Publish gate blocked: "
+                    + "; ".join(
+                        str(i.get("code") or i) for i in issues[:5]
+                    )
+                )
         
         # 验证 DAG
         errors = version.dag.validate_dag(

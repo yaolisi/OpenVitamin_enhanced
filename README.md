@@ -58,7 +58,7 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 
 推荐先跑一遍核心页面：
 
-- `/models` -> `/chat` -> `/images` -> `/agents` -> `/workflow`
+- `/models` -> `/chat` -> `/agents` -> `/workflow`（文生图在侧栏 **「工具」**，按需使用）
 
 技能与 MCP（导入后在 Agent / 工作流 Skill 节点中使用）：见 **`tutorials/tutorial.md`** 第 **8.4～8.5** 节与 **`tutorials/tutorial-index.md §1.1`**。
 

@@ -32,6 +32,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE'])
 const STORAGE_USER_ID_KEY = 'ai_platform_user_id'
 const STORAGE_SESSION_ID_KEY = 'ai_platform_session_id'
 const STORAGE_API_KEY_KEY = 'ai_platform_api_key'
+const STORAGE_OIDC_ACCESS_TOKEN_KEY = 'ai_platform_oidc_access_token'
 const STORAGE_TENANT_ID_KEY = 'ai_platform_tenant_id'
 const API_KEY_HEADER_NAME = 'X-Api-Key'
 const TENANT_HEADER_NAME = 'X-Tenant-Id'
@@ -150,6 +151,18 @@ export function setApiKey(apiKey: string | null): void {
   localStorage.setItem(STORAGE_API_KEY_KEY, apiKey.trim())
 }
 
+export function getOidcAccessToken(): string | null {
+  return localStorage.getItem(STORAGE_OIDC_ACCESS_TOKEN_KEY)
+}
+
+export function setOidcAccessToken(token: string | null): void {
+  if (!token || !token.trim()) {
+    localStorage.removeItem(STORAGE_OIDC_ACCESS_TOKEN_KEY)
+    return
+  }
+  localStorage.setItem(STORAGE_OIDC_ACCESS_TOKEN_KEY, token.trim())
+}
+
 export function getTenantId(): string {
   return localStorage.getItem(STORAGE_TENANT_ID_KEY) || DEFAULT_TENANT_ID
 }
@@ -249,7 +262,12 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   // 统一注入 user/session header
   headers.set('X-User-Id', getUserId())
   const apiKey = getApiKey()
-  if (apiKey) headers.set(API_KEY_HEADER_NAME, apiKey)
+  if (apiKey) {
+    headers.set(API_KEY_HEADER_NAME, apiKey)
+  } else {
+    const oidc = getOidcAccessToken()
+    if (oidc) headers.set('Authorization', `Bearer ${oidc}`)
+  }
   headers.set(TENANT_HEADER_NAME, getTenantId())
   const sid = getSessionId()
   if (sid) headers.set('X-Session-Id', sid)
@@ -3726,5 +3744,207 @@ export async function getLatestImageGenerationWarmup(model?: string): Promise<Im
     const error = await response.json().catch(() => ({ detail: response.statusText }))
     throw new Error(error.detail || `API error: ${response.statusText}`)
   }
+  return response.json()
+}
+
+/** GET /api/v1/enterprise/capabilities — 企业能力探测（OIDC/OTel/KMS 等） */
+export interface ProductionReadinessCheck {
+  id: string
+  label: string
+  status: string
+  hint?: string | null
+}
+
+export interface ProductionReadiness {
+  score: number
+  total: number
+  percent: number
+  checks: ProductionReadinessCheck[]
+}
+
+export interface EnterpriseCapabilities {
+  oidc_enabled: boolean
+  oidc_configured?: boolean
+  oidc_issuer?: string | null
+  secret_resolver_mode: string
+  otel_enabled: boolean
+  otel_exporter_configured: boolean
+  otel_ready?: boolean
+  ha_profile: string
+  prometheus_enabled: boolean
+  audit_log_enabled: boolean
+  rbac_enabled?: boolean
+  tenant_enforcement_enabled: boolean
+  identity_boundary_ready?: boolean
+  production_readiness?: ProductionReadiness
+}
+
+export interface PreflightCheckItem {
+  check: string
+  ok: boolean
+  severity: string
+  hint?: string | null
+}
+
+export interface PreflightResponse {
+  target: string
+  ready: boolean
+  checks: PreflightCheckItem[]
+  agent_id?: string
+  workflow_id?: string
+  version_id?: string
+}
+
+export async function getAgentPreflight(agentId: string): Promise<PreflightResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/preflight/agents/${encodeURIComponent(agentId)}`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function getWorkflowPreflight(
+  workflowId: string,
+  versionId?: string,
+): Promise<PreflightResponse> {
+  const usp = new URLSearchParams()
+  if (versionId) usp.set('version_id', versionId)
+  const q = usp.toString() ? `?${usp.toString()}` : ''
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/preflight/workflows/${encodeURIComponent(workflowId)}${q}`,
+  )
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function getEnterpriseCapabilities(): Promise<EnterpriseCapabilities> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/enterprise/capabilities`, { method: 'GET' })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+/** GET /api/v1/enterprise/compliance/reports/workflow/... — 合规留痕 JSON */
+export async function downloadWorkflowComplianceReport(
+  workflowId: string,
+  executionId: string,
+): Promise<Record<string, unknown>> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/enterprise/compliance/reports/workflow/${encodeURIComponent(workflowId)}/executions/${encodeURIComponent(executionId)}?download=1`,
+    { method: 'GET' },
+  )
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function downloadWorkflowCompliancePdf(
+  workflowId: string,
+  executionId: string,
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/enterprise/compliance/reports/workflow/${encodeURIComponent(workflowId)}/executions/${encodeURIComponent(executionId)}/pdf`,
+  )
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.blob()
+}
+
+export interface PublishGateResult {
+  allowed: boolean
+  issues: Array<Record<string, unknown>>
+  preflight?: PreflightResponse
+  contract_diff?: Record<string, unknown>
+  impacted_count?: number
+}
+
+export async function getWorkflowPublishGate(
+  workflowId: string,
+  versionId: string,
+): Promise<PublishGateResult> {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/enterprise/workflows/${encodeURIComponent(workflowId)}/versions/${encodeURIComponent(versionId)}/publish-gate`,
+  )
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export interface TraceOpsView {
+  trace_id?: string | null
+  request_id?: string | null
+  correlation_id?: string | null
+  audit_logs: Array<Record<string, unknown>>
+  agent_sessions: Array<{
+    session_id: string
+    agent_id: string
+    status: string
+    trace_id?: string | null
+    correlation_id?: string | null
+  }>
+}
+
+export async function getTraceOpsView(params: {
+  trace_id?: string
+  request_id?: string
+  correlation_id?: string
+}): Promise<TraceOpsView> {
+  const usp = new URLSearchParams()
+  if (params.trace_id) usp.set('trace_id', params.trace_id)
+  if (params.request_id) usp.set('request_id', params.request_id)
+  if (params.correlation_id) usp.set('correlation_id', params.correlation_id)
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/ops/trace?${usp.toString()}`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export interface OidcLoginConfig {
+  enabled: boolean
+  client_id?: string | null
+  redirect_uri?: string | null
+}
+
+export async function getOidcLoginConfig(): Promise<OidcLoginConfig> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/oidc/config`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function prepareOidcAuthorize(): Promise<{
+  authorize_url: string
+  state: string
+  code_verifier: string
+}> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/oidc/authorize-prepare`, { method: 'POST' })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function exchangeOidcToken(body: {
+  code: string
+  code_verifier: string
+  redirect_uri?: string
+}): Promise<{ access_token: string }> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/oidc/token`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export interface EvalRunResult {
+  run_id: string
+  total: number
+  passed: number
+  failed: number
+  duration_ms: number
+  results: Array<Record<string, unknown>>
+}
+
+export async function runEvalSuite(body: {
+  suite_id?: string
+  cases: Array<Record<string, unknown>>
+  stop_on_failure?: boolean
+}): Promise<EvalRunResult> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/eval/suites/run`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
   return response.json()
 }

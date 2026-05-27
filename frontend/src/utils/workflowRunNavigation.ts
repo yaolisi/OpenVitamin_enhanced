@@ -14,3 +14,22 @@ export function buildWorkflowNewRunQuery(fromQuery: LocationQuery): LocationQuer
   q.t = String(Date.now())
   return q
 }
+
+/** 新建运行页：预填 input_data / global_context（JSON 字符串放入 query） */
+export function buildWorkflowRunPresetQuery(options: {
+  inputData?: Record<string, unknown>
+  globalContext?: Record<string, unknown>
+  versionId?: string
+  autoStart?: boolean
+}): LocationQuery {
+  const q: LocationQuery = { t: String(Date.now()) }
+  if (options.inputData && Object.keys(options.inputData).length > 0) {
+    q.input_data = JSON.stringify(options.inputData)
+  }
+  if (options.globalContext && Object.keys(options.globalContext).length > 0) {
+    q.global_context = JSON.stringify(options.globalContext)
+  }
+  if (options.versionId) q.version_id = options.versionId
+  if (options.autoStart !== false) q.auto_start = '1'
+  return q
+}

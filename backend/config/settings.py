@@ -465,6 +465,27 @@ def validate_production_security_guardrails(s: "Settings") -> list[str]:
             "tool_system_env_allow_all=True exposes all process environment variables via the system.env tool in production; "
             "set TOOL_SYSTEM_ENV_ALLOW_ALL=false"
         )
+    if bool(getattr(s, "oidc_enabled", False)):
+        issuer = (getattr(s, "oidc_issuer", "") or "").strip()
+        jwks = (getattr(s, "oidc_jwks_url", "") or "").strip()
+        if not issuer and not jwks:
+            issues.append(
+                "oidc_enabled=True requires OIDC_ISSUER or OIDC_JWKS_URL"
+            )
+    if bool(getattr(s, "otel_enabled", False)) and not (
+        getattr(s, "otel_exporter_otlp_endpoint", "") or ""
+    ).strip():
+        issues.append(
+            "otel_enabled=True requires OTEL_EXPORTER_OTLP_ENDPOINT"
+        )
+    if not getattr(s, "debug", True):
+        mode = (getattr(s, "secret_resolver_mode", "env") or "env").strip().lower()
+        if mode == "file":
+            roots = (getattr(s, "secret_file_roots", "") or "").strip()
+            if not roots:
+                issues.append(
+                    "secret_resolver_mode=file requires SECRET_FILE_ROOTS in production"
+                )
     return issues
 
 
@@ -915,6 +936,30 @@ class Settings(BaseSettings):
     audit_log_path_prefixes: str = "/api/v1/workflows"
     # 是否记录 GET（默认仅写操作语义上已包含 GET 时需显式打开）
     audit_log_include_get: bool = False
+
+    # ---------- 企业：OIDC / 密钥 / HA / OTel ----------
+    oidc_enabled: bool = False
+    oidc_issuer: str = ""
+    oidc_jwks_url: str = ""
+    oidc_audience: str = ""
+    oidc_role_claim: str = "roles"
+    oidc_admin_roles: str = "admin"
+    oidc_operator_roles: str = "operator"
+    oidc_default_role: str = "viewer"
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""
+    oidc_authorization_endpoint: str = ""
+    oidc_token_endpoint: str = ""
+    oidc_scopes: str = "openid profile email"
+    # env | vault_env | file
+    secret_resolver_mode: str = "env"
+    secret_file_roots: str = ""
+    ha_profile: str = "standard"
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = ""
+    otel_service_name: str = "perilla-gateway"
+    workflow_publish_gate_enforced: bool = True
 
     # ---------- Trace 链路（与 request_id 对齐；支持 traceparent）----------
     trace_link_enabled: bool = True
