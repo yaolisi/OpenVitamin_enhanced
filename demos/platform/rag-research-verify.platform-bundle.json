@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "bundle_type": "platform",
+  "bundle_id": "rag-research-verify",
+  "name": "演示包 · RAG 并行调研（Agent + 知识库 + 工作流）",
+  "description": "一键导入：样例知识库、自定义 Skill、MCP 模板、Web/KB 双 Agent、Fork/Join + Verify Loop 工作流。",
+  "builtin_skill_catalog": ["builtin_web.search", "builtin_kb.query"],
+  "skills": [
+    {
+      "bundle_key": "skill_research_formatter",
+      "skill_id": "demo.bundle.research_formatter",
+      "name": "Demo · 调研 JSON 格式化",
+      "description": "将要点整理为含 text 与 sources 的 JSON（Prompt Skill，可与内置检索技能组合）。",
+      "category": "demo",
+      "type": "prompt",
+      "definition": {
+        "prompt_template": "将下列调研要点整理为严格 JSON，仅输出一行 JSON 对象，字段 text（字符串）与 sources（字符串数组）：\n\n{{text}}"
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "原始要点或草稿" }
+        },
+        "required": ["text"]
+      }
+    }
+  ],
+  "mcp_servers": [
+    {
+      "bundle_key": "mcp_fs_template",
+      "name": "Demo · MCP 文件系统（模板）",
+      "description": "与教程 §8.5 一致：npx 拉起 @modelcontextprotocol/server-filesystem。默认关闭；在 Settings→MCP 启用后 Probe 并 Import 为 Skill。",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "cwd": null,
+      "enabled": false,
+      "optional": true
+    }
+  ],
+  "mcp_tool_imports": [
+    {
+      "server_bundle_key": "mcp_fs_template",
+      "optional": true,
+      "skip_if_disabled": true
+    }
+  ],
+  "knowledge_bases": [
+    {
+      "bundle_key": "kb_perilla_demo",
+      "name": "Demo · Perilla 工作流与 RAG",
+      "description": "平台演示包内置样例文档，供 KB 分析员检索。",
+      "embedding_model_id": "__AUTO_EMBEDDING__",
+      "chunk_size": 384,
+      "chunk_overlap": 48,
+      "documents": [
+        {
+          "filename": "perilla-workflow-overview.md",
+          "content_path": "documents/perilla-workflow-overview.md"
+        },
+        {
+          "filename": "perilla-rag-practices.md",
+          "content_path": "documents/perilla-rag-practices.md"
+        }
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "bundle_key": "agent_web",
+      "name": "Demo · Web 调研员",
+      "description": "使用 builtin_web.search 检索公开信息要点。",
+      "model_id": "__AUTO_LLM__",
+      "enabled_skills": ["builtin_web.search", "$import:skill_research_formatter"],
+      "system_prompt": "你是 Web 调研员。根据用户主题检索并归纳要点，输出简洁 JSON：{ \"text\": string, \"sources\": string[] }。",
+      "max_steps": 12,
+      "temperature": 0.4
+    },
+    {
+      "bundle_key": "agent_kb",
+      "name": "Demo · KB 分析员",
+      "description": "绑定演示知识库，使用 builtin_kb.query 引用文档片段。",
+      "model_id": "__AUTO_LLM__",
+      "enabled_skills": ["builtin_kb.query", "$import:skill_research_formatter"],
+      "rag_ids": ["$import:kb_perilla_demo"],
+      "system_prompt": "你是知识库分析员。优先依据检索到的文档片段回答；引用处注明来源。输出 JSON：{ \"text\": string, \"sources\": string[] }。",
+      "max_steps": 12,
+      "temperature": 0.3
+    }
+  ],
+  "workflows": [
+    {
+      "bundle_key": "wf_parallel_research",
+      "workflow_name": "Demo · RAG 并行双源调研",
+      "description": "Web Agent + KB Agent 并行 → Join → Verify Loop",
+      "tags": ["demo", "platform-bundle", "rag", "multi-agent"],
+      "sample_input": {
+        "topic": "Perilla 工作流编排与多 Agent 控制相比纯 Chat 的优势"
+      },
+      "dag": {
+        "entry_node": "start",
+        "global_config": {
+          "bundle_id": "rag-research-verify"
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "input",
+            "name": "Start",
+            "config": { "workflow_node_type": "start" },
+            "position": { "x": 80, "y": 200 }
+          },
+          {
+            "id": "input_topic",
+            "type": "input",
+            "name": "Topic",
+            "config": {
+              "workflow_node_type": "input",
+              "input_key": "topic",
+              "input_schema": {
+                "type": "object",
+                "properties": { "topic": { "type": "string" } },
+                "required": ["topic"]
+              }
+            },
+            "position": { "x": 240, "y": 200 }
+          },
+          {
+            "id": "fork_parallel",
+            "type": "tool",
+            "name": "Fork",
+            "config": {
+              "workflow_node_type": "fork",
+              "branch_hint": "web + kb parallel"
+            },
+            "position": { "x": 440, "y": 200 }
+          },
+          {
+            "id": "branch_web",
+            "type": "agent",
+            "name": "Web 调研员",
+            "config": {
+              "workflow_node_type": "agent",
+              "agent_id": "$import:agent_web",
+              "agent_display_name": "Demo · Web 调研员"
+            },
+            "position": { "x": 660, "y": 120 }
+          },
+          {
+            "id": "branch_kb",
+            "type": "agent",
+            "name": "KB 分析员",
+            "config": {
+              "workflow_node_type": "agent",
+              "agent_id": "$import:agent_kb",
+              "agent_display_name": "Demo · KB 分析员"
+            },
+            "position": { "x": 660, "y": 280 }
+          },
+          {
+            "id": "join_merge",
+            "type": "tool",
+            "name": "Join",
+            "config": {
+              "workflow_node_type": "join",
+              "dependency_mode": "all",
+              "merge_mode": "flat"
+            },
+            "position": { "x": 880, "y": 200 }
+          },
+          {
+            "id": "verify_ralph",
+            "type": "tool",
+            "name": "Ralph Verify",
+            "config": {
+              "workflow_node_type": "verify_loop",
+              "max_iterations": 3,
+              "required_keys": ["text", "sources"],
+              "forbid_error_key": true,
+              "loop_body": {
+                "type": "llm",
+                "model_tier": "thorough",
+                "temperature": 0.3,
+                "prompt": "综合并行分支结果 branches，撰写最终调研摘要。必须输出 JSON，含非空 text 与 sources 数组。\n\n主题：{{global.input_data.topic}}\n\n分支汇总：{{branches}}\n\n若上一轮验收失败，请修正：{{prev}}"
+              }
+            },
+            "position": { "x": 1100, "y": 200 }
+          },
+          {
+            "id": "output_result",
+            "type": "output",
+            "name": "Result",
+            "config": {
+              "workflow_node_type": "output",
+              "output_key": "research_result"
+            },
+            "position": { "x": 1320, "y": 200 }
+          }
+        ],
+        "edges": [
+          { "from_node": "start", "to_node": "input_topic" },
+          { "from_node": "input_topic", "to_node": "fork_parallel" },
+          { "from_node": "fork_parallel", "to_node": "branch_web" },
+          { "from_node": "fork_parallel", "to_node": "branch_kb" },
+          { "from_node": "branch_web", "to_node": "join_merge" },
+          { "from_node": "branch_kb", "to_node": "join_merge" },
+          { "from_node": "join_merge", "to_node": "verify_ralph" },
+          { "from_node": "verify_ralph", "to_node": "output_result" }
+        ]
+      }
+    }
+  ]
+}

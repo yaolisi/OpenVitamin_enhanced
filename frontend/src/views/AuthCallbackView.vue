@@ -29,7 +29,9 @@ onMounted(async () => {
   try {
     const tokens = await exchangeOidcToken({ code, code_verifier: verifier })
     setOidcAccessToken(tokens.access_token)
-    router.replace('/chat')
+    const after = sessionStorage.getItem('oidc_redirect_after') || '/chat'
+    sessionStorage.removeItem('oidc_redirect_after')
+    router.replace(after)
   } catch (e) {
     error.value = (e as Error)?.message || t('auth.callback.failed')
   }

@@ -11,7 +11,7 @@
 | 能力 | 本 Demo 节点 |
 |------|----------------|
 | **Fork / Join** 并行编排 | `fork_parallel` → 双分支 → `join_merge` |
-| 异构能力（Web vs KB） | 默认双 **LLM**；进阶换 **双 Agent** |
+| 异构能力（Web vs KB） | 画布版双 **LLM 角色**；平台包 **双 Agent** + 样例 KB |
 | **Verify Loop（Ralph）** | `verify_ralph`，`required_keys: text, sources` |
 | 模型分档 | 分支 `standard`，验证环 body `thorough` |
 
@@ -21,16 +21,16 @@
 
 - [ ] 网关与前端已启动
 - [ ] `GET /api/models` 可用
-- [ ] （推荐）`/knowledge` 建库并上传 1 份 FAQ（如 `Perilla-FAQ.md`），等待 **INDEXED**
-- [ ] （进阶）`/agents` 创建两个 Agent：
-  - **Web 调研员**：`builtin_web.search`
-  - **KB 分析员**：`builtin_kb.query`（绑定知识库）
+- [ ] **推荐**：工作流列表 → **一键导入演示包** `rag-research-verify`（含 KB 样例 + 双 Agent + 已绑定工作流）
+- [ ] **或** 画布轻量：仅导入 DAG，双路为 LLM（无真实 `builtin_kb.query` / Web Skill）
 
 ---
 
 ## 3. 导入工作流
 
-**UI**：`/workflow/create` → **演示项目** → **Demo 2 · 并行双源调研验证环** → **导入演示项目**。
+**UI（多 Agent，推荐）**：`/workflow` → **完整演示包** → `rag-research-verify` → **一键导入演示包**。
+
+**UI（画布轻量）**：`/workflow/create` → **演示项目** → **Demo 2** → **导入演示项目**。
 
 **脚本**：
 

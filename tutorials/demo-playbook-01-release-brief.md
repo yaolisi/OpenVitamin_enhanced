@@ -15,7 +15,9 @@
 | **机器验收** | `checkpoint`（`required_keys`） |
 | 模型分档 | Clarify `standard`，Execute `thorough` |
 
-默认 bundle 中 **Execute 为 LLM**（零 Agent 即可跑通）；进阶可改为 **Agent 节点**。
+**推荐（多 Agent）**：工作流列表页 **一键导入演示包** `release-brief-gate`（自动创建澄清员/写手 Agent 并绑定节点）。
+
+**画布轻量版**：下方「导入工作流」仅载入 DAG，节点为 **LLM 扮演多角色**（零 Agent 即可跑通编排与审批/验收）。
 
 ---
 

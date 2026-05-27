@@ -58,9 +58,14 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 
 推荐先跑一遍核心页面：
 
+- （可选）`/register` 或 `/login`：本机多用户（`run-backend.sh` 默认 `LOCAL_AUTH_ENABLED=true`）
 - `/models` -> `/chat` -> `/agents` -> `/workflow`（文生图在侧栏 **「工具」**，按需使用）
 
+本地账号与环境变量示例见 `backend/.env.example`、`run-backend.sh`；身份说明见 `tutorials/tutorial.md` **§8.2**。
+
 技能与 MCP（导入后在 Agent / 工作流 Skill 节点中使用）：见 **`tutorials/tutorial.md`** 第 **8.4～8.5** 节与 **`tutorials/tutorial-index.md §1.1`**。
+
+**一键导入 / 导出 Bundle**（平台包、工作流包、JSON/ZIP 环境快照）：侧栏 **`/import`**；API **`/api/v1/import/*`**；说明见 **`tutorials/tutorial.md §8.6`**、[demos/platform/README.md](demos/platform/README.md)、[demos/platform/BUNDLE_SCHEMA.md](demos/platform/BUNDLE_SCHEMA.md)。
 
 工作流编排（Fork/Join、验收检查点、模型分档、OmX 模板）：见 **`tutorials/tutorial-index.md §1.2`** 与 **`docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md`**（配置 JSON 见 **`WORKFLOW_NODE_CONFIG_GUIDE.md`**，本地 Case 见 **`WORKFLOW_TEST_CASES_LOCAL.md`**）。
 

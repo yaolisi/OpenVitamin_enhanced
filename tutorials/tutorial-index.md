@@ -24,7 +24,10 @@
 | 任务 | 主教程 [tutorial.md](tutorial.md) | 极简 [tutorial-quickstart.md](tutorial-quickstart.md) |
 |------|--------------------------------------|--------------------------------------------------------|
 | 配置本地化大模型（磁盘 `model.json`、扫描、本机 Ollama/LM 等） | 第 **8.1** 节 | **「本地化大模型（可选）」** |
-| 账号与安全上下文（`X-Api-Key`、`X-Tenant-Id`、语言与主题等） | 第 **8.2** 节 | **「账号与设置（可选）」** |
+| 账号与登录（本地注册/登录、OIDC、API Key、Eval） | 第 **8.2** 节 | **「账号与登录（可选）」** |
+| 登录跳转、`AUTH_REQUIRE_LOGIN`、管理员与角色 FAQ | **[tutorial-auth-login-roles-zh.md](tutorial-auth-login-roles-zh.md)** | — |
+| **一键导入 / 导出**（平台包、ZIP、环境快照） | [tutorial.md](tutorial.md) **§8.6**；侧栏 **一键导入** → [demos/platform/README.md](../demos/platform/README.md) | — |
+| 工作流发布门禁（编辑页「发布」） | 第 **8.2** 节 **C.1**、第 **9** 章 | — |
 | 配置云端大模型（添加云端模型、管理员 Key、侧栏调参） | 第 **8.3** 节 | **「云端大模型（可选）」** |
 | Skill（技能库、Agent、工作流 Skill 节点） | 第 **8.4** 节 | **「Skill 与 MCP（可选）」** 中 Skill 段 |
 | MCP（Settings→MCP、Probe、导入为 Skill、与 Skill 的关系） | 第 **8.5** 节 | **「Skill 与 MCP（可选）」** 全文 |
@@ -50,7 +53,7 @@
 | **发布简报门禁** | 审批 + Checkpoint + 模型分档 | [demo1-release-brief-gate.bundle.json](../demos/workflows/demo1-release-brief-gate.bundle.json) | [demo-playbook-01-release-brief.md](demo-playbook-01-release-brief.md) |
 | **并行双源调研** | Fork/Join + Verify Loop +（可选）RAG | [demo2-parallel-research-verify.bundle.json](../demos/workflows/demo2-parallel-research-verify.bundle.json) | [demo-playbook-02-parallel-research.md](demo-playbook-02-parallel-research.md) |
 
-导入：Workflow **新建/编辑** 页 **「演示项目（多智能体）」**；或 `scripts/import_demo_workflow.py`（见 [demos/workflows/README.md](../demos/workflows/README.md)）。
+导入：Workflow **新建/编辑** 页 **「演示项目（多智能体）」**（仅 DAG）；或 `scripts/import_demo_workflow.py`（见 [demos/workflows/README.md](../demos/workflows/README.md)）。**完整环境（Agent/KB/Skill/MCP/工作流）**：侧栏 **「一键导入」**（`/import`）导入/导出/上传 ZIP，见 [tutorial.md](tutorial.md) **§8.6**、[demos/platform/README.md](../demos/platform/README.md)。
 
 ---
 

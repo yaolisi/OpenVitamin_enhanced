@@ -2,14 +2,21 @@
   "schema_version": 1,
   "demo_id": "release-brief-gate",
   "name": "Demo 1 · 发布简报门禁",
-  "description": "澄清 → 计划 → 人工审批 → 执行（LLM/Agent）→ 验收检查点 → 输出。演示 HITL 与 Checkpoint。",
+  "description": "画布轻量版：LLM 扮演多角色（澄清/执行）。完整多 Agent + 自动绑节点请用平台演示包 release-brief-gate。",
+  "recommended_platform_bundle_id": "release-brief-gate",
+  "canvas_mode": "llm_roles",
   "workflow_name": "Demo · 发布简报门禁",
   "tags": ["demo", "multi-agent", "approval", "checkpoint"],
   "agent_placeholders": {
+    "clarify": {
+      "node_id": "clarify",
+      "display_name": "需求澄清员",
+      "hint": "平台包 release-brief-gate 会将本节点换为 Agent 并自动绑定"
+    },
     "execute_writer": {
       "node_id": "execute",
       "display_name": "发布写手",
-      "hint": "可选：将 execute 节点改为 agent 并绑定此 Agent（model_tier: thorough）"
+      "hint": "平台包 release-brief-gate 会将本节点换为 Agent 并自动绑定"
     }
   },
   "dag": {
@@ -45,11 +52,11 @@
       {
         "id": "clarify",
         "type": "llm",
-        "name": "Clarify",
+        "name": "需求澄清（LLM 角色）",
         "config": {
           "model_tier": "standard",
           "temperature": 0.4,
-          "prompt": "澄清需求：列出目标、约束、非目标、待确认问题。输入简报：\n\n{{global.input_data.brief}}"
+          "prompt": "【角色：需求澄清员】列出目标、受众、约束、非目标、待确认问题。输入简报：\n\n{{global.input_data.brief}}"
         },
         "position": { "x": 440, "y": 200 }
       },
@@ -78,11 +85,11 @@
       {
         "id": "execute",
         "type": "llm",
-        "name": "Execute",
+        "name": "发布撰写（LLM 角色）",
         "config": {
           "model_tier": "thorough",
           "temperature": 0.3,
-          "prompt": "按计划撰写发布简报，输出 JSON，必须包含非空字段 text 与 summary。计划上下文：\n\n{{prev.text}}"
+          "prompt": "【角色：发布写手】按计划撰写发布简报。仅输出 JSON，含非空 text 与 summary。计划上下文：\n\n{{prev.text}}"
         },
         "position": { "x": 1040, "y": 200 }
       },

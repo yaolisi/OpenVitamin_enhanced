@@ -3898,6 +3898,74 @@ export interface OidcLoginConfig {
   redirect_uri?: string | null
 }
 
+export interface AuthConfig {
+  local_auth_enabled: boolean
+  local_auth_allow_registration: boolean
+  oidc_enabled: boolean
+  auth_require_login: boolean
+}
+
+export interface AuthSession {
+  authenticated: boolean
+  user_id: string
+  username?: string | null
+  display_name?: string | null
+  platform_role: string
+  auth_method: string
+  rbac_enabled: boolean
+  oidc_enabled: boolean
+  oidc_signed_in: boolean
+  local_auth_enabled: boolean
+  local_dev_admin: boolean
+  require_login: boolean
+  display_label: string
+}
+
+export async function getAuthConfig(): Promise<AuthConfig> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/config`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function getAuthSession(): Promise<AuthSession> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/session`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function localLogin(body: { username: string; password: string }): Promise<void> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/login`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { detail?: string }).detail || response.statusText)
+  }
+}
+
+export async function localRegister(body: {
+  username: string
+  password: string
+  email?: string
+  display_name?: string
+}): Promise<void> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/register`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error((err as { detail?: string }).detail || response.statusText)
+  }
+}
+
+export async function localLogout(): Promise<void> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST' })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  setOidcAccessToken(null)
+}
+
 export async function getOidcLoginConfig(): Promise<OidcLoginConfig> {
   const response = await apiFetch(`${API_BASE_URL}/api/v1/auth/oidc/config`)
   if (!response.ok) throw new Error(`API error: ${response.statusText}`)
@@ -3940,11 +4008,306 @@ export async function runEvalSuite(body: {
   suite_id?: string
   cases: Array<Record<string, unknown>>
   stop_on_failure?: boolean
+  run_preflight_first?: boolean
 }): Promise<EvalRunResult> {
   const response = await apiFetch(`${API_BASE_URL}/api/v1/eval/suites/run`, {
     method: 'POST',
     body: JSON.stringify(body),
   })
   if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export interface PlatformBundleManifest {
+  bundle_id: string
+  name: string
+  description: string
+  schema_version?: number
+}
+
+export interface PlatformBundleImportResult {
+  bundle_id: string
+  knowledge_bases: Record<string, string>
+  skills: Record<string, string>
+  mcp_servers: Record<string, string>
+  mcp_skills_imported: string[]
+  agents: Record<string, string>
+  workflows: Record<string, string>
+  workflow_versions: Record<string, string>
+  published: Record<string, boolean>
+  documents_indexed: string[]
+  warnings: string[]
+  edit_url_hints: Record<string, string>
+  run_url_hints: Record<string, string>
+  knowledge_url_hints: Record<string, string>
+  agents_url_hints: Record<string, string>
+  skills_url_hints: Record<string, string>
+  mcp_url_hints: Record<string, string>
+}
+
+/** @deprecated 使用 getImportCatalog / runOneClickImport */
+export async function listPlatformDemoBundles(): Promise<{ items: PlatformBundleManifest[] }> {
+  const res = await getImportCatalog()
+  return {
+    items: res.items
+      .filter((x) => x.kind === 'platform')
+      .map((x) => ({
+        bundle_id: x.bundle_id,
+        name: x.name,
+        description: x.description,
+        schema_version: x.schema_version,
+      })),
+  }
+}
+
+/** @deprecated 使用 runOneClickImport */
+export async function importPlatformDemoBundle(
+  bundleId: string,
+  options?: { publish_workflows?: boolean; wait_document_index?: boolean },
+): Promise<PlatformBundleImportResult> {
+  const run = await runOneClickImport({
+    kind: 'platform',
+    bundle_id: bundleId,
+    publish_workflows: options?.publish_workflows,
+    wait_document_index: options?.wait_document_index,
+  })
+  if (!run.platform) {
+    throw new Error('Platform import did not return platform payload')
+  }
+  return run.platform
+}
+
+export type ImportKind = 'platform' | 'workflow'
+
+export interface ImportCatalogItem {
+  kind: ImportKind
+  bundle_id: string
+  name: string
+  description: string
+  schema_version?: number
+  includes: string[]
+  recommended_platform_bundle_id?: string | null
+  canvas_mode?: string | null
+}
+
+export interface ImportRunResponse {
+  kind: ImportKind
+  bundle_id: string
+  platform?: PlatformBundleImportResult
+  workflow_id?: string | null
+  version_id?: string | null
+  published: boolean
+  sample_input?: Record<string, unknown> | null
+  warnings: string[]
+  edit_url_hint?: string | null
+  run_url_hint?: string | null
+  knowledge_url_hints?: Record<string, string>
+  agents_url_hints?: Record<string, string>
+  skills_url_hints?: Record<string, string>
+  mcp_url_hints?: Record<string, string>
+}
+
+export async function getImportCatalog(): Promise<{ items: ImportCatalogItem[] }> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/catalog`)
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function runOneClickImport(body: {
+  kind: ImportKind
+  bundle_id: string
+  publish_workflows?: boolean
+  wait_document_index?: boolean
+  namespace?: string
+}): Promise<ImportRunResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/run`, {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: body.kind,
+      bundle_id: body.bundle_id,
+      publish_workflows: body.publish_workflows ?? false,
+      wait_document_index: body.wait_document_index ?? true,
+      namespace: body.namespace,
+    }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(
+      (err as { message?: string; detail?: string }).message
+        || (err as { detail?: string }).detail
+        || response.statusText,
+    )
+  }
+  return response.json()
+}
+
+export interface ImportValidateResponse {
+  ok: boolean
+  kind?: ImportKind
+  bundle_id?: string
+  message?: string
+}
+
+export async function validateImportBundle(body: {
+  bundle: Record<string, unknown>
+  kind?: ImportKind
+}): Promise<ImportValidateResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/validate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
+export async function runOneClickImportFromBody(body: {
+  bundle: Record<string, unknown>
+  kind?: ImportKind
+  publish_workflows?: boolean
+  wait_document_index?: boolean
+  namespace?: string
+}): Promise<ImportRunResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/run-body`, {
+    method: 'POST',
+    body: JSON.stringify({
+      bundle: body.bundle,
+      kind: body.kind,
+      publish_workflows: body.publish_workflows ?? false,
+      wait_document_index: body.wait_document_index ?? true,
+      namespace: body.namespace,
+    }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(
+      (err as { message?: string; detail?: string }).message
+        || (err as { detail?: string }).detail
+        || response.statusText,
+    )
+  }
+  return response.json()
+}
+
+export interface ExportDiscoverResponse {
+  workflow_ids: string[]
+  agent_ids: string[]
+  knowledge_base_ids: string[]
+  skill_ids: string[]
+  mcp_server_ids: string[]
+}
+
+export interface ExportBundleJsonResponse {
+  kind: ImportKind
+  bundle_id: string
+  filename: string
+  bundle: Record<string, unknown>
+  warnings: string[]
+}
+
+export async function discoverImportExport(body: {
+  workflow_ids: string[]
+  agent_ids?: string[]
+  knowledge_base_ids?: string[]
+  skill_ids?: string[]
+  mcp_server_ids?: string[]
+}): Promise<ExportDiscoverResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/export/discover`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(
+      (err as { message?: string }).message || response.statusText,
+    )
+  }
+  return response.json()
+}
+
+export async function exportEnvironmentBundle(
+  body: {
+    kind?: ImportKind
+    format?: 'json' | 'zip'
+    bundle_id: string
+    name: string
+    description?: string
+    workflow_ids: string[]
+    agent_ids?: string[]
+    knowledge_base_ids?: string[]
+    skill_ids?: string[]
+    mcp_server_ids?: string[]
+    use_model_placeholders?: boolean
+    include_documents?: boolean
+    export_mcp_tool_imports?: boolean
+  },
+  options?: { download?: boolean },
+): Promise<{ format: 'zip'; blob: Blob; filename: string } | { format: 'json'; data: ExportBundleJsonResponse }> {
+  const usp = new URLSearchParams()
+  if (options?.download) usp.set('download', 'true')
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/v1/import/export${usp.toString() ? `?${usp.toString()}` : ''}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: body.kind ?? 'platform',
+        format: body.format ?? 'zip',
+        bundle_id: body.bundle_id,
+        name: body.name,
+        description: body.description ?? '',
+        workflow_ids: body.workflow_ids,
+        agent_ids: body.agent_ids ?? [],
+        knowledge_base_ids: body.knowledge_base_ids ?? [],
+        skill_ids: body.skill_ids ?? [],
+        mcp_server_ids: body.mcp_server_ids ?? [],
+        use_model_placeholders: body.use_model_placeholders ?? true,
+        include_documents: body.include_documents ?? true,
+        export_mcp_tool_imports: body.export_mcp_tool_imports ?? true,
+      }),
+    },
+  )
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(
+      (err as { message?: string }).message || response.statusText,
+    )
+  }
+  const ct = response.headers.get('content-type') || ''
+  const disp = response.headers.get('content-disposition') || ''
+  const m = /filename="([^"]+)"/.exec(disp)
+  const fallbackName = `${body.bundle_id}.${body.format === 'json' ? 'json' : 'zip'}`
+  const filename = m?.[1] || fallbackName
+  if (ct.includes('zip')) {
+    return { format: 'zip', blob: await response.blob(), filename }
+  }
+  return { format: 'json', data: await response.json() }
+}
+
+export async function uploadImportBundle(
+  file: File,
+  options?: {
+    kind?: ImportKind
+    publish_workflows?: boolean
+    wait_document_index?: boolean
+    namespace?: string
+  },
+): Promise<ImportRunResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  if (options?.kind) form.append('kind', options.kind)
+  if (options?.publish_workflows) form.append('publish_workflows', 'true')
+  if (options?.wait_document_index === false) form.append('wait_document_index', 'false')
+  if (options?.namespace) form.append('namespace', options.namespace)
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/import/upload`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(
+      (err as { message?: string; detail?: string }).message
+        || (err as { detail?: string }).detail
+        || response.statusText,
+    )
+  }
   return response.json()
 }

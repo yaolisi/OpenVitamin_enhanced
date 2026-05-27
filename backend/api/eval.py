@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from core.data.base import get_db
 from core.eval.regression_suite import run_eval_suite
-from core.security.deps import require_platform_admin
+from core.security.deps import require_authenticated_platform_admin
 
 router = APIRouter(prefix="/api/v1/eval", tags=["eval"])
 
@@ -49,7 +49,7 @@ class EvalRunResponse(BaseModel):
 def run_regression_suite(
     body: EvalRunRequest,
     db: Annotated[Session, Depends(get_db)],
-    _role: Annotated[Any, Depends(require_platform_admin)],
+    _role: Annotated[Any, Depends(require_authenticated_platform_admin)],
 ) -> EvalRunResponse:
     if not body.cases:
         return EvalRunResponse(

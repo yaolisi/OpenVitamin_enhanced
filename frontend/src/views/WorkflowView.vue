@@ -12,13 +12,19 @@ import {
   XCircle,
   Loader2,
   Search,
-  GitBranch
+  GitBranch,
+  PackageOpen,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { getWorkflowExecutionStatus, listWorkflows, listWorkflowExecutions, type WorkflowRecord } from '@/services/api'
+import {
+  getWorkflowExecutionStatus,
+  listWorkflows,
+  listWorkflowExecutions,
+  type WorkflowRecord,
+} from '@/services/api'
 import { normalizeExecutionStatus, statusBadgeClass, type WorkflowUiStatus } from '@/components/workflow/status'
 import { buildWorkflowNewRunQuery } from '@/utils/workflowRunNavigation'
 import { useWorkflowHistoryNavigation } from '@/composables/useWorkflowHistoryNavigation'
@@ -169,6 +175,10 @@ function scheduleRefresh() {
   }, 3000)
 }
 
+function openOneClickImport() {
+  router.push({ name: 'bundle-import' })
+}
+
 onMounted(() => {
   void loadWorkflows()
 })
@@ -191,13 +201,19 @@ onUnmounted(() => {
           <p class="text-sm text-muted-foreground">{{ t('workflow.subtitle') }}</p>
         </div>
       </div>
-      <Button 
-        class="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-        @click="createWorkflow"
-      >
-        <Plus class="w-4 h-4" />
-        {{ t('workflow.create') }}
-      </Button>
+      <div class="flex items-center gap-2">
+        <Button variant="outline" class="gap-2" @click="openOneClickImport">
+          <PackageOpen class="w-4 h-4" />
+          {{ t('import.nav_short') }}
+        </Button>
+        <Button
+          class="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+          @click="createWorkflow"
+        >
+          <Plus class="w-4 h-4" />
+          {{ t('workflow.create') }}
+        </Button>
+      </div>
     </div>
 
     <!-- Search Bar -->

@@ -326,6 +326,16 @@ watch(theme, (newTheme) => {
           </button>
           <button
             class="w-full text-left text-sm font-semibold px-3 py-2 rounded-lg transition-colors"
+            :class="settingsSection === 'settings-eval' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
+            @click="router.push('/settings/eval')"
+          >
+            <span v-if="!navCollapsed">{{ t('eval.nav') }}</span>
+            <span v-else class="flex items-center justify-center">
+              <FileJson class="w-4 h-4" />
+            </span>
+          </button>
+          <button
+            class="w-full text-left text-sm font-semibold px-3 py-2 rounded-lg transition-colors"
             :class="settingsSection === 'settings-backup' ? 'bg-muted/40 text-foreground' : 'hover:bg-muted/40'"
             @click="router.push('/settings/backup')"
           >

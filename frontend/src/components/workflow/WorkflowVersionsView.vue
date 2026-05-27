@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ArrowLeft, GitCompare, RotateCcw, Rocket, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import PublishGateDialog from '@/components/shared/PublishGateDialog.vue'
+import { useWorkflowPublishGate } from '@/composables/useWorkflowPublishGate'
 import {
   diffWorkflowVersions,
   getWorkflow,
   listWorkflowVersions,
-  publishWorkflowVersion,
   rollbackWorkflowVersion,
   type WorkflowRecord,
   type WorkflowVersionRecord,
@@ -17,7 +19,20 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const workflowId = route.params.id as string
+
+const {
+  publishGateOpen,
+  publishGateLoading,
+  publishGatePublishing,
+  publishGateError,
+  publishGateResult,
+  publishVersionLabel,
+  openPublishGateForVersion,
+  closePublishGate,
+  confirmPublishFromGate,
+} = useWorkflowPublishGate(workflowId)
 
 const workflow = ref<WorkflowRecord | null>(null)
 const versions = ref<WorkflowVersionRecord[]>([])
@@ -67,14 +82,19 @@ async function doDiff() {
   }
 }
 
-async function doPublish(versionId: string) {
+async function doPublish(versionId: string, versionNumber?: number) {
   publishLoadingId.value = versionId
   try {
-    await publishWorkflowVersion(workflowId, versionId)
-    await loadData()
+    const label = versionNumber != null ? `v${versionNumber}` : versionId.slice(0, 8)
+    await openPublishGateForVersion(versionId, label)
   } finally {
     publishLoadingId.value = ''
   }
+}
+
+async function onConfirmPublish() {
+  const ok = await confirmPublishFromGate()
+  if (ok) await loadData()
 }
 
 async function doRollback(versionId: string) {
@@ -136,9 +156,15 @@ onMounted(() => {
                 </div>
                 <div class="text-sm mt-2">{{ v.description || '-' }}</div>
                 <div class="flex items-center gap-2 mt-3">
-                  <Button variant="outline" size="sm" class="gap-1" :disabled="publishLoadingId === v.version_id" @click="doPublish(v.version_id)">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="gap-1"
+                    :disabled="publishLoadingId === v.version_id || publishGatePublishing"
+                    @click="doPublish(v.version_id, v.version_number)"
+                  >
                     <Rocket class="w-3.5 h-3.5" />
-                    Publish
+                    {{ t('publish_gate.publish_button') }}
                   </Button>
                   <Button variant="outline" size="sm" class="gap-1" :disabled="rollbackLoading" @click="doRollback(v.version_id)">
                     <RotateCcw class="w-3.5 h-3.5" />
@@ -185,5 +211,16 @@ onMounted(() => {
         </Card>
       </div>
     </div>
+
+    <PublishGateDialog
+      :open="publishGateOpen"
+      :loading="publishGateLoading"
+      :publishing="publishGatePublishing"
+      :error="publishGateError"
+      :gate="publishGateResult"
+      :version-label="publishVersionLabel"
+      @close="closePublishGate"
+      @confirm-publish="onConfirmPublish"
+    />
   </div>
 </template>

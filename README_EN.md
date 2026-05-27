@@ -58,9 +58,14 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 
 Suggested first UI path:
 
+- (Optional) `/register` or `/login` for local accounts (`run-backend.sh` defaults to `LOCAL_AUTH_ENABLED=true`)
 - `/models` -> `/chat` -> `/agents` -> `/workflow` (image generation under **Tools** in the sidebar)
 
+See `backend/.env.example`, `run-backend.sh`, and `tutorials/tutorial.md` §**8.2** for auth modes (local / OIDC / API Key).
+
 Skills & MCP (use in Agent / workflow Skill nodes): **`tutorials/tutorial.md`** §**8.4–8.5** and **`tutorials/tutorial-index.md` §1.1**.
+
+**One-click import / export** (platform packs, workflow packs, JSON/ZIP snapshots): sidebar **`/import`**; API **`/api/v1/import/*`**; see **`tutorials/tutorial.md` §8.6**, [demos/platform/README.md](demos/platform/README.md), [demos/platform/BUNDLE_SCHEMA.md](demos/platform/BUNDLE_SCHEMA.md).
 
 Workflow orchestration (Fork/Join, checkpoint, model tiers, OmX templates): **`tutorials/tutorial-index.md` §1.2** and [`docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md`](docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md) (config: [`WORKFLOW_NODE_CONFIG_GUIDE.md`](docs/workflow/WORKFLOW_NODE_CONFIG_GUIDE.md); local cases: [`WORKFLOW_TEST_CASES_LOCAL.md`](docs/workflow/WORKFLOW_TEST_CASES_LOCAL.md)).
 

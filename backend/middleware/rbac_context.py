@@ -18,6 +18,9 @@ class RBACContextMiddleware(BaseHTTPMiddleware):
         self._api_key_header = api_key_header
 
     async def dispatch(self, request: Request, call_next):
+        if getattr(request.state, "auth_method", None) == "local":
+            return await call_next(request)
+
         oidc_on = bool(getattr(settings, "oidc_enabled", False))
         if not getattr(settings, "rbac_enabled", False):
             if not oidc_on:

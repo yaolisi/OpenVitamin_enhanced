@@ -46,6 +46,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     def _is_exempt_path(self, path: str) -> bool:
         if is_api_health_path(path) or path == get_prometheus_metrics_path():
             return True
+        if path.startswith("/api/v1/auth/login") or path.startswith("/api/v1/auth/register"):
+            return True
         return path in {"/", "/docs", "/redoc", "/openapi.json"}
 
     async def dispatch(self, request: Request, call_next):

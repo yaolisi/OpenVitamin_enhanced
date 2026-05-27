@@ -10,6 +10,12 @@ if [[ ! -f main.py ]]; then
   exit 1
 fi
 
+# 本机 / 内网多用户：本地账号登录与注册（可在 backend/.env 或环境中覆盖）
+export LOCAL_AUTH_ENABLED="${LOCAL_AUTH_ENABLED:-true}"
+export LOCAL_AUTH_ALLOW_REGISTRATION="${LOCAL_AUTH_ALLOW_REGISTRATION:-true}"
+# 设为 true 时，未登录无法调用 API（本地 Cookie 或 OIDC / API Key 均可）
+# export AUTH_REQUIRE_LOGIN=true
+
 # 检查是否安装了 conda
 if command -v conda &> /dev/null; then
     echo "检测到 Conda，正在使用环境 'ai-inference-platform' 启动..."

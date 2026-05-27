@@ -28,6 +28,8 @@ import {
   recordToolCompositionUsage,
   type ToolCompositionRecommendationItem,
 } from '@/services/api'
+import PublishGateDialog from '@/components/shared/PublishGateDialog.vue'
+import { useWorkflowPublishGate } from '@/composables/useWorkflowPublishGate'
 import { buildWorkflowNewRunQuery } from '@/utils/workflowRunNavigation'
 import { useWorkflowHistoryNavigation } from '@/composables/useWorkflowHistoryNavigation'
 import {
@@ -53,8 +55,21 @@ const { t } = useI18n()
 const workflowId = route.params.id as string
 const { openWorkflowHistoryReadonly } = useWorkflowHistoryNavigation()
 
+const {
+  publishGateOpen,
+  publishGateLoading,
+  publishGatePublishing,
+  publishGateError,
+  publishGateResult,
+  publishVersionLabel,
+  openPublishGateForVersion,
+  closePublishGate,
+  confirmPublishFromGate,
+} = useWorkflowPublishGate(workflowId)
+
 const workflowName = ref('')
 const workflowVersion = ref('')
+const latestVersionId = ref('')
 const editorNodes = ref<Node<WorkflowNodeData>[]>([
   {
     id: 'start',
@@ -490,14 +505,13 @@ function normalizeReflectorConfig() {
   } as Record<string, unknown>
 }
 
-async function saveWorkflow() {
-  if (saveInProgress.value) return
-  if (!confirmGovernanceRiskBeforeSave()) return
+async function persistNewVersion(options?: { redirect?: boolean }): Promise<string | null> {
+  if (saveInProgress.value) return null
   const { nodes, edges } = getPersistableGraph()
   const { valid, errors } = validateWorkflowNodes(nodes)
   if (!valid) {
     validationErrors.value = errors
-    return
+    return null
   }
   validationErrors.value = []
   const snapshot = captureSnapshot()
@@ -505,18 +519,65 @@ async function saveWorkflow() {
   try {
     await updateWorkflow(workflowId, { name: (snapshot.workflowName || 'Untitled Workflow').trim() })
     const dag = toWorkflowDag(nodes, edges, normalizeReflectorConfig())
-    await createWorkflowVersion(workflowId, {
+    const ver = await createWorkflowVersion(workflowId, {
       description: `Saved at ${new Date().toISOString().slice(0, 19)}`,
       dag,
     })
+    latestVersionId.value = ver.version_id
+    workflowVersion.value = `v: ${String(ver.version_id).slice(0, 8)}`
     lastSavedSignature.value = snapshotSignature(snapshot)
     recalcDirty()
     localStorage.removeItem(EDIT_DRAFT_KEY)
-    router.push({ name: 'workflow-detail', params: { id: workflowId } })
+    if (options?.redirect !== false) {
+      router.push({ name: 'workflow-detail', params: { id: workflowId } })
+    }
+    return ver.version_id
   } catch (e) {
     console.error('Save failed:', e)
+    return null
   } finally {
     saveInProgress.value = false
+  }
+}
+
+async function saveWorkflow() {
+  if (!confirmGovernanceRiskBeforeSave()) return
+  await persistNewVersion({ redirect: true })
+}
+
+async function startPublishWorkflow() {
+  if (publishGateLoading.value || saveInProgress.value) return
+  let versionId = latestVersionId.value
+  if (isDirty.value) {
+    if (!confirmGovernanceRiskBeforeSave()) return
+    const ok = window.confirm(t('publish_gate.save_before_publish'))
+    if (!ok) return
+    versionId = (await persistNewVersion({ redirect: false })) || ''
+    if (!versionId) return
+  } else if (!versionId) {
+    const ok = window.confirm(t('publish_gate.no_version_save_first'))
+    if (!ok) return
+    if (!confirmGovernanceRiskBeforeSave()) return
+    versionId = (await persistNewVersion({ redirect: false })) || ''
+    if (!versionId) return
+  }
+  await openPublishGateForVersion(
+    versionId,
+    workflowVersion.value || versionId.slice(0, 8),
+  )
+}
+
+async function onPublishGateConfirm() {
+  const ok = await confirmPublishFromGate()
+  if (ok) {
+    try {
+      const wf = await getWorkflow(workflowId)
+      if (wf.published_version_id) {
+        workflowVersion.value = `published: ${String(wf.published_version_id).slice(0, 8)}`
+      }
+    } catch {
+      /* ignore refresh errors */
+    }
   }
 }
 
@@ -947,6 +1008,7 @@ onMounted(async () => {
   try {
     const wf = await getWorkflow(workflowId)
     workflowName.value = wf.name || 'Untitled Workflow'
+    latestVersionId.value = (wf.latest_version_id as string | null) || ''
     workflowVersion.value = wf.latest_version_id ? `v: ${String(wf.latest_version_id).slice(0, 8)}` : ''
 
     // 优先使用已发布版本，其次 latest 版本；如果都没有，则保持默认起始节点
@@ -1051,12 +1113,13 @@ onUnmounted(() => {
         <Button
           size="sm"
           class="gap-2"
-          variant="outline"
-          disabled
-          :title="t('workflow_page.coming_soon')"
+          variant="default"
+          :disabled="saveInProgress || publishGateLoading || publishGatePublishing"
+          @click="startPublishWorkflow"
         >
-          <Rocket class="w-4 h-4 opacity-50" />
-          <span class="opacity-70">{{ t('workflow_editor.deploy') }}</span>
+          <Loader2 v-if="publishGateLoading" class="w-4 h-4 animate-spin" />
+          <Rocket v-else class="w-4 h-4" />
+          {{ t('publish_gate.publish_button') }}
         </Button>
       </div>
     </div>
@@ -1432,5 +1495,16 @@ onUnmounted(() => {
         />
       </aside>
     </div>
+
+    <PublishGateDialog
+      :open="publishGateOpen"
+      :loading="publishGateLoading"
+      :publishing="publishGatePublishing"
+      :error="publishGateError"
+      :gate="publishGateResult"
+      :version-label="publishVersionLabel"
+      @close="closePublishGate"
+      @confirm-publish="onPublishGateConfirm"
+    />
   </div>
 </template>

@@ -11,6 +11,9 @@ export interface DemoWorkflowBundle {
   name: string
   description: string
   workflow_name: string
+  /** 对应 demos/platform/*.platform-bundle.json，用于一键导入 Agent+KB+工作流 */
+  recommended_platform_bundle_id?: string
+  canvas_mode?: 'llm_roles' | string
   tags?: string[]
   agent_placeholders?: Record<
     string,
@@ -27,13 +30,18 @@ const BUNDLES: DemoWorkflowBundle[] = [
 
 export function listDemoWorkflowBundles(): Pick<
   DemoWorkflowBundle,
-  'demo_id' | 'name' | 'description'
+  'demo_id' | 'name' | 'description' | 'recommended_platform_bundle_id'
 >[] {
-  return BUNDLES.map(({ demo_id, name, description }) => ({
+  return BUNDLES.map(({ demo_id, name, description, recommended_platform_bundle_id }) => ({
     demo_id,
     name,
     description,
+    recommended_platform_bundle_id,
   }))
+}
+
+export function getRecommendedPlatformBundleId(demoId: string): string | undefined {
+  return getDemoWorkflowBundle(demoId)?.recommended_platform_bundle_id
 }
 
 export function getDemoWorkflowBundle(demoId: string): DemoWorkflowBundle | undefined {

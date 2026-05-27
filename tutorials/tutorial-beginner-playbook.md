@@ -17,6 +17,16 @@
 
 ## 2. 启动后先确认什么
 
+### 2.1 本地账号（可选）
+
+使用 `./run-all.sh` / `./run-backend.sh` 时，默认已 **`LOCAL_AUTH_ENABLED=true`**。
+
+1. 浏览器打开 **`http://127.0.0.1:5173/register`**，创建第一个账号（自动 **admin**）。  
+2. 或 **`/login`** 登录已有账号。  
+3. 内网 IdP 场景：在 **`/settings/enterprise`** 配置 OIDC 后使用企业登录（见 **tutorial.md §8.2**）。
+
+### 2.2 健康检查
+
 在项目根目录执行：
 
 ```bash

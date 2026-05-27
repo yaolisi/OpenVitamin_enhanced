@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import NavigationSidebar from '@/components/layout/NavigationSidebar.vue'
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+const hideChrome = computed(() => route.meta?.authPage === true)
 
 onMounted(() => {
   // Initialize theme from localStorage if available, otherwise default to dark
@@ -20,8 +24,8 @@ onMounted(() => {
 <template>
   <div class="flex h-screen w-full bg-background text-foreground overflow-hidden">
     <!-- Navigation Sidebar (Left) -->
-    <NavigationSidebar />
-    
+    <NavigationSidebar v-if="!hideChrome" />
+
     <!-- Main content: flex-1 + min-w-0 确保与侧边栏并排且正确收缩 -->
     <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
       <router-view v-slot="{ Component, route }">

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { i18n } from '@/i18n'
+import { getAuthSession } from '@/services/api'
 
 // 路由配置
 const routes: RouteRecordRaw[] = [
@@ -17,12 +18,39 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: {
+      title: 'Sign in',
+      authPage: true,
+    },
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: () => import('@/views/RegisterView.vue'),
+    meta: {
+      title: 'Register',
+      authPage: true,
+    },
+  },
+  {
     path: '/auth/callback',
     name: 'auth-callback',
     component: () => import('@/views/AuthCallbackView.vue'),
     meta: {
-      title: 'Sign in'
-    }
+      title: 'Sign in',
+      authPage: true,
+    },
+  },
+  {
+    path: '/import',
+    name: 'bundle-import',
+    component: () => import('@/views/BundleImportView.vue'),
+    meta: {
+      title: 'Import',
+    },
   },
   {
     path: '/workflow',
@@ -330,6 +358,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/settings/eval',
+    name: 'settings-eval',
+    component: () => import('@/views/EvalManagementView.vue'),
+    meta: {
+      title: 'Eval Regression'
+    }
+  },
+  {
     path: '/settings/backend',
     name: 'settings-backend',
     component: () => import('@/views/SettingsBackendView.vue'),
@@ -414,6 +450,7 @@ const router = createRouter({
 
 const routeTitleKeyMap: Record<string, string> = {
   chat: 'router.chat',
+  'bundle-import': 'router.import',
   workflow: 'router.workflow',
   'workflow-create': 'router.workflow_create',
   'workflow-detail': 'router.workflow_detail',
@@ -459,10 +496,24 @@ const routeTitleKeyMap: Record<string, string> = {
   optimization: 'router.optimization',
 }
 
-// 路由守卫：确保路由正确导航
-router.beforeEach((to, from, next) => {
-  // 记录路由变化，便于调试
+const AUTH_PUBLIC_NAMES = new Set(['login', 'register', 'auth-callback'])
+
+// 路由守卫：登录要求与导航
+router.beforeEach(async (to, from, next) => {
   console.log('[Router] Navigating from', from.path, 'to', to.path)
+  if (to.meta?.authPage || AUTH_PUBLIC_NAMES.has(String(to.name || ''))) {
+    next()
+    return
+  }
+  try {
+    const session = await getAuthSession()
+    if (session.require_login && !session.authenticated) {
+      next({ name: 'login', query: { redirect: to.fullPath } })
+      return
+    }
+  } catch {
+    /* 后端不可达时仍允许进入，避免完全锁死 */
+  }
   next()
 })
 

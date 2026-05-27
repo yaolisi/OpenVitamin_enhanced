@@ -37,8 +37,11 @@ import {
 import {
   listDemoWorkflowBundles,
   buildDemoWorkflowGraph,
+  getRecommendedPlatformBundleId,
 } from './editor/demoWorkflowBundles'
 import { buildWorkflowRunPresetQuery } from '@/utils/workflowRunNavigation'
+import PublishGateDialog from '@/components/shared/PublishGateDialog.vue'
+import { useWorkflowPublishGate } from '@/composables/useWorkflowPublishGate'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -48,6 +51,18 @@ const isSaving = ref(false)
 const isRunning = ref(false)
 const savedWorkflowId = ref<string | null>(null)
 const savedVersionId = ref<string | null>(null)
+
+const {
+  publishGateOpen,
+  publishGateLoading,
+  publishGatePublishing,
+  publishGateError,
+  publishGateResult,
+  publishVersionLabel,
+  openPublishGateForVersion,
+  closePublishGate,
+  confirmPublishFromGate,
+} = useWorkflowPublishGate(() => savedWorkflowId.value || '')
 const editorNodes = ref<Node<WorkflowNodeData>[]>([
   {
     id: 'start',
@@ -87,6 +102,9 @@ const selectedDemoPlaybookHint = computed(() =>
   selectedDemoWorkflowId.value === 'parallel-research-verify'
     ? 'tutorials/demo-playbook-02-parallel-research.md'
     : 'tutorials/demo-playbook-01-release-brief.md',
+)
+const selectedDemoPlatformBundleId = computed(() =>
+  getRecommendedPlatformBundleId(selectedDemoWorkflowId.value),
 )
 const pendingDemoSampleInput = ref<Record<string, unknown> | null>(null)
 const backendRecommendedTemplates = ref<ToolCompositionRecommendationItem[]>([])
@@ -364,6 +382,38 @@ async function saveWorkflow() {
     isSaving.value = false
   }
 }
+
+async function startPublishWorkflow() {
+  if (publishGateLoading.value || isSaving.value) return
+  if (!savedWorkflowId.value || !savedVersionId.value) {
+    const ok = window.confirm(t('workflow_page.publish_save_first'))
+    if (!ok) return
+    await saveWorkflow()
+    if (!savedWorkflowId.value || !savedVersionId.value) return
+  } else if (isDirty.value) {
+    const ok = window.confirm(t('publish_gate.save_before_publish'))
+    if (!ok) return
+    await saveWorkflow()
+    if (!savedVersionId.value) return
+  }
+  await openPublishGateForVersion(
+    savedVersionId.value,
+    `v: ${String(savedVersionId.value).slice(0, 8)}`,
+  )
+}
+
+async function onPublishGateConfirm() {
+  await confirmPublishFromGate()
+}
+
+const publishDisabled = computed(
+  () => isSaving.value || publishGateLoading.value || publishGatePublishing.value,
+)
+const publishDisabledReason = computed(() => {
+  if (!savedWorkflowId.value) return t('workflow_page.publish_requires_save')
+  if (isDirty.value) return t('publish_gate.save_before_publish')
+  return ''
+})
 
 async function runWorkflow() {
   if (isRunning.value) return
@@ -738,9 +788,17 @@ onUnmounted(() => {
           <Save v-else class="w-4 h-4" />
           {{ t('workflow_editor.save') }}<span v-if="isDirty" class="ml-1 text-amber-500">*</span>
         </Button>
-        <Button size="sm" class="gap-2" variant="outline" disabled :title="t('workflow_page.coming_soon')">
-          <Rocket class="w-4 h-4 opacity-50" />
-          <span class="opacity-70">{{ t('workflow_editor.deploy') }}</span>
+        <Button
+          size="sm"
+          class="gap-2"
+          variant="default"
+          :disabled="publishDisabled"
+          :title="publishDisabledReason || undefined"
+          @click="startPublishWorkflow"
+        >
+          <Loader2 v-if="publishGateLoading" class="w-4 h-4 animate-spin" />
+          <Rocket v-else class="w-4 h-4" />
+          {{ t('publish_gate.publish_button') }}
         </Button>
       </div>
     </div>
@@ -838,6 +896,9 @@ onUnmounted(() => {
         <template v-if="pendingDemoSampleInput">
           · {{ t('workflow_page.demo_sample_input_ready') }}
         </template>
+        <template v-if="selectedDemoPlatformBundleId">
+          · {{ t('workflow_page.demo_platform_bundle_hint', { id: selectedDemoPlatformBundleId }) }}
+        </template>
       </span>
     </div>
 
@@ -900,5 +961,16 @@ onUnmounted(() => {
         />
       </aside>
     </div>
+
+    <PublishGateDialog
+      :open="publishGateOpen"
+      :loading="publishGateLoading"
+      :publishing="publishGatePublishing"
+      :error="publishGateError"
+      :gate="publishGateResult"
+      :version-label="publishVersionLabel"
+      @close="closePublishGate"
+      @confirm-publish="onPublishGateConfirm"
+    />
   </div>
 </template>

@@ -24,6 +24,7 @@ from core.data.models.idempotency import IdempotencyRecordORM
 from core.data.models.event_dlq import EventDlqORM
 from core.data.models.mcp_server import McpServer
 from core.data.models.plugin_market import PluginPackageORM, PluginInstallationORM
+from core.data.models.platform_user import PlatformUserORM, PlatformUserSessionORM
 
 __all__ = [
     "SystemSetting",
@@ -52,4 +53,6 @@ __all__ = [
     "McpServer",
     "PluginPackageORM",
     "PluginInstallationORM",
+    "PlatformUserORM",
+    "PlatformUserSessionORM",
 ]

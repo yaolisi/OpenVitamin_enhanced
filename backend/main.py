@@ -54,6 +54,9 @@ from api.events import router as events_router
 from api.collaboration import router as collaboration_router
 from api.workflows import router as workflows_router
 from api.audit import router as audit_router
+from api.auth import router as auth_router
+from api.demos import router as demos_router
+from api.import_api import router as import_router
 from api.auth_oidc import router as auth_oidc_router
 from api.enterprise import router as enterprise_router
 from api.eval import router as eval_router
@@ -446,6 +449,8 @@ def _initialize_database_tables() -> None:
             McpServer,
             PluginPackageORM,
             PluginInstallationORM,
+            PlatformUserORM,
+            PlatformUserSessionORM,
         )
         from core.data.models.audit import AuditLogORM  # noqa: F401
         from core.data.models.idempotency import IdempotencyRecordORM  # noqa: F401
@@ -1153,6 +1158,11 @@ app.add_middleware(TenantApiKeyBindingMiddleware)
 app.add_middleware(ApiKeyScopeMiddleware)
 app.add_middleware(CSRFMiddleware)
 
+if getattr(settings, "local_auth_enabled", False) or getattr(settings, "auth_require_login", False):
+    from middleware.local_auth_context import LocalAuthContextMiddleware
+
+    app.add_middleware(LocalAuthContextMiddleware)
+
 if getattr(settings, "rbac_enabled", False) or getattr(settings, "oidc_enabled", False):
     app.add_middleware(RBACContextMiddleware, api_key_header=_api_key_hdr)
 
@@ -1235,6 +1245,9 @@ app.include_router(enterprise_router)
 app.include_router(preflight_router)
 app.include_router(eval_router)
 app.include_router(ops_router)
+app.include_router(auth_router)
+app.include_router(demos_router)
+app.include_router(import_router)
 app.include_router(auth_oidc_router)
 app.include_router(mcp_router)
 _configure_prometheus_metrics(app)

@@ -59,6 +59,17 @@
 
 ## 3. 认证、鉴权与授权规范
 
+### 3.0 本地账号与 OIDC（本机 / 内网）
+
+| 变量 | 说明 |
+|------|------|
+| `LOCAL_AUTH_ENABLED` | 启用本地用户名密码；`run-backend.sh` 开发默认 `true` |
+| `LOCAL_AUTH_ALLOW_REGISTRATION` | 是否允许 `/register`（内网可 `true`，关闭则仅管理员建号） |
+| `AUTH_REQUIRE_LOGIN` | `true` 时未认证请求拒绝（Cookie / OIDC / API Key 均可） |
+| `OIDC_ENABLED` + `OIDC_*` | 内网 IdP；与本地账号可并存 |
+
+密码使用 bcrypt 存储于 `platform_users` 表；会话 token 哈希存于 `platform_user_sessions`。生产建议 `LOCAL_AUTH_COOKIE_SECURE=true`（HTTPS）。
+
 ### 3.1 API Key 规范
 
 - 所有控制面请求必须附带 `X-Api-Key`

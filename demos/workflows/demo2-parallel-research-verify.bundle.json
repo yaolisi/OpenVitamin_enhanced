@@ -2,19 +2,21 @@
   "schema_version": 1,
   "demo_id": "parallel-research-verify",
   "name": "Demo 2 · 并行双源调研验证环",
-  "description": "Fork 扇出 Web 调研员 + KB 分析员 → Join 汇聚 → Verify Loop 迭代验收 → 输出。",
+  "description": "画布轻量版：双路 LLM 模拟并行调研员。完整 Web/KB 双 Agent + 样例知识库请用平台演示包 rag-research-verify。",
+  "recommended_platform_bundle_id": "rag-research-verify",
+  "canvas_mode": "llm_roles",
   "workflow_name": "Demo · 并行双源调研",
   "tags": ["demo", "multi-agent", "fork-join", "verify-loop", "rag"],
   "agent_placeholders": {
     "branch_web": {
       "node_id": "branch_web",
       "display_name": "Web 调研员",
-      "hint": "建议 Skill：builtin_web.search；绑定后替换本节点 type=agent"
+      "hint": "平台包 rag-research-verify：自动创建 Web Agent（builtin_web.search）并绑定本节点"
     },
     "branch_kb": {
       "node_id": "branch_kb",
       "display_name": "KB 分析员",
-      "hint": "建议 Skill：builtin_kb.query；需先在 /knowledge 建库并索引文档"
+      "hint": "平台包 rag-research-verify：自动创建 KB Agent + 样例知识库并绑定本节点"
     }
   },
   "dag": {
@@ -60,22 +62,22 @@
       {
         "id": "branch_web",
         "type": "llm",
-        "name": "Web Research (LLM)",
+        "name": "Web 调研员（LLM 角色）",
         "config": {
           "model_tier": "standard",
           "temperature": 0.4,
-          "prompt": "作为 Web 调研员，围绕主题给出 5 条要点与来源线索（可合理推断）。主题：{{global.input_data.topic}}\n\n输出 JSON：{ \"text\": \"...\", \"sources\": [\"...\"] }"
+          "prompt": "【角色：Web 调研员】围绕主题检索归纳 5 条要点与来源线索（可合理推断，标注 web: 前缀）。主题：{{global.input_data.topic}}\n\n仅输出 JSON：{ \"text\": \"...\", \"sources\": [\"web:...\"] }"
         },
         "position": { "x": 660, "y": 120 }
       },
       {
         "id": "branch_kb",
         "type": "llm",
-        "name": "KB Analyst (LLM)",
+        "name": "KB 分析员（LLM 角色）",
         "config": {
           "model_tier": "standard",
           "temperature": 0.3,
-          "prompt": "作为知识库分析员，基于主题给出 5 条结构化要点（若无可检索 KB，请基于通用知识并标注「待接 KB」）。主题：{{global.input_data.topic}}\n\n输出 JSON：{ \"text\": \"...\", \"sources\": [\"kb:...\"] }"
+          "prompt": "【角色：KB 分析员】基于主题给出 5 条结构化要点；若无真实 KB 检索结果，用通用知识并标注「kb:待接演示包」。主题：{{global.input_data.topic}}\n\n仅输出 JSON：{ \"text\": \"...\", \"sources\": [\"kb:...\"] }"
         },
         "position": { "x": 660, "y": 280 }
       },

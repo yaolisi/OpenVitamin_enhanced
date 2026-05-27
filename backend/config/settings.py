@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -928,6 +928,16 @@ class Settings(BaseSettings):
     rbac_operator_api_keys: str = ""
     rbac_viewer_api_keys: str = ""
 
+    # ---------- 本地账号（本机 / 内网多用户；非公网开放注册）----------
+    local_auth_enabled: bool = False
+    local_auth_allow_registration: bool = True
+
+    local_auth_session_ttl_hours: int = Field(default=168, ge=1, le=2160)
+    local_auth_cookie_name: str = "perilla_session"
+    local_auth_cookie_secure: bool = False
+    # 为 True 时未登录无法访问 API（本地会话或 OIDC / API Key 均可）
+    auth_require_login: bool = False
+
     # ---------- 审计日志 ----------
     audit_log_enabled: bool = False
     # 逗号分隔路径前缀；匹配则记录（响应完成后写入 audit_logs）
@@ -1071,6 +1081,17 @@ class Settings(BaseSettings):
                 )
             except Exception as exc:
                 raise RuntimeError("Failed to decrypt WEB_SEARCH_SERPER_API_KEY_ENCRYPTED") from exc
+
+    @model_validator(mode="after")
+    def _apply_debug_local_auth_defaults(self) -> "Settings":
+        """DEBUG 且未显式设置 LOCAL_AUTH_* 时默认开启本地账号（与 run-backend.sh 一致）。"""
+        if not self.debug:
+            return self
+        if "LOCAL_AUTH_ENABLED" not in os.environ:
+            self.local_auth_enabled = True
+        if "LOCAL_AUTH_ALLOW_REGISTRATION" not in os.environ:
+            self.local_auth_allow_registration = True
+        return self
 
 
 # 全局配置实例

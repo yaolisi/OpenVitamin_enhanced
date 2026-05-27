@@ -14,16 +14,104 @@ import {
   Sparkles,
   Workflow,
   ChevronLeft,
-  Image
+  Image,
+  LogIn,
+  UserPlus,
+  PackageOpen,
 } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
 import { useSystemConfigWithDebounce } from '@/composables/useSystemConfigWithDebounce'
+import { getAuthConfig, getAuthSession, localLogout, type AuthConfig, type AuthSession } from '@/services/api'
+
 const { activeView, setView } = useNavigation()
+const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 
 const { systemConfig, refreshSystemConfig } = useSystemConfigWithDebounce({
   logPrefix: 'NavigationSidebar',
 })
 const systemVersion = computed(() => systemConfig.value?.version?.trim() || '')
+const authSession = ref<AuthSession | null>(null)
+const authConfig = ref<AuthConfig | null>(null)
+
+const showAuthNav = computed(() => {
+  const cfg = authConfig.value
+  if (!cfg) return true
+  return cfg.local_auth_enabled || cfg.oidc_enabled
+})
+
+const isLocalSignedIn = computed(
+  () => authSession.value?.authenticated === true && authSession.value?.auth_method === 'local',
+)
+
+const userDisplayName = computed(() => {
+  const s = authSession.value
+  if (!s || !s.authenticated) return t('nav.guest')
+  if (s.display_name) return s.display_name
+  if (s.username) return s.username
+  if (s.oidc_signed_in && s.user_id && s.user_id !== 'default') return s.user_id
+  const roleKey = `nav.role_${s.platform_role}` as const
+  const roleLabel = t(roleKey)
+  if (roleLabel !== roleKey) return roleLabel
+  return s.display_label || t('nav.guest')
+})
+
+const userStatusLine = computed(() => {
+  const s = authSession.value
+  if (!s) return t('nav.online')
+  if (s.local_dev_admin) return t('nav.local_dev_admin')
+  if (s.oidc_enabled && !s.oidc_signed_in) return t('nav.sign_in_hint')
+  if (s.auth_method === 'api_key') return t('nav.api_key_auth')
+  return t('nav.online')
+})
+
+async function refreshAuthSession() {
+  try {
+    const [session, config] = await Promise.all([getAuthSession(), getAuthConfig()])
+    authSession.value = session
+    authConfig.value = config
+  } catch {
+    authSession.value = null
+    authConfig.value = null
+  }
+}
+
+function goLogin() {
+  router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })
+}
+
+function goRegister() {
+  router.push({ name: 'register', query: { redirect: router.currentRoute.value.fullPath } })
+}
+
+function goOneClickImport() {
+  router.push({ name: 'bundle-import' })
+}
+
+function openAccountSettings() {
+  const s = authSession.value
+  if (s?.require_login && !s.authenticated) {
+    router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })
+    return
+  }
+  if (s?.oidc_enabled && !s.oidc_signed_in) {
+    router.push({ name: 'settings-enterprise' })
+    return
+  }
+  router.push({ name: 'settings-backend' })
+}
+
+async function signOut() {
+  try {
+    await localLogout()
+  } finally {
+    await refreshAuthSession()
+    if (authSession.value?.require_login) {
+      router.push({ name: 'login' })
+    }
+  }
+}
 
 // Collapsible sidebar state
 const isCollapsed = ref(false)
@@ -33,6 +121,7 @@ const toggleSidebar = () => {
 
 onMounted(() => {
   void refreshSystemConfig()
+  void refreshAuthSession()
 })
 
 // 平台主轴：对话 → 智能体 → 工作流 → 知识/技能/模型；文生图归入「工具」分组
@@ -69,6 +158,25 @@ const navGroups = computed(() => [
     ],
   },
 ])
+
+const utilityNavItems = computed(() => [
+  { id: 'import', label: t('nav.one_click_import'), icon: PackageOpen, action: goOneClickImport },
+])
+
+const authNavItems = computed(() => {
+  if (!showAuthNav.value) return []
+  if (isLocalSignedIn.value) return []
+  const items: Array<{ id: string; label: string; icon: typeof LogIn; action: () => void }> = []
+  if (authConfig.value?.local_auth_enabled !== false) {
+    items.push({ id: 'login', label: t('nav.sign_in'), icon: LogIn, action: goLogin })
+    if (authConfig.value?.local_auth_allow_registration !== false) {
+      items.push({ id: 'register', label: t('nav.sign_up'), icon: UserPlus, action: goRegister })
+    }
+  } else if (authConfig.value?.oidc_enabled) {
+    items.push({ id: 'login', label: t('nav.sign_in'), icon: LogIn, action: goLogin })
+  }
+  return items
+})
 </script>
 
 <template>
@@ -168,6 +276,75 @@ const navGroups = computed(() => [
           </button>
         </div>
       </div>
+
+      <!-- 一键导入 -->
+      <div class="space-y-2">
+        <div v-if="!isCollapsed" class="px-3 pt-1">
+          <span class="text-[11px] font-bold tracking-[0.08em] text-muted-foreground/40 uppercase">
+            {{ t('nav.utilities') }}
+          </span>
+        </div>
+        <div v-else class="px-3 pt-2 flex justify-center">
+          <div class="w-6 h-px bg-border/30"></div>
+        </div>
+        <div :class="['space-y-1', isCollapsed ? 'flex flex-col items-center' : '']">
+          <button
+            v-for="nav in utilityNavItems"
+            :key="nav.id"
+            type="button"
+            class="group w-full flex items-center transition-all duration-200 relative text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground"
+            :class="[
+              isCollapsed ? 'justify-center w-11 h-11 min-w-11 rounded-2xl' : 'justify-start py-3 px-4 rounded-2xl gap-3.5',
+              route.name === 'bundle-import' ? 'bg-[#4f46e5] text-white shadow-lg shadow-indigo-500/30' : '',
+            ]"
+            :title="isCollapsed ? nav.label : ''"
+            @click="nav.action"
+          >
+            <component
+              :is="nav.icon"
+              :class="[
+                'shrink-0 transition-all duration-200',
+                isCollapsed ? 'w-5 h-5' : 'w-[22px] h-[22px]',
+                route.name === 'bundle-import' ? 'stroke-[2px]' : 'stroke-[1.8px]',
+              ]"
+            />
+            <span v-if="!isCollapsed" class="text-[14px] font-medium tracking-tight">{{ nav.label }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 账号：未登录时快捷进入登录 / 注册 -->
+      <div v-if="authNavItems.length" class="space-y-2">
+        <div v-if="!isCollapsed" class="px-3 pt-1">
+          <span class="text-[11px] font-bold tracking-[0.08em] text-muted-foreground/40 uppercase">
+            {{ t('nav.account') }}
+          </span>
+        </div>
+        <div v-else class="px-3 pt-2 flex justify-center">
+          <div class="w-6 h-px bg-border/30"></div>
+        </div>
+        <div :class="['space-y-1', isCollapsed ? 'flex flex-col items-center' : '']">
+          <button
+            v-for="nav in authNavItems"
+            :key="nav.id"
+            type="button"
+            class="group w-full flex items-center transition-all duration-200 relative text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground"
+            :class="isCollapsed ? 'justify-center w-11 h-11 min-w-11 rounded-2xl' : 'justify-start py-3 px-4 rounded-2xl gap-3.5'"
+            :title="isCollapsed ? nav.label : ''"
+            @click="nav.action"
+          >
+            <component
+              :is="nav.icon"
+              :class="[
+                'shrink-0 transition-all duration-200',
+                isCollapsed ? 'w-5 h-5' : 'w-[22px] h-[22px]',
+                'stroke-[1.8px]',
+              ]"
+            />
+            <span v-if="!isCollapsed" class="text-[14px] font-medium tracking-tight">{{ nav.label }}</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Bottom Section：收起/展开改为点 Logo，此处保留版本与用户区 -->
@@ -187,9 +364,12 @@ const navGroups = computed(() => [
         </div>
       </div>
       <!-- User Profile -->
-      <button 
+      <button
+        type="button"
         class="w-full flex items-center gap-3 group transition-all duration-200 rounded-2xl p-2.5 hover:bg-muted/60"
         :class="isCollapsed ? 'justify-center' : 'justify-start'"
+        :title="userStatusLine"
+        @click="openAccountSettings"
       >
         <div class="relative shrink-0">
           <div class="rounded-full bg-gradient-to-br from-muted/80 to-muted/40 border border-border/50 flex items-center justify-center overflow-hidden group-hover:border-indigo-500/50 transition-all duration-300 relative z-10"
@@ -203,9 +383,17 @@ const navGroups = computed(() => [
           <div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-background rounded-full z-20"></div>
         </div>
         <div v-if="!isCollapsed" class="flex flex-col items-start min-w-0">
-          <span class="text-[13px] font-medium text-foreground/90 truncate">{{ t('nav.guest') }}</span>
-          <span class="text-[11px] text-muted-foreground/50 truncate">{{ t('nav.online') }}</span>
+          <span class="text-[13px] font-medium text-foreground/90 truncate">{{ userDisplayName }}</span>
+          <span class="text-[11px] text-muted-foreground/50 truncate">{{ userStatusLine }}</span>
         </div>
+      </button>
+      <button
+        v-if="authSession?.authenticated && authSession.auth_method === 'local' && !isCollapsed"
+        type="button"
+        class="w-full text-xs text-muted-foreground hover:text-foreground py-1"
+        @click.stop="signOut"
+      >
+        {{ t('auth.logout') }}
       </button>
     </div>
   </aside>

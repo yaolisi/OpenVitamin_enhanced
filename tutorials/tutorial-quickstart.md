@@ -117,18 +117,25 @@ scripts/acceptance/run_security_regression.sh
 
 ---
 
-## 账号与设置（可选 · 与 tutorial.md §8.2 同步摘要）
+## 账号与登录（可选 · 与 tutorial.md §8.2 同步摘要）
 
-控制台无独立账号密码登录；身份依赖浏览器保存的 **API Key** 与 **租户**。完整说明见 **[tutorial.md](tutorial.md)** 第 **8.2** 节。
+`./run-backend.sh` 默认开启 **`LOCAL_AUTH_ENABLED=true`**（可在 `backend/.env` 覆盖）。完整说明见 **[tutorial.md](tutorial.md)** 第 **8.2** 节。
 
-**入口：** 侧边栏 **Settings**，默认 **`/settings/general`**。
+| 场景 | 配置要点 | 控制台 |
+|------|----------|--------|
+| **本机 / 内网多用户** | `LOCAL_AUTH_ENABLED=true`（`run-backend.sh` 已默认） | **`/register`** 注册（首个用户为 admin）→ **`/login`** 登录 |
+| **内网企业 IdP** | `OIDC_ENABLED=true` + Issuer/Client/回调 URI | 登录页 **企业 IdP**，或 **Settings → 企业与合规** |
+| **仅 API Key（原模式）** | `LOCAL_AUTH_ENABLED=false` 且未强制登录 | **Settings → Backend** 填 Key / 租户 |
 
-| 页面 | 路由 | 做什么 |
-|------|------|--------|
-| **General** | `/settings/general` | 离线模式、**界面语言**（`platform-language`）、**主题**（`platform-theme`）、数据目录与默认推理参数等 → **保存** 写入网关侧配置。 |
-| **Backend** | `/settings/backend` | **Security Context**：**Admin API Key**（→ `X-Api-Key`，存 `ai_platform_api_key`）、**Tenant ID**（→ `X-Tenant-Id`，存 `ai_platform_tenant_id`）→ **Save Security Context**；**Reload** / **Clear Security Context** 管理本机存储。 |
+可选：`AUTH_REQUIRE_LOGIN=true` 时未登录无法使用 API（本地 Cookie、OIDC Bearer 或 `X-Api-Key` 均可）。
 
-Key 与租户仅存浏览器本机，清除站点数据后需重填。其它 Settings 子页（备份、Runtime、YOLO、ASR、MCP 等）见主教程 **§8.2 C**。
+```bash
+# 查看当前认证能力
+curl -s http://127.0.0.1:8000/api/v1/auth/config | jq .
+curl -s http://127.0.0.1:8000/api/v1/auth/session | jq .
+```
+
+**设置入口：** 侧边栏 **Settings** → **`/settings/general`**（语言/主题/数据目录）、**`/settings/backend`**（API Key / 租户）、**`/settings/enterprise`**（OIDC 与生产就绪）、**`/settings/eval`**（Eval 回归批跑，需 admin）。
 
 ---
 
@@ -170,6 +177,12 @@ Key 与租户仅存浏览器本机，清除站点数据后需重填。其它 Set
 **后续：** 列表点 **Configure** 打开侧栏，可改上下文、温度、Base URL、Key 等（**`PATCH /api/models/{id}`**，仍为管理员操作）。
 
 **验证：** **Chat** 中选该模型试聊；失败时查 Key 权限、URL、模型 ID 与后端日志。
+
+---
+
+## 一键导入 / 导出 Bundle（可选 · tutorial.md §8.6）
+
+侧栏 **一键导入**（`/import`）：**导入**内置演示包、上传 **JSON/ZIP**，或 **导出**当前工作流关联的 Agent/KB/Skill/MCP 快照。ZIP 推荐（含 `documents/`）。需 **operator+**；OpenAPI 标签 **import**。详见 **[tutorial.md §8.6](tutorial.md)**。
 
 ---
 

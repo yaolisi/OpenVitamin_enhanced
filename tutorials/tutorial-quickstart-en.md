@@ -99,6 +99,28 @@ Missing or mismatched token → **403**.
 
 ---
 
+## One-click import / export (optional · tutorial.md §8.6)
+
+Sidebar **`/import`**: built-in catalog, upload **JSON/ZIP**, or **export** a platform snapshot from an existing workflow (ZIP includes `documents/`). Requires **operator+**; OpenAPI tag **import**. See **[tutorial.md §8.6](tutorial.md)**.
+
+---
+
+## Accounts & sign-in (optional · see tutorial.md §8.2)
+
+`./run-backend.sh` defaults to **`LOCAL_AUTH_ENABLED=true`**. Copy `backend/.env.example` → `backend/.env` to persist overrides.
+
+| Mode | Console |
+|------|---------|
+| Local accounts (on-prem / intranet) | `/register` (first user = admin) → `/login` |
+| Corporate IdP (OIDC) | Sign-in on login page or **Settings → Enterprise** |
+| API Key only | **Settings → Backend** |
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/auth/config | jq .
+```
+
+---
+
 ## Security regressions (highly recommended)
 
 From the repository root:
