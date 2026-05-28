@@ -37,8 +37,14 @@ def validate_bundle(bundle: dict[str, Any], *, kind: ImportKind | None = None) -
             bundle.get("workflows")
             or bundle.get("agents")
             or bundle.get("knowledge_bases")
+            or bundle.get("skills")
+            or bundle.get("mcp_servers")
+            or bundle.get("mcp_tool_imports")
         ):
-            raise ValueError("Platform bundle needs at least one of: workflows, agents, knowledge_bases")
+            raise ValueError(
+                "Platform bundle needs at least one of: workflows, agents, knowledge_bases, "
+                "skills, mcp_servers, mcp_tool_imports"
+            )
     return resolved
 
 

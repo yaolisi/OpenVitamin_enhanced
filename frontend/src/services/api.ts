@@ -4234,7 +4234,10 @@ export async function previewImportBundle(body: {
   })
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))
-    throw new Error((err as { message?: string }).message || response.statusText)
+    const body = err as { message?: string; detail?: string; error?: { message?: string } }
+    throw new Error(
+      body.error?.message || body.message || body.detail || response.statusText,
+    )
   }
   return response.json()
 }

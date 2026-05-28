@@ -23,6 +23,19 @@ def test_bundle_display_id_prefers_bundle_id() -> None:
     assert bundle_display_id({"bundle_id": "x", "name": "y"}) == "x"
 
 
+def test_validate_platform_bundle_with_mcp_only() -> None:
+    assert (
+        validate_bundle(
+            {
+                "schema_version": 1,
+                "bundle_type": "platform",
+                "mcp_servers": [{"bundle_key": "mcp1", "name": "MCP"}],
+            }
+        )
+        == "platform"
+    )
+
+
 def test_collect_ids_from_dag() -> None:
     from core.demos.bundle_collect import collect_ids_from_dag
 
