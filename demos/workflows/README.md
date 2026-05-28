@@ -19,7 +19,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| **内置目录** | 本目录 `*.bundle.json` 与 [platform 包](../platform/) 均在 catalog 中 |
+| **内置目录** | 本目录 2 个工作流包 + [platform 目录](../platform/) 3 个平台包（catalog ≥5 项） |
 | **上传 JSON / ZIP** | 自定义包；ZIP 可含 `documents/` |
 | **导出** | 从已有工作流导出平台快照（`POST /api/v1/import/export`） |
 

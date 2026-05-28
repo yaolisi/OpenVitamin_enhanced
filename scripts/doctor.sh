@@ -136,6 +136,7 @@ echo "Hint (lint toolchain / CI pins): make install-lint-tools or npm run instal
 
 echo ""
 echo "Hint (Docker images): make docker-build-all — CI parity: GitHub Actions workflow docker-image-build"
+echo "Hint (enterprise suite): make enterprise-suite-gate / enterprise-suite-gate-all — Live: ENTERPRISE_SUITE_LIVE_URL=... make enterprise-suite-live-gate"
 
 echo ""
 if [[ "${critical_count}" -gt 0 ]]; then

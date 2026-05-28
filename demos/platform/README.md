@@ -2,11 +2,12 @@
 
 一键导入完整演示环境，适合内网 PoC 或新人上手。
 
-| 文件 | 说明 |
-|------|------|
-| [release-brief-gate.platform-bundle.json](./release-brief-gate.platform-bundle.json) | Demo1 多 Agent：澄清员 + 写手 + 审批/Checkpoint |
-| [rag-research-verify.platform-bundle.json](./rag-research-verify.platform-bundle.json) | Demo2 多 Agent + KB：Web/KB 双 Agent + Fork/Join + Verify Loop |
-| [documents/](./documents/) | Demo2 知识库样例 Markdown |
+| 文件 | 说明 | 企业场景 (`enterprise_scene`) |
+|------|------|------------------------------|
+| [release-brief-gate.platform-bundle.json](./release-brief-gate.platform-bundle.json) | Demo1 多 Agent：澄清员 + 写手 + 审批/Checkpoint | `oa_approval` |
+| [rag-research-verify.platform-bundle.json](./rag-research-verify.platform-bundle.json) | Demo2 多 Agent + KB：Web/KB 双 Agent + Fork/Join + Verify Loop | `research_parallel` |
+| [policy-qa-starter.platform-bundle.json](./policy-qa-starter.platform-bundle.json) | 制度问答入门：MCP 模板 + KB Skill 说明（轻量，无内置工作流） | `policy_qa` |
+| [documents/](./documents/) | Demo2 知识库样例 Markdown | — |
 
 ## 导入内容（每个平台包）
 
@@ -66,6 +67,19 @@ PUBLISH=1 PYTHONPATH=backend python3 scripts/import_platform_demo_bundle.py rag-
 
 - 至少 **1 个 LLM** 与 **1 个 Embedding 模型** 已在模型列表中注册（bundle 使用 `__AUTO_LLM__` / `__AUTO_EMBEDDING__` 自动选择首个）
 - 知识库索引在导入时同步执行（`wait_document_index: true`），大文档环境可能需数分钟
+
+## 企业套件自动验收（开发/CI）
+
+```bash
+make enterprise-suite-gate          # Phase0 静态 P0（pr-check 已接入）
+make enterprise-suite-gate-all      # Phase0–2 合同静态探针
+make enterprise-suite-inprocess-live-gate   # TestClient Live+UAT（CI 同款）
+
+# 对已部署环境（需 API Key 时 export ENTERPRISE_SUITE_API_KEY）
+ENTERPRISE_SUITE_LIVE_URL=http://127.0.0.1:8000 make enterprise-suite-live-gate
+```
+
+控制台：**设置 → 企业与合规** 可查看对标报告；API：`GET /api/v1/enterprise/suite-benchmark?include_live=true`。
 
 ## 扩展自定义包
 
