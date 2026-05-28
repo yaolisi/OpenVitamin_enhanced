@@ -20,9 +20,10 @@ ATTRIBUTE_TEXT_PATTERN='(?:title|aria-label|placeholder)=["'"'"'][^"'"'"']*[\x{4
 TMP_CURRENT="$(mktemp)"
 trap 'rm -f "$TMP_CURRENT"' EXIT
 
+# ripgrep exits 1 when there are no matches; treat that as an empty scan result.
 rg --pcre2 --glob '!frontend/src/i18n/locales/**' --glob '*.vue' -n "$TEMPLATE_TEXT_PATTERN|$ATTRIBUTE_TEXT_PATTERN" "$TARGET_DIR" \
   | awk -F: '{print $1 ":" $2}' \
-  | sort -u > "$TMP_CURRENT"
+  | sort -u > "$TMP_CURRENT" || true
 
 if [[ "$UPDATE_BASELINE" == "--update-baseline" ]]; then
   cp "$TMP_CURRENT" "$BASELINE_FILE"

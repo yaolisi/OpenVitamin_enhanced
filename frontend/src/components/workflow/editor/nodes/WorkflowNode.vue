@@ -2,6 +2,7 @@
 import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   Play,
   FileText,
@@ -28,6 +29,7 @@ import type { WorkflowNodeData } from '../types'
 import { requestWorkflowGroupResizeStart, requestWorkflowNodeSelect } from '../canvasSelection'
 
 const props = defineProps<NodeProps<WorkflowNodeData>>()
+const { t } = useI18n()
 
 const iconMap: Record<string, typeof Play> = {
   start: Play,
@@ -190,7 +192,7 @@ function onGroupResizeHandleMouseDown(e: MouseEvent) {
       </div>
       <button
         class="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-sm border border-slate-400/70 bg-slate-500/30 cursor-se-resize hover:bg-slate-500/50"
-        title="拖拽调整分组尺寸"
+        :title="t('workflow_editor.group_resize_handle_title')"
         @mousedown="onGroupResizeHandleMouseDown"
       />
       <div class="pointer-events-none absolute bottom-2 right-6 h-px w-10 bg-slate-400/60 opacity-0 transition-opacity group-hover:opacity-100" />

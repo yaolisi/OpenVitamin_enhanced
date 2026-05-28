@@ -55,12 +55,25 @@ function makeI18n() {
           subworkflow_target_required: '请选择或填写目标工作流 ID（target_workflow_id）',
           subworkflow_fixed_version_required: '固定版本策略下，请选择版本或填写 target_version_id / target_version',
           config_validation: '配置校验',
+          llm_model_tier: '模型分档',
+          llm_model_tier_none: '不指定分档',
+          llm_model_tier_low: '低',
+          llm_model_tier_standard: '标准',
+          llm_model_tier_thorough: '深入',
+          llm_model_tier_hint: '分档提示',
+          search_models_placeholder: '搜索模型',
+          llm_model_placeholder: '选择模型',
+          llm_models_loading: '加载中',
         },
       },
     },
     missingWarn: false,
     fallbackWarn: false,
   })
+}
+
+function llmModelSelect(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAll('select').find((s) => s.html().includes('qwen-7b')) ?? null
 }
 
 describe('NodeConfigPanel searchable selectors', () => {
@@ -78,17 +91,17 @@ describe('NodeConfigPanel searchable selectors', () => {
     })
 
     await flushPromises()
-    const selects = wrapper.findAll('select')
-    expect(selects.length).toBeGreaterThan(0)
-    expect(selects[0].text()).toContain('Qwen 7B')
-    expect(selects[0].text()).toContain('Llama 3.1')
+    const modelSelect = llmModelSelect(wrapper)
+    expect(modelSelect).toBeTruthy()
+    expect(modelSelect!.text()).toContain('Qwen 7B')
+    expect(modelSelect!.text()).toContain('Llama 3.1')
 
-    const inputs = wrapper.findAll('input')
-    await inputs[0].setValue('qwen')
+    const searchInput = wrapper.find('input[placeholder="搜索模型"]')
+    await searchInput.setValue('qwen')
     await flushPromises()
 
-    expect(selects[0].text()).toContain('Qwen 7B')
-    expect(selects[0].text()).not.toContain('Llama 3.1')
+    expect(modelSelect!.text()).toContain('Qwen 7B')
+    expect(modelSelect!.text()).not.toContain('Llama 3.1')
   })
 
   it('filters tool options by keyword', async () => {
@@ -157,17 +170,20 @@ describe('NodeConfigPanel searchable selectors', () => {
     })
 
     await flushPromises()
-    const modelSelect = wrapper.find('select')
-    await modelSelect.setValue('qwen-7b')
+    const modelSelect = llmModelSelect(wrapper)
+    expect(modelSelect).toBeTruthy()
+    await modelSelect!.setValue('qwen-7b')
     await flushPromises()
 
     const events = wrapper.emitted('update:config')
     expect(events).toBeTruthy()
-    const payload = events?.at(-1)
-    expect(payload?.[0]).toBe('n-4')
-    expect(payload?.[1]).toMatchObject({
+    const modelEvent = events?.find((e) => (e[1] as Record<string, unknown>)?.model_id === 'qwen-7b')
+    expect(modelEvent?.[0]).toBe('n-4')
+    expect(modelEvent?.[1]).toMatchObject({
       model_id: 'qwen-7b',
       model_display_name: 'Qwen 7B',
+      model_tier: undefined,
+      model: undefined,
     })
   })
 

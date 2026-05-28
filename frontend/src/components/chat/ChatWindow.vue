@@ -39,6 +39,20 @@ const headerRagMultiHop = computed({
   },
 })
 
+const headerModel = computed({
+  get: () => chat.model.value,
+  set: (v: string) => {
+    chat.model.value = v
+  },
+})
+
+const headerKnowledgeBaseId = computed({
+  get: () => chat.knowledgeBaseId.value,
+  set: (v: string | null) => {
+    chat.knowledgeBaseId.value = v
+  },
+})
+
 const abortController = ref<AbortController | null>(null)
 const scrollContainerRef = ref<any>(null)
 const sessionsStore = useSessions()
@@ -454,14 +468,13 @@ onUnmounted(() => {
 </style>
 
 <template>
-  <div class="flex-1 flex flex-col min-w-0 min-h-0 bg-background overflow-hidden">
+  <div class="flex flex-1 flex-col min-w-0 min-h-0 h-full bg-background overflow-hidden">
     <ChatHeader 
-      v-model="chat.model.value" 
+      v-model="headerModel" 
       v-model:stream-gzip="headerStreamGzip"
       v-model:stream-format="headerStreamFormat"
       v-model:rag-multi-hop="headerRagMultiHop"
-      :knowledge-base-id="chat.knowledgeBaseId.value"
-      @update:knowledge-base-id="chat.knowledgeBaseId.value = $event"
+      v-model:knowledge-base-id="headerKnowledgeBaseId"
     />
     
     <!-- Session Title Bar -->
@@ -555,7 +568,7 @@ onUnmounted(() => {
     <div class="shrink-0">
       <ChatInput 
         :loading="chat.loading.value"
-        :model-id="chat.model.value"
+        :model-id="headerModel"
         :model-supports-vision="currentModelSupportsVision"
         @send="handleSendMessage"
         @send-with-files="handleSendMessageWithFiles"

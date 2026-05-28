@@ -94,17 +94,7 @@ def mem_registry(monkeypatch) -> _MemRegistry:
     return reg
 
 
-@pytest.fixture()
-def agents_client_auth_only(mem_registry: _MemRegistry) -> TestClient:
-    """走真实鉴权依赖（不使用 dependency_overrides），用于 401/403。"""
-    return TestClient(make_fastapi_app_router_only(agents_router))
-
-
-@pytest.fixture()
-def agents_client(mem_registry: _MemRegistry, monkeypatch) -> TestClient:
-    app = make_fastapi_app_router_only(agents_router)
-    app.dependency_overrides[require_authenticated_platform_admin] = lambda: PlatformRole.ADMIN
-
+def _seed_kernel_e2e_agent(mem_registry: _MemRegistry) -> None:
     seed = AgentDefinition(
         agent_id="agent_kernel_e2e",
         name="Seed",
@@ -116,6 +106,21 @@ def agents_client(mem_registry: _MemRegistry, monkeypatch) -> TestClient:
         model_params={"legacy_param": True},
     )
     mem_registry._agents[seed.agent_id] = seed
+
+
+@pytest.fixture()
+def agents_client_auth_only(mem_registry: _MemRegistry) -> TestClient:
+    """走真实鉴权依赖（不使用 dependency_overrides），用于 401/403。"""
+    _seed_kernel_e2e_agent(mem_registry)
+    return TestClient(make_fastapi_app_router_only(agents_router))
+
+
+@pytest.fixture()
+def agents_client(mem_registry: _MemRegistry, monkeypatch) -> TestClient:
+    app = make_fastapi_app_router_only(agents_router)
+    app.dependency_overrides[require_authenticated_platform_admin] = lambda: PlatformRole.ADMIN
+
+    _seed_kernel_e2e_agent(mem_registry)
 
     client = TestClient(app)
     yield client
@@ -401,6 +406,8 @@ def test_put_agent_403_when_role_viewer_via_middleware(
 ):
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request
+
+    _seed_kernel_e2e_agent(mem_registry)
 
     class _InjectRole(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next):

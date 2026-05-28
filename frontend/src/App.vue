@@ -47,7 +47,11 @@ onMounted(() => {
             'SettingsModelBackupView',
           ]"
         >
-          <component :is="Component" :key="route.name ?? route.path" class="flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden" />
+          <component
+            :is="Component"
+            :key="route.name ?? route.path"
+            class="flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden"
+          />
         </keep-alive>
       </router-view>
     </div>

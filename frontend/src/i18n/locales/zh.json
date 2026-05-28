@@ -2178,7 +2178,8 @@
     "shortcut_resize_group": "组缩小 / 组放大",
     "shortcut_shift_drag": "等比缩放分组",
     "shortcut_alt_drag": "中心点缩放分组",
-    "resize_tip": "Shift 等比 / Alt 中心"
+    "resize_tip": "Shift 等比 / Alt 中心",
+    "group_resize_handle_title": "拖拽调整分组尺寸"
   },
   "cache_monitor": {
     "toolbar": {

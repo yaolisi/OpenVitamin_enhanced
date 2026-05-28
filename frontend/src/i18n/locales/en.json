@@ -2178,7 +2178,8 @@
     "shortcut_resize_group": "Group zoom out / in",
     "shortcut_shift_drag": "Scale group proportionally",
     "shortcut_alt_drag": "Scale group from center",
-    "resize_tip": "Shift proportional / Alt center"
+    "resize_tip": "Shift proportional / Alt center",
+    "group_resize_handle_title": "Drag to resize group"
   },
   "cache_monitor": {
     "toolbar": {
