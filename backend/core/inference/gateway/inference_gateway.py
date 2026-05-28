@@ -18,6 +18,12 @@ from core.events import get_event_bus
 
 from core.inference.router.model_router import ModelRouter, RoutingResult
 from core.inference.providers.provider_runtime_adapter import ProviderRuntimeAdapter
+from core.models.descriptor import ModelDescriptor
+from core.security.inference_egress_guard import (
+    guard_asr_request,
+    guard_embedding_request,
+    guard_inference_request,
+)
 from core.inference.models.inference_request import InferenceRequest
 from core.inference.models.inference_response import InferenceResponse
 from core.inference.models.embedding_request import EmbeddingRequest
@@ -266,6 +272,45 @@ class InferenceGateway:
     def get_cache_stats(self) -> dict[str, Any]:
         return get_inference_stats().get_stats()
 
+    def _descriptor_for_routing(self, routing: RoutingResult) -> ModelDescriptor | None:
+        try:
+            return self.model_registry.get_model(routing.model_id)
+        except Exception:
+            return None
+
+    def _apply_egress_guard_chat(
+        self, request: InferenceRequest, routing: RoutingResult
+    ) -> InferenceRequest:
+        guarded, _ = guard_inference_request(
+            request,
+            provider=routing.provider,
+            model_id=routing.model_id,
+            descriptor=self._descriptor_for_routing(routing),
+        )
+        return guarded
+
+    def _apply_egress_guard_embed(
+        self, request: EmbeddingRequest, routing: RoutingResult
+    ) -> EmbeddingRequest:
+        guarded, _ = guard_embedding_request(
+            request,
+            provider=routing.provider,
+            model_id=routing.model_id,
+            descriptor=self._descriptor_for_routing(routing),
+        )
+        return guarded
+
+    def _apply_egress_guard_asr(
+        self, request: ASRRequest, routing: RoutingResult
+    ) -> ASRRequest:
+        guarded, _ = guard_asr_request(
+            request,
+            provider=routing.provider,
+            model_id=routing.model_id,
+            descriptor=self._descriptor_for_routing(routing),
+        )
+        return guarded
+
     @staticmethod
     def _validate_messages(request: InferenceRequest) -> None:
         """
@@ -352,6 +397,8 @@ class InferenceGateway:
                 meta.get("agent_id"),
             )
 
+            request = self._apply_egress_guard_chat(request, routing)
+
             cache_key = self._build_generate_cache_key(routing, request)
             cache_ttl = self._resolve_generate_cache_ttl(routing)
             generate_started_at = time.time()
@@ -429,6 +476,7 @@ class InferenceGateway:
                 meta.get("trace_id"),
                 meta.get("agent_id"),
             )
+            request = self._apply_egress_guard_embed(request, routing)
             cache_key = self._build_embedding_cache_key(routing, request)
             cache_ttl = max(1, int(getattr(settings, "embedding_cache_ttl_seconds", 86400)))
             cached = self.memory_cache.get_json(cache_key)
@@ -500,6 +548,7 @@ class InferenceGateway:
                 meta.get("trace_id"),
                 meta.get("agent_id"),
             )
+            request = self._apply_egress_guard_asr(request, routing)
             if routing.resolved_via == "direct":
                 response = await self.adapter.transcribe("auto", request.model_alias, request)
             else:
@@ -545,7 +594,9 @@ class InferenceGateway:
             meta.get("trace_id"),
             meta.get("agent_id"),
         )
-        
+
+        request = self._apply_egress_guard_chat(request, routing)
+
         # 2. Stream via adapter
         try:
             if routing.resolved_via == "direct":

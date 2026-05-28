@@ -70,6 +70,7 @@ SUITE_BENCHMARK_ITEMS: list[BenchmarkItem] = [
     {"id": "1-B-01", "phase": "phase1", "priority": "P0", "label": "租户隔离配置项", "eval_mode": "auto", "probe": "settings_flag:tenant"},
     {"id": "1-C-01", "phase": "phase1", "priority": "P0", "label": "生产调试开关（Helm/Guardrails）", "eval_mode": "auto", "probe": "settings_flag:debug_off"},
     {"id": "1-C-03", "phase": "phase1", "priority": "P0", "label": "敏感数据脱敏配置项", "eval_mode": "auto", "probe": "settings_flag:redaction"},
+    {"id": "1-C-04", "phase": "phase1", "priority": "P0", "label": "外部模型出站脱敏配置项", "eval_mode": "auto", "probe": "settings_flag:egress_redaction"},
     {"id": "1-A-03-R", "phase": "phase1", "priority": "P1", "label": "RBAC 运行时启用", "eval_mode": "hybrid", "probe": "readiness:rbac"},
     {"id": "1-B-01-R", "phase": "phase1", "priority": "P1", "label": "租户运行时强制", "eval_mode": "hybrid", "probe": "readiness:tenant"},
     {"id": "1-E-01", "phase": "phase1", "priority": "P0", "label": "Prometheus 指标", "eval_mode": "auto", "probe": "prometheus_enabled"},
@@ -108,7 +109,12 @@ COMPETITIVE_DIMENSIONS: list[dict[str, Any]] = [
         "label": "本地/专网与可治理",
         "weight": 1.2,
         "reference": {"mature_commercial_paas": 3.5, "langflow": 3.0, "n8n": 3.0},
-        "perilla_probes": ["agents_no_hidden_prompt_policy", "readiness:tenant", "readiness:redaction"],
+        "perilla_probes": [
+            "agents_no_hidden_prompt_policy",
+            "readiness:tenant",
+            "readiness:redaction",
+            "settings_flag:egress_redaction",
+        ],
     },
     {
         "id": "multi_tenant_enterprise",

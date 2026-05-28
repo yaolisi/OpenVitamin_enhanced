@@ -19,6 +19,7 @@
 - Agent/Workflow 编排与执行治理
 - 知识库/RAG、记忆、审计、备份与系统配置
 - 本地优先，前端不直连模型，统一经 FastAPI 网关
+- **混合推理出站脱敏**：本地小模型处理常规任务，复杂任务可路由远程大模型；external 调用前自动掩码 PII（`INFERENCE_EGRESS_REDACTION_ENABLED`）
 
 ## 2. 架构与关键路径
 

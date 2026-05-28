@@ -108,6 +108,11 @@ def evaluate_probe(probe: str) -> tuple[Status, str, Dict[str, Any]]:
             "rbac_enforcement": ("rbac_enforcement", "RBAC_ENFORCEMENT", "rbacEnforcement"),
             "tenant": ("tenant_enforcement_enabled", "TENANT_ENFORCEMENT", "tenantEnforcement"),
             "redaction": ("data_redaction_enabled", "DATA_REDACTION", "dataRedaction"),
+            "egress_redaction": (
+                "inference_egress_redaction_enabled",
+                "INFERENCE_EGRESS_REDACTION",
+                "inferenceEgressRedactionEnabled",
+            ),
             "audit": ("audit_log_enabled", "AUDIT_LOG", "auditLogEnabled"),
         }
         if flag == "debug_off":

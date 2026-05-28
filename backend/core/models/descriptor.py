@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Literal, Optional, cast
 from pydantic import BaseModel, Field
 
 class ModelCapability(BaseModel):
@@ -16,7 +16,11 @@ class ModelDescriptor(BaseModel):
     model_type: str = Field(default="llm", description="模型类型: llm, embedding, vlm, perception, image_generation")
     provider: str = Field(..., description="后端提供商, 如 'ollama', 'lmstudio'")
     provider_model_id: str = Field(..., description="提供商内部的模型ID")
-    
+    data_residency: Optional[Literal["local", "external"]] = Field(
+        default=None,
+        description="出站数据驻留：local=仅域内推理，external=可能发往第三方端点（触发出站脱敏）",
+    )
+
     # 运行时信息
     runtime: str = Field(..., description="对应的运行时类型, 如 'ollama', 'openai'")
     base_url: Optional[str] = None

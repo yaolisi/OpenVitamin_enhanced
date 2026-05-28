@@ -51,6 +51,7 @@
 |---|--------|----------|
 | P0-13 | PostgreSQL | **`DATABASE_URL`** 生产须 Postgres；禁止 SQLite；DSN 口令非占位（门禁）。 |
 | P0-14 | 结构化脱敏 | **`DATA_REDACTION_ENABLED=true`**（门禁）。 |
+| P0-15 | 外部模型出站脱敏 | **`INFERENCE_EGRESS_REDACTION_ENABLED=true`**（混合本地+远程大模型；见 `ARCHITECTURE.md` §5.1）。 |
 | P0-15 | 审计 | **`AUDIT_LOG_ENABLED`** 与 **`AUDIT_LOG_PATH_PREFIXES`**：覆盖租户账单相关控制面写操作（路径勿单独 **`/`**）。 |
 | P0-16 | Secret | DB/Redis/API Key 仅存 Secret/Vault；镜像与 CI 无明文密钥。 |
 

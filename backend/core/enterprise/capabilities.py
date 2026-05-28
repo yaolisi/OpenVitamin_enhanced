@@ -116,6 +116,12 @@ def evaluate_production_readiness() -> List[Dict[str, Any]]:
         bool(getattr(settings, "data_redaction_enabled", True)),
         "DATA_REDACTION_ENABLED=true",
     )
+    add(
+        "egress_redaction",
+        "外部模型出站脱敏",
+        bool(getattr(settings, "inference_egress_redaction_enabled", True)),
+        "INFERENCE_EGRESS_REDACTION_ENABLED=true",
+    )
     cors = (getattr(settings, "cors_allowed_origins", "") or "").strip()
     add("cors", "CORS 白名单", bool(cors), "配置 CORS_ALLOWED_ORIGINS")
     add(

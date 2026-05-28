@@ -1,6 +1,6 @@
 # perilla — 5 分钟快速上手
 
-**本地优先、网关中心化**：前端只做控制台，所有模型与工具调用统一经过 FastAPI 网关。
+**本地优先、网关中心化**：前端只做控制台，所有模型与工具调用统一经过 FastAPI 网关。混合部署时，**本地小模型处理常规模型任务，复杂任务可路由远程大模型**；出站前由网关自动脱敏（`INFERENCE_EGRESS_REDACTION_ENABLED`，见 `docs/architecture/ARCHITECTURE.md` §5.1）。
 
 [English README](README_EN.md)
 
@@ -98,7 +98,7 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 ## 4) 运维路径（安全-发布-故障）
 
 - 部署文档：`docs/DEPLOYMENT.md`
-- 安全基线：`tutorials/tutorial-security-baseline.md`
+- 安全基线：`tutorials/tutorial-security-baseline.md`（含 HTTP 脱敏与**外部模型出站脱敏**）
 - 发布清单：`tutorials/tutorial-ops-checklist.md`
 - 故障手册：`tutorials/tutorial-incident-runbook.md`
 

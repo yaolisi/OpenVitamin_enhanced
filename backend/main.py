@@ -236,6 +236,11 @@ def _log_production_operational_warnings() -> None:
             "[SecurityBaseline] data_redaction_enabled=False in production; structured logs may retain sensitive fields "
             "(set DATA_REDACTION_ENABLED=true unless you fully trust log sinks and retention)."
         )
+    if not getattr(settings, "inference_egress_redaction_enabled", True):
+        logger.warning(
+            "[SecurityBaseline] inference_egress_redaction_enabled=False; prompts to external LLM providers are not redacted "
+            "(set INFERENCE_EGRESS_REDACTION_ENABLED=true for hybrid local+remote deployments)."
+        )
     if getattr(settings, "tool_system_env_enabled", False):
         logger.warning(
             "[SecurityBaseline] tool_system_env_enabled=True: scope TOOL_SYSTEM_ENV_ALLOWED_NAMES tightly; "

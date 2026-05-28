@@ -96,6 +96,27 @@
 - 缺失或不一致返回 `403`
 - 前端必须在启动时预热 token，并在写请求自动注入
 
+### 3.3 推理出站脱敏（混合本地 + 远程大模型，MUST 建议）
+
+Perilla 特色能力：**常规模型走本地小模型，复杂任务可路由远程大模型**；二者数据出境风险不同，须分层治理。
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `INFERENCE_EGRESS_REDACTION_ENABLED` | `true` | 对 **external** 驻留模型，在 `InferenceGateway` 出站前脱敏 `messages` / `prompt` |
+| `INFERENCE_EGRESS_REDACT_CONTENT` | `true` | 启用正文 PII 正则（手机、身份证、邮箱等） |
+| `INFERENCE_EGRESS_BLOCK_EXTERNAL` | `false` | `true` 时完全禁止 external 模型调用（专网 air-gap） |
+| `INFERENCE_EGRESS_LOCAL_PROVIDERS` | （内置列表） | 逗号分隔，覆盖视为本地的 provider/runtime |
+| `INFERENCE_EGRESS_EXTERNAL_PROVIDERS` | （内置列表） | 逗号分隔，覆盖视为外部的 provider/runtime |
+
+与 `DATA_REDACTION_ENABLED` 的区别：
+
+- **HTTP 脱敏**：作用于 API JSON **响应**与日志副本中的敏感**字段名**（api_key、token 等），不改变发往模型的正文。
+- **出站脱敏**：作用于 **InferenceGateway → 第三方 LLM API** 之前的对话正文；响应 metadata 可含 `egress_redaction_hits` 供审计。
+
+模型可在 `ModelDescriptor.data_residency` 显式声明 `local` / `external`。详见 `docs/architecture/ARCHITECTURE.md` §5.1。
+
+生产建议：`DEBUG=false` 时保持 `INFERENCE_EGRESS_REDACTION_ENABLED=true`；纯本地、无外联 provider 时可评估关闭，但须记录风险接受。
+
 ---
 
 ## 4. 审计与追踪规范（MUST）
@@ -141,6 +162,7 @@
 
 高风险配置项（变更需审批）：
 
+- `INFERENCE_EGRESS_REDACTION_ENABLED` / `INFERENCE_EGRESS_BLOCK_EXTERNAL`
 - `SECURITY_GUARDRAILS_STRICT`
 - `RBAC_*`
 - `TENANT_*`

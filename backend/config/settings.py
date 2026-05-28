@@ -450,6 +450,13 @@ def validate_production_security_guardrails(s: "Settings") -> list[str]:
             "data_redaction_enabled=False disables structured log/data redaction in production; "
             "set DATA_REDACTION_ENABLED=true"
         )
+    if not getattr(s, "debug", True) and not bool(
+        getattr(s, "inference_egress_redaction_enabled", True)
+    ):
+        issues.append(
+            "inference_egress_redaction_enabled=False disables outbound redaction before external LLM calls; "
+            "set INFERENCE_EGRESS_REDACTION_ENABLED=true"
+        )
     if not getattr(s, "debug", True) and bool(getattr(s, "workflow_allow_draft_execution", False)):
         issues.append(
             "workflow_allow_draft_execution=True allows unpublished draft workflow execution in production; "
@@ -1025,6 +1032,18 @@ class Settings(BaseSettings):
     )
     data_redaction_mask_keep_prefix: int = 4
     data_redaction_mask_keep_suffix: int = 4
+
+    # ---------- 推理出站脱敏（外部大模型）----------
+    # 对 data_residency=external 的模型，在 InferenceGateway 出站前脱敏 prompt/messages
+    inference_egress_redaction_enabled: bool = True
+    # True 时完全禁止 external 驻留模型调用（专网 air-gap）
+    inference_egress_block_external: bool = False
+    # 对正文应用 PII 正则与内联密钥掩码
+    inference_egress_redact_content: bool = True
+    # 逗号分隔：视为本地 provider/runtime（未匹配且非公网 base_url 时默认 local）
+    inference_egress_local_providers: str = ""
+    # 逗号分隔：视为外部 provider/runtime（优先于 local 列表）
+    inference_egress_external_providers: str = ""
 
     @field_validator("log_format")
     @classmethod

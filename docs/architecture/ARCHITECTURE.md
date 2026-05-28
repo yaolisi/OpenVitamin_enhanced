@@ -232,6 +232,24 @@ RuntimeFactory → Model Runtime
 - ✅ NodeExecutor → InferenceClient
 - ✅ Embedding/ASR 接入 InferenceGateway
 
+**出站脱敏（混合本地 + 远程大模型）**：
+
+典型部署为：日常任务走本地小模型（Ollama / llama.cpp 等），复杂任务经别名或 fallback 路由到 OpenAI 兼容云 API。二者治理边界不同：
+
+| 层级 | 机制 | 作用对象 |
+|------|------|----------|
+| HTTP 中间件 | `SensitiveDataRedactionMiddleware` | 对外 JSON 响应 / 日志副本中的**字段名**（api_key、token 等） |
+| 推理出站守卫 | `core/security/inference_egress_guard.py` | **发往 external 驻留模型**前的 `messages` / `prompt` 正文 |
+
+出站守卫在 `InferenceGateway.generate/stream/embed/transcribe` 路由解析之后、调用 `ProviderRuntimeAdapter` 之前执行：
+
+1. **数据驻留分类**（`data_residency`）：`ModelDescriptor.data_residency` 显式声明优先；否则按 provider/runtime 列表与 `base_url`（私网/loopback → local）判定。
+2. **正文脱敏**（仅 external）：PII 正则（手机、身份证、邮箱等）+ 内联 `api_key:` 类模式，替换为 `[REDACTED]`。
+3. **可审计 metadata**：`egress_data_residency`、`egress_redaction_applied`、`egress_redaction_hits`、`egress_redaction_policy` 写入请求 metadata。
+4. **可选阻断**：`INFERENCE_EGRESS_BLOCK_EXTERNAL=true` 时禁止一切 external 调用（专网 air-gap）。
+
+主要环境变量：`INFERENCE_EGRESS_REDACTION_ENABLED`（默认 true）、`INFERENCE_EGRESS_BLOCK_EXTERNAL`、`INFERENCE_EGRESS_REDACT_CONTENT`、`INFERENCE_EGRESS_LOCAL_PROVIDERS`、`INFERENCE_EGRESS_EXTERNAL_PROVIDERS`。生产 `DEBUG=false` 时关闭出站脱敏会触发 `validate_production_security_guardrails` 告警。
+
 ### 5.2 Runtime Stabilization（V2.9 运行时稳定层）
 
 `core/runtime` 位于 Inference Gateway 与 RuntimeFactory 之间，负责在 **不改变现有 Runtime API** 的前提下提升稳定性。
@@ -370,6 +388,8 @@ RuntimeFactory → Model Runtime
 - HTTP Tools：默认禁用，需通过 `ToolContext.permissions["net.http"]` 或 `settings.tool_net_http_enabled` 开启
 - System.env：默认禁用，需通过 `ToolContext.permissions["system.env"]` 或 `settings.tool_system_env_enabled` 开启
 - Built-in Skills：不可编辑/删除，保持系统一致性
+- **结构化脱敏**：`DATA_REDACTION_ENABLED` 作用于 HTTP JSON 响应与日志副本
+- **推理出站脱敏**：`INFERENCE_EGRESS_REDACTION_ENABLED` 作用于 external 大模型调用前的 prompt/messages（见 §5.1）
 
 ---
 

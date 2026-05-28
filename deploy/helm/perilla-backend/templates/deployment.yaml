@@ -487,6 +487,26 @@ spec:
             - name: DATA_REDACTION_MASK_KEEP_SUFFIX
               value: {{ .Values.env.dataRedactionMaskKeepSuffix | quote }}
             {{- end }}
+            {{- if .Values.env.inferenceEgressRedactionEnabled }}
+            - name: INFERENCE_EGRESS_REDACTION_ENABLED
+              value: {{ .Values.env.inferenceEgressRedactionEnabled | quote }}
+            {{- end }}
+            {{- if .Values.env.inferenceEgressBlockExternal }}
+            - name: INFERENCE_EGRESS_BLOCK_EXTERNAL
+              value: {{ .Values.env.inferenceEgressBlockExternal | quote }}
+            {{- end }}
+            {{- if .Values.env.inferenceEgressRedactContent }}
+            - name: INFERENCE_EGRESS_REDACT_CONTENT
+              value: {{ .Values.env.inferenceEgressRedactContent | quote }}
+            {{- end }}
+            {{- if .Values.env.inferenceEgressLocalProviders }}
+            - name: INFERENCE_EGRESS_LOCAL_PROVIDERS
+              value: {{ .Values.env.inferenceEgressLocalProviders | quote }}
+            {{- end }}
+            {{- if .Values.env.inferenceEgressExternalProviders }}
+            - name: INFERENCE_EGRESS_EXTERNAL_PROVIDERS
+              value: {{ .Values.env.inferenceEgressExternalProviders | quote }}
+            {{- end }}
             {{- if .Values.env.responseGzipEnabled }}
             - name: RESPONSE_GZIP_ENABLED
               value: {{ .Values.env.responseGzipEnabled | quote }}

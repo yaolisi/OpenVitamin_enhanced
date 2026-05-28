@@ -206,6 +206,12 @@ env:
   dataRedactionSensitiveFields: ""
   dataRedactionMaskKeepPrefix: ""
   dataRedactionMaskKeepSuffix: ""
+  # --- 外部大模型出站脱敏（InferenceGateway；混合本地+远程部署建议 true）---
+  inferenceEgressRedactionEnabled: "true"
+  inferenceEgressBlockExternal: ""
+  inferenceEgressRedactContent: ""
+  inferenceEgressLocalProviders: ""
+  inferenceEgressExternalProviders: ""
   # --- 响应 GZip（text/event-stream 不压缩）与工作流全局调度并发 ---
   responseGzipEnabled: ""
   responseGzipMinimumSize: ""
