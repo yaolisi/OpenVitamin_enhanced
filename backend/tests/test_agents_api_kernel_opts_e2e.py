@@ -94,6 +94,12 @@ def mem_registry(monkeypatch) -> _MemRegistry:
     return reg
 
 
+@pytest.fixture()
+def strict_platform_auth(monkeypatch):
+    """鉴权用例须与 CI 一致：本地 debug 未配 Key 时也不得绕过 require_authenticated_platform_admin。"""
+    monkeypatch.setattr("core.security.deps.local_dev_control_plane_unlocked", lambda: False)
+
+
 def _seed_kernel_e2e_agent(mem_registry: _MemRegistry) -> None:
     seed = AgentDefinition(
         agent_id="agent_kernel_e2e",
@@ -377,6 +383,7 @@ def test_put_agent_ok_when_kernel_fields_aligned(mem_registry: _MemRegistry, age
 
 def test_put_agent_401_when_api_key_missing(
     agents_client_auth_only: TestClient,
+    strict_platform_auth,
 ):
     resp = agents_client_auth_only.put(
         "/api/agents/agent_kernel_e2e",
@@ -390,6 +397,7 @@ def test_put_agent_401_when_api_key_missing(
 
 def test_put_agent_403_when_role_not_admin(
     agents_client_auth_only: TestClient,
+    strict_platform_auth,
 ):
     """未设置 platform_role 时 get_platform_role 默认为 OPERATOR → 非 admin。"""
     resp = agents_client_auth_only.put(
@@ -403,6 +411,7 @@ def test_put_agent_403_when_role_not_admin(
 
 def test_put_agent_403_when_role_viewer_via_middleware(
     mem_registry: _MemRegistry,
+    strict_platform_auth,
 ):
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request

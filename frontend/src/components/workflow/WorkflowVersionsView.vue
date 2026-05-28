@@ -82,7 +82,7 @@ async function doDiff() {
   }
 }
 
-async function doPublish(versionId: string, versionNumber?: number) {
+async function doPublish(versionId: string, versionNumber?: string | number) {
   publishLoadingId.value = versionId
   try {
     const label = versionNumber != null ? `v${versionNumber}` : versionId.slice(0, 8)

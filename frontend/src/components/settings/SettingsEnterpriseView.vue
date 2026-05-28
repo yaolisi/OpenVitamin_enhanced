@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Shield, ChevronLeft, ChevronRight, Sliders, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
@@ -13,12 +13,8 @@ import {
   type EnterpriseCapabilities,
   type SuiteBenchmarkReport,
 } from '@/services/api'
-import { useRoute } from 'vue-router'
-
 const router = useRouter()
-const route = useRoute()
 const { t } = useI18n()
-const settingsSection = computed(() => route.name as string)
 const navCollapsed = ref(false)
 const loading = ref(true)
 const error = ref<string | null>(null)

@@ -17,6 +17,9 @@ import {
   Globe,
   Code,
   Terminal,
+  GitFork,
+  GitMerge,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-vue-next'
 import { NODE_LIBRARY, NODE_CATEGORY_LABELS, type NodeLibraryItem, type EditorNodeType, type NodeCategory } from './types'
@@ -37,6 +40,10 @@ const iconMap: Record<EditorNodeType, typeof Brain> = {
   condition: GitBranch,
   loop: Repeat,
   parallel: Copy,
+  fork: GitFork,
+  join: GitMerge,
+  verify_loop: ShieldCheck,
+  checkpoint: ShieldCheck,
   sub_workflow: Boxes,
   skill: Sparkles,
   http_request: Globe,

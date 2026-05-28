@@ -126,8 +126,9 @@ async function loadMeta() {
     const [mRes, sRes] = await Promise.all([listModels(), listSkills()])
     models.value = mRes.data || []
     skills.value = sRes.data || []
-    if (!modelId.value && models.value.length) {
-      modelId.value = models.value[0].id
+    const firstModel = models.value[0]
+    if (!modelId.value && firstModel?.id) {
+      modelId.value = firstModel.id
     }
   } catch {
     models.value = []

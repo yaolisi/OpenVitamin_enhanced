@@ -451,23 +451,6 @@ const handleDeleteSession = async (sessionId: string) => {
   }
 }
 
-async function runServerPreflight() {
-  serverPreflightLoading.value = true
-  serverPreflightError.value = null
-  try {
-    serverPreflight.value = await getAgentPreflight(agentId)
-    if (!serverPreflight.value.ready) {
-      const failed = serverPreflight.value.checks.filter((c) => !c.ok && c.severity === 'error')
-      serverPreflightError.value =
-        failed[0]?.hint || failed[0]?.check || t('workflow_run.server_preflight_failed')
-    }
-  } catch (e) {
-    serverPreflightError.value = String((e as Error)?.message || e)
-  } finally {
-    serverPreflightLoading.value = false
-  }
-}
-
 const handleSendMessage = async () => {
   if ((!userInput.value.trim() && uploadedFiles.value.length === 0) || isRunning.value) return
 

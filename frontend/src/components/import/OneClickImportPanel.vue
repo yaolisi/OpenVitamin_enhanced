@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import {
   Loader2,
   Package,
-  Workflow,
   Sparkles,
   Upload,
   FileJson,
@@ -16,7 +15,6 @@ import {
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { useBundleImportHub } from '@/composables/useBundleImportHub'
-import type { ImportCatalogItem } from '@/services/api'
 
 const props = withDefaults(
   defineProps<{

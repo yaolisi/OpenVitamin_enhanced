@@ -3904,6 +3904,7 @@ export interface PublishGateResult {
   preflight?: PreflightResponse
   contract_diff?: Record<string, unknown>
   impacted_count?: number
+  risky_change_count?: number
 }
 
 export async function getWorkflowPublishGate(
