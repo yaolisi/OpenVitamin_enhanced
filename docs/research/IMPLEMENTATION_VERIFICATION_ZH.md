@@ -31,7 +31,8 @@
 - OIDC PKCE：`/auth/callback`、企业与合规设置页
 - 工作流发布门禁：编辑页 **发布** + `PublishGateDialog`
 - Eval 回归：`/settings/eval`
-- 文档：`backend/.env.example`、`run-backend.sh`、教程索引 §1.1
+- **开箱企业套件自动对标**：`GET /api/v1/enterprise/suite-benchmark`（`include_live`）、`/gate`；`make enterprise-suite-gate*`；矩阵 `backend/core/enterprise/suite_benchmark_matrix.py`；三场景官方包 + `policy-qa-starter`（见 `demos/platform/README.md`）
+- 文档：`backend/.env.example`、`run-backend.sh`、教程索引 §1.1、[SAAS_PUBLIC_LAUNCH_GATE_ZH.md](../ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md)
 
 ## 未在本轮实现（留待后续 Epic）
 

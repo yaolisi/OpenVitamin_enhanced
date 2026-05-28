@@ -135,7 +135,7 @@ curl -s http://127.0.0.1:8000/api/v1/auth/config | jq .
 curl -s http://127.0.0.1:8000/api/v1/auth/session | jq .
 ```
 
-**设置入口：** 侧边栏 **Settings** → **`/settings/general`**（语言/主题/数据目录）、**`/settings/backend`**（API Key / 租户）、**`/settings/enterprise`**（OIDC 与生产就绪）、**`/settings/eval`**（Eval 回归批跑，需 admin）。
+**设置入口：** 侧边栏 **Settings** → **`/settings/general`**（语言/主题/数据目录）、**`/settings/backend`**（API Key / 租户）、**`/settings/enterprise`**（OIDC、生产就绪、**开箱企业套件对标报告**与 Live 探针）、**`/settings/eval`**（Eval 回归批跑，需 admin）。研发侧门禁：`make enterprise-suite-gate`（见 [GETTING_STARTED_ZH.md §5.6](../docs/GETTING_STARTED_ZH.md#56-开箱企业套件对标phase-0-2)）。
 
 ---
 

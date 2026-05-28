@@ -129,7 +129,22 @@ PYTHONPATH=backend pytest -q \
 - Run only the merge-gate pytest list: `make merge-gate-contract-tests`.
 - Backend preflight without a live API (mirrors the main backend CI job order): `bash scripts/production-preflight.sh`.
 
-## 6. Troubleshooting FAQ
+### 5.6 Enterprise suite benchmark (Phase 0–2)
+
+Automated contract probes aligned with **Settings → Enterprise** and official demo bundles (`make pr-check` includes **Phase0 static gate**):
+
+```bash
+make enterprise-suite-gate
+make enterprise-suite-gate-all
+make enterprise-suite-inprocess-live-gate
+
+export ENTERPRISE_SUITE_API_KEY=...
+ENTERPRISE_SUITE_LIVE_URL=http://127.0.0.1:8000 make enterprise-suite-live-gate
+```
+
+See [demos/platform/README.md](../demos/platform/README.md) and [docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md](ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md) (auto benchmark section).
+
+### 6. Troubleshooting FAQ
 
 ### 6.1 401/403
 
@@ -153,7 +168,7 @@ PYTHONPATH=backend pytest -q \
 
 ## 7. Minimal production checklist
 
-- Before release: `make pr-check` passes
+- Before release: `make pr-check` passes (includes `enterprise-suite-gate`); optional `make enterprise-suite-gate-all` and staging `enterprise-suite-live-gate`
 - At release: `DEBUG=false`, `SECURITY_GUARDRAILS_STRICT=true`
 - After release: T+10/T+30 checks on MCP path, config refresh, EventBus validation logs
 - Rollback strategy: high-risk feature commits first, then foundational/tooling changes

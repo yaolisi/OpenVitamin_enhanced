@@ -129,6 +129,24 @@ PYTHONPATH=backend pytest -q \
 - 仅跑合并门禁 pytest 列表：`make merge-gate-contract-tests`。
 - 后端发布前与主后端 CI 对拍的一键脚本（无运行中 API）：`bash scripts/production-preflight.sh`。
 
+### 5.6 开箱企业套件对标（Phase 0–2）
+
+与 **设置 → 企业与合规**、官方演示包 catalog 对齐的自动验收（`make pr-check` 已包含 **Phase0 静态门禁**）：
+
+```bash
+make enterprise-suite-gate              # pytest + phase0 静态 P0
+make enterprise-suite-gate-all          # phase0–2 静态合同
+make enterprise-suite-inprocess-live-gate   # TestClient Live+UAT（CI 同款）
+
+# 对已运行网关（可选 API Key / 租户）
+export ENTERPRISE_SUITE_API_KEY=...     # operator/admin，预检与 import/preview 等
+export ENTERPRISE_SUITE_TENANT_ID=... # 多租户时
+ENTERPRISE_SUITE_LIVE_URL=http://127.0.0.1:8000 make enterprise-suite-live-gate
+```
+
+- 报告 JSON：`make enterprise-suite-benchmark-json` → `enterprise-suite-benchmark.json`
+- 详见 [demos/platform/README.md](../demos/platform/README.md)、[docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md](ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md)「自动对标门禁」
+
 ## 6. 故障排查 FAQ
 
 ### 6.1 401/403
@@ -153,7 +171,7 @@ PYTHONPATH=backend pytest -q \
 
 ## 7. 生产发布最小清单
 
-- 发布前：`make pr-check` 通过
+- 发布前：`make pr-check` 通过（含 `enterprise-suite-gate`）；可选 `make enterprise-suite-gate-all` + Staging 上 `enterprise-suite-live-gate`
 - 发布时：`DEBUG=false`、`SECURITY_GUARDRAILS_STRICT=true`
 - 发布后：T+10/T+30 抽查 MCP、配置刷新、EventBus 校验日志
 - 回滚策略：先高风险业务改动，再基础层与工程脚本
@@ -167,4 +185,5 @@ PYTHONPATH=backend pytest -q \
 - 教程索引：`tutorials/tutorial-index.md`
 - 插件开发：`docs/plugins/PLUGIN_DEVELOPMENT_ZH.md`
 - 工作流编排概览：`docs/workflow/WORKFLOW_ORCHESTRATION_OVERVIEW_ZH.md`
+- 公网 SaaS 上线门禁与自动对标：`docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md`
 - vLLM / TensorRT-LLM 接入：`docs/inference/VLLM_TENSORRT_BACKEND_ZH.md`

@@ -182,9 +182,11 @@ curl.exe -I -s http://127.0.0.1:8000/api/health | Select-String "X-Trace-Id|X-Re
 make install-lint-tools
 make merge-gate-contract-tests
 bash scripts/production-preflight.sh
+make enterprise-suite-gate
+make enterprise-suite-gate-all
 ```
 
-`make pr-check` / `make pr-check-fast` 已涵盖其中大部分步骤；细颗粒度说明见 [docs/GETTING_STARTED_ZH.md §5](../docs/GETTING_STARTED_ZH.md#5-常用验证命令)（**§5.5**）。
+`make pr-check` / `make pr-check-fast` 已涵盖其中大部分步骤（含 **enterprise-suite-gate**）；细颗粒度说明见 [docs/GETTING_STARTED_ZH.md §5](../docs/GETTING_STARTED_ZH.md#5-常用验证命令)（**§5.5–5.6**）。上线签字清单与自动对标关系见 [docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md](../docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md)。
 
 ---
 

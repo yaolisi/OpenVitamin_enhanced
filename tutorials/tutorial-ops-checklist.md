@@ -45,11 +45,24 @@ JUNIT_XML_PATH=test-reports/tenant-security-regression.xml backend/scripts/test_
 ## C. 30 秒 CI 检查（必须通过）
 
 - [ ] **`backend-static-analysis`** 绿色（主后端：依赖策略、lint、no-fallback、tenant、Helm、合并门禁、Compose/监控/K8s/安全护栏等；与本地 `make pr-check` / `bash scripts/production-preflight.sh` 对拍）
+- [ ] **`enterprise-suite-gate`** 绿色（开箱企业套件 Phase0–2 静态 + inprocess Live+UAT；本地：`make enterprise-suite-gate-all`）
 - [ ] 变更涉及依赖或 `scripts/scan-dependencies.sh` 时：**`dependency-security-scan`** 绿色
 - [ ] 变更涉及前端时：**`frontend-build`** 绿色
 - [ ] `tenant-security-regression` workflow 绿色
 - [ ] 本次 PR 对应 artifact 已上传（junit report，如适用）
 - [ ] 无并发取消导致的“最后一次任务未执行”误判
+
+---
+
+## C.1 企业套件对标（可选，合同/预发）
+
+```bash
+make enterprise-suite-gate-all
+# 对已部署 Staging（GitHub: enterprise-suite-live-staging workflow，或本地）：
+ENTERPRISE_SUITE_LIVE_URL=https://your-staging ENTERPRISE_SUITE_API_KEY=... make enterprise-suite-live-gate
+```
+
+- [ ] 控制台 **设置 → 企业与合规** 中 **自动门禁** 为通过（静态）；Staging Live 探针按环境配置 Secret 后验收
 
 ---
 

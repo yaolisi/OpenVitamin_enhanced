@@ -89,6 +89,7 @@ Workflow orchestration (Fork/Join, checkpoint, model tiers, OmX templates): **`t
 - **Ruff / Mypy versions**: pinned in `backend/requirements/lint-tools.txt`, matching the `backend-static-analysis` GitHub Actions workflow; run `make install-lint-tools` (or `npm run install-lint-tools`) locally.
 - **Merge gate** (Helm / Compose / deploy contract pytest list): `make merge-gate-contract-tests` (or `bash scripts/merge-gate-contract-tests.sh`).
 - **Backend preflight** (no running API required; mirrors the main backend CI job order): `bash scripts/production-preflight.sh` (see script header).
+- **Enterprise suite benchmark** (Phase 0–2 contract probes, in `pr-check`): `make enterprise-suite-gate` / `make enterprise-suite-gate-all`; Live+UAT: `make enterprise-suite-inprocess-live-gate` or `ENTERPRISE_SUITE_LIVE_URL=… make enterprise-suite-live-gate`. UI: **Settings → Enterprise**; see [`docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md`](docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md).
 
 More commands: [`docs/GETTING_STARTED_EN.md#5-validation-commands`](docs/GETTING_STARTED_EN.md#5-validation-commands).
 

@@ -126,6 +126,7 @@ scripts/doctor.sh
 ```bash
 make pr-check-fast
 make pr-check
+make enterprise-suite-gate-all   # 可选：企业套件合同静态探针
 ```
 
 ---

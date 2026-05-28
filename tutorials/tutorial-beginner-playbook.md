@@ -88,6 +88,8 @@ PYTHONPATH=backend pytest -q \
 
 ```bash
 make pr-check-fast
+# 可选：开箱企业套件全阶段静态验收
+make enterprise-suite-gate-all
 ```
 
 **发布前全检**

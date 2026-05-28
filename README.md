@@ -89,6 +89,7 @@ curl -s http://127.0.0.1:8000/api/health/ready | jq .
 - **Ruff / Mypy 版本**：由 `backend/requirements/lint-tools.txt` 固定，与 GitHub Actions `backend-static-analysis` 一致；本地可先 `make install-lint-tools`（或 `npm run install-lint-tools`）。
 - **合并门禁**（Helm / Compose / 部署契约等 pytest 列表）：`make merge-gate-contract-tests`（或 `bash scripts/merge-gate-contract-tests.sh`）。
 - **后端上线前一键校验**（无需运行中的 API，步骤与主后端 CI job 对拍）：`bash scripts/production-preflight.sh`（说明见脚本头注释）。
+- **开箱企业套件对标**（Phase 0–2 合同探针，已接入 `pr-check`）：`make enterprise-suite-gate` / `make enterprise-suite-gate-all`；Live+UAT：`make enterprise-suite-inprocess-live-gate` 或对已部署环境 `ENTERPRISE_SUITE_LIVE_URL=… make enterprise-suite-live-gate`。控制台 **设置 → 企业与合规**；详见 [`docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md`](docs/ops/SAAS_PUBLIC_LAUNCH_GATE_ZH.md)。
 
 更细的验证命令见 [`docs/GETTING_STARTED_ZH.md#5-常用验证命令`](docs/GETTING_STARTED_ZH.md#5-常用验证命令)。
 

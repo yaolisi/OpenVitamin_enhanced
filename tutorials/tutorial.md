@@ -473,7 +473,7 @@ curl -s http://127.0.0.1:8000/api/v1/auth/session | jq .
 
 | 路由 | 用途 |
 |------|------|
-| `/settings/enterprise` | OIDC 登录入口、生产就绪检查清单 |
+| `/settings/enterprise` | OIDC 登录入口、**生产就绪检查清单**、**开箱企业套件自动对标**（Phase 0–2 探针结果、竞争维度参考分；可勾选 **含 Live 探针** 对当前网关做 HTTP 验收） |
 | `/settings/eval` | Eval 回归：上传 JSON 用例、一键批跑（需平台 **admin**） |
 | `/settings/backup`、`/settings/runtime`、`/settings/mcp` 等 | 备份、运行时、MCP 等专项配置 |
 

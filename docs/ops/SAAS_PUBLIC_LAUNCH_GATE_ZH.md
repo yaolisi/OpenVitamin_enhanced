@@ -85,6 +85,33 @@
 
 ---
 
+## 自动对标门禁（开箱企业套件 · Phase 0–2）
+
+与 **人工签字清单** 互补：仓库内提供 **可脚本化、可 CI 复现** 的合同验收探针（静态 + 可选 Live/UAT），**不构成等保/密评合格证明**。
+
+| 场景 | 命令 / 入口 |
+|------|-------------|
+| 日常 PR（已接入 `make pr-check`） | `make enterprise-suite-gate` |
+| 全阶段静态合同（Phase0–2 P0 自动项） | `make enterprise-suite-gate-all` |
+| CI 同款 Live+UAT（TestClient，无需起服务） | `make enterprise-suite-inprocess-live-gate` |
+| 对已部署网关（Staging/预发） | `ENTERPRISE_SUITE_LIVE_URL=https://…` + 可选 `ENTERPRISE_SUITE_API_KEY` → `make enterprise-suite-live-gate` |
+| 发布前脚本链 | `bash scripts/release-preflight.sh`（含上述静态门禁） |
+| 控制台 | **设置 → 企业与合规**（`/settings/enterprise`）：对标报告、竞争维度、勾选 **含 Live 探针** |
+| API | `GET /api/v1/enterprise/suite-benchmark?phase=all&include_live=true`；门禁：`GET /api/v1/enterprise/suite-benchmark/gate` |
+| GitHub Actions | `enterprise-suite-gate`（push/PR）；`enterprise-suite-live-staging`（手动对 Staging，需 Secret） |
+
+**官方三场景 Bundle**（合同附件可引用 `enterprise_scene`）：
+
+| 场景 | 平台包 `bundle_id` | 工作流包 `bundle_id` |
+|------|-------------------|---------------------|
+| 智慧办文（审批门禁） | `release-brief-gate` | `release-brief-gate` |
+| 制度/政策智能问答 | `rag-research-verify` | `parallel-research-verify` |
+| 科研并行编排 | `rag-research-verify` | `parallel-research-verify` |
+
+另含轻量入门包 **`policy-qa-starter`**（`policy_qa`）。清单与探针映射见 `backend/core/enterprise/suite_benchmark_matrix.py`。
+
+---
+
 ## P1 — 上线后 30～90 天（建议有 owner）
 
 - WAF / Bot / DDoS 与限流分层。  
@@ -116,6 +143,7 @@
 | 启动顺序 | `backend/main.py`：`_apply_security_baseline`、`_log_production_operational_warnings` |
 | Helm | `deploy/helm/perilla-backend/`（Chart **`values.yaml`**、`templates/deployment.yaml`） |
 | Compose 生产叠加 | `docker-compose.prod.yml` |
+| 开箱企业套件对标 | `backend/core/enterprise/suite_benchmark*.py`、`suite_live.py`、`suite_uat.py`；CLI：`backend/scripts/enterprise_suite_acceptance_gate.py` |
 
 ---
 

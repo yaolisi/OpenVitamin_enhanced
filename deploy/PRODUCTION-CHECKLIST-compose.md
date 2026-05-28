@@ -13,6 +13,8 @@
 | 合并门禁契约测试 | `bash scripts/merge-gate-contract-tests.sh -q` |
 | Helm 模板与合并门禁（若团队仍以 Chart 对齐线上/K8s） | `make helm-deploy-contract-check` |
 | 完整 PR 级检查（含前端构建等） | `make pr-check` 或 `npm run ci` |
+| 开箱企业套件对标（Phase0–2 静态，含于 `pr-check`） | `make enterprise-suite-gate` / `make enterprise-suite-gate-all` |
+| 发布前全栈预检（含上项） | `bash scripts/release-preflight.sh` |
 
 ---
 
