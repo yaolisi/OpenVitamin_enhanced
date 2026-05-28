@@ -1,4 +1,4 @@
-.PHONY: help npm-scripts npm-scripts-json bootstrap bootstrap-prod env-init local-all local-backend local-frontend install install-gpu install-prod install-prod-soft install-lint-tools up up-gpu up-prod up-monitoring down down-gpu down-prod down-monitoring status status-monitoring logs healthcheck monitoring-smoke monitoring-e2e monitoring-e2e-clean monitoring-all ops-drill-guide doctor security-guardrails lint lint-backend helm-chart-check helm-deploy-contract-check compose-config-check monitoring-config-check k8s-manifest-check dockerfile-hadolint-check docker-build-backend docker-build-frontend docker-build-all security-guardrails-ci backend-static-analysis-extras merge-gate-contract-tests check-nvmrc-align test-frontend-unit test-frontend-unit-coverage build-frontend pr-check pr-check-fast ci ci-fast quick-check production-preflight release-preflight dependency-policy dependency-scan test-no-fallback test-workflow-control-flow test-tenant-isolation roadmap-acceptance-unit roadmap-acceptance-smoke roadmap-acceptance-all roadmap-acceptance-validate-schema-version roadmap-acceptance-validate-output roadmap-acceptance-run-validated roadmap-release-gate smart-routing-smoke smart-routing-all-checks smart-routing-load-test smart-routing-experiment smart-routing-param-scan cb-doctor cb-benchmark cb-grid cb-recommend cb-snapshot cb-rollback cb-tier cb-gate cb-triage cb-tests cb-fast cb-latest-report cb-pipeline cb-all cb-release-check event-bus-smoke event-bus-smoke-pytest event-bus-smoke-unit event-bus-smoke-contract-guard event-bus-smoke-contract event-bus-smoke-summary-contract event-bus-smoke-gh-strict event-bus-smoke-gh-compatible event-bus-smoke-gh-watch-latest event-bus-smoke-gh-strict-watch event-bus-smoke-gh-compatible-watch event-bus-smoke-print-gh-inputs event-bus-smoke-print-gh-inputs-json event-bus-smoke-write-gh-inputs-json-file event-bus-smoke-validate-gh-inputs-snapshot event-bus-smoke-validate-gh-trigger-inputs-audit event-bus-smoke-validate-schema-version event-bus-smoke-validate-result-file event-bus-smoke-validate-contract-input event-bus-smoke-validate-json-output event-bus-smoke-validate-file-suffix event-bus-smoke-preflight event-bus-smoke-fast event-bus-smoke-run-validated event-bus-smoke-all drill-alerting reset
+.PHONY: help npm-scripts enterprise-suite-gate enterprise-suite-gate-all enterprise-suite-live-gate enterprise-suite-inprocess-live-gate enterprise-suite-benchmark-json enterprise-suite-uat-static npm-scripts-json bootstrap bootstrap-prod env-init local-all local-backend local-frontend install install-gpu install-prod install-prod-soft install-lint-tools up up-gpu up-prod up-monitoring down down-gpu down-prod down-monitoring status status-monitoring logs healthcheck monitoring-smoke monitoring-e2e monitoring-e2e-clean monitoring-all ops-drill-guide doctor security-guardrails lint lint-backend helm-chart-check helm-deploy-contract-check compose-config-check monitoring-config-check k8s-manifest-check dockerfile-hadolint-check docker-build-backend docker-build-frontend docker-build-all security-guardrails-ci backend-static-analysis-extras merge-gate-contract-tests check-nvmrc-align test-frontend-unit test-frontend-unit-coverage build-frontend pr-check pr-check-fast ci ci-fast quick-check production-preflight release-preflight dependency-policy dependency-scan test-no-fallback test-workflow-control-flow test-tenant-isolation roadmap-acceptance-unit roadmap-acceptance-smoke roadmap-acceptance-all roadmap-acceptance-validate-schema-version roadmap-acceptance-validate-output roadmap-acceptance-run-validated roadmap-release-gate smart-routing-smoke smart-routing-all-checks smart-routing-load-test smart-routing-experiment smart-routing-param-scan cb-doctor cb-benchmark cb-grid cb-recommend cb-snapshot cb-rollback cb-tier cb-gate cb-triage cb-tests cb-fast cb-latest-report cb-pipeline cb-all cb-release-check event-bus-smoke event-bus-smoke-pytest event-bus-smoke-unit event-bus-smoke-contract-guard event-bus-smoke-contract event-bus-smoke-summary-contract event-bus-smoke-gh-strict event-bus-smoke-gh-compatible event-bus-smoke-gh-watch-latest event-bus-smoke-gh-strict-watch event-bus-smoke-gh-compatible-watch event-bus-smoke-print-gh-inputs event-bus-smoke-print-gh-inputs-json event-bus-smoke-write-gh-inputs-json-file event-bus-smoke-validate-gh-inputs-snapshot event-bus-smoke-validate-gh-trigger-inputs-audit event-bus-smoke-validate-schema-version event-bus-smoke-validate-result-file event-bus-smoke-validate-contract-input event-bus-smoke-validate-json-output event-bus-smoke-validate-file-suffix event-bus-smoke-preflight event-bus-smoke-fast event-bus-smoke-run-validated event-bus-smoke-all drill-alerting reset
 
 CB_BASE_URL ?= http://127.0.0.1:8000
 CB_MODEL ?= ollama:deepseek-r1:32b
@@ -635,7 +635,7 @@ test-frontend-unit-coverage: check-nvmrc-align
 build-frontend: check-nvmrc-align
 	@cd frontend && npm run build
 
-pr-check: check-nvmrc-align i18n-hardcoded-scan dependency-policy lint-backend test-no-fallback test-tenant-isolation helm-deploy-contract-check backend-static-analysis-extras test-frontend-unit build-frontend
+pr-check: check-nvmrc-align i18n-hardcoded-scan dependency-policy lint-backend test-no-fallback test-tenant-isolation helm-deploy-contract-check backend-static-analysis-extras test-frontend-unit build-frontend enterprise-suite-gate
 	@if [ "$(SKIP_ROADMAP_ACCEPTANCE_IN_PR_CHECK)" = "1" ]; then \
 		echo "pr-check: skip roadmap-acceptance-unit (SKIP_ROADMAP_ACCEPTANCE_IN_PR_CHECK=1)"; \
 	else \
@@ -643,7 +643,7 @@ pr-check: check-nvmrc-align i18n-hardcoded-scan dependency-policy lint-backend t
 	fi
 	@echo "pr-check: OK"
 
-pr-check-fast: check-nvmrc-align i18n-hardcoded-scan dependency-policy lint-backend test-no-fallback test-tenant-isolation helm-deploy-contract-check backend-static-analysis-extras test-frontend-unit
+pr-check-fast: check-nvmrc-align i18n-hardcoded-scan dependency-policy lint-backend test-no-fallback test-tenant-isolation helm-deploy-contract-check backend-static-analysis-extras test-frontend-unit enterprise-suite-gate
 	@if [ "$(SKIP_ROADMAP_ACCEPTANCE_IN_PR_CHECK)" = "1" ]; then \
 		echo "pr-check-fast: skip roadmap-acceptance-unit (SKIP_ROADMAP_ACCEPTANCE_IN_PR_CHECK=1)"; \
 	else \
@@ -678,6 +678,32 @@ test-workflow-control-flow:
 
 test-tenant-isolation:
 	@PYTHONPATH=backend pytest -m tenant_isolation -q $(TEST_ARGS)
+
+.PHONY: enterprise-suite-gate enterprise-suite-gate-all enterprise-suite-benchmark-json
+enterprise-suite-gate:
+	@echo "[enterprise-suite] unit + auto benchmark gate (phase0 P0 probes)"
+	@PYTHONPATH=backend pytest backend/tests/test_enterprise_suite_benchmark.py backend/tests/test_enterprise_suite_uat.py -q
+	@bash scripts/acceptance/run_enterprise_suite_gate.sh
+
+enterprise-suite-gate-all:
+	@echo "[enterprise-suite] auto benchmark gate (phase0-2)"
+	@ENTERPRISE_SUITE_PHASE=all bash scripts/acceptance/run_enterprise_suite_gate.sh
+
+enterprise-suite-benchmark-json:
+	@PYTHONPATH=backend python3 backend/scripts/enterprise_suite_acceptance_gate.py --phase all --json-out enterprise-suite-benchmark.json
+	@echo "wrote enterprise-suite-benchmark.json"
+
+enterprise-suite-live-gate:
+	@echo "[enterprise-suite] live + UAT probes (requires running API at ENTERPRISE_SUITE_LIVE_URL)"
+	@bash scripts/acceptance/run_enterprise_suite_live_gate.sh
+
+enterprise-suite-uat-static:
+	@echo "[enterprise-suite] UAT static smoke (no server)"
+	@PYTHONPATH=backend pytest backend/tests/test_enterprise_suite_uat.py -q
+
+enterprise-suite-inprocess-live-gate:
+	@echo "[enterprise-suite] in-process Live+UAT (TestClient)"
+	@PYTHONPATH=backend pytest backend/tests/test_enterprise_suite_live_inprocess.py -q
 
 roadmap-acceptance-unit:
 	@echo "$(ROADMAP_GATE_LOG_PREFIX) roadmap acceptance unit start"

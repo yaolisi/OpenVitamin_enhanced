@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "bundle_type": "platform",
+  "bundle_id": "policy-qa-starter",
+  "name": "演示包 · 制度问答入门",
+  "description": "轻量平台包：内置 KB 检索 Skill 说明与 MCP 模板占位，配合 rag-research-verify 工作流实现制度/政策问答 PoC。",
+  "ui_hints": {
+    "tags": ["demo", "policy", "rag", "enterprise"],
+    "estimated_minutes": 5,
+    "scene": "制度/政策智能问答",
+    "enterprise_scene": "policy_qa",
+    "playbook_url": "/tutorials/tutorial-index.md"
+  },
+  "builtin_skill_catalog": ["builtin_kb.query"],
+  "skills": [],
+  "mcp_servers": [
+    {
+      "bundle_key": "mcp_fs_template",
+      "name": "Demo · MCP 文件系统（模板）",
+      "description": "默认关闭；在 Settings→MCP 启用后 Probe 并 Import 为 Skill。",
+      "transport": "stdio",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "cwd": null,
+      "enabled": false,
+      "optional": true
+    }
+  ],
+  "mcp_tool_imports": [],
+  "agents": [],
+  "workflows": []
+}

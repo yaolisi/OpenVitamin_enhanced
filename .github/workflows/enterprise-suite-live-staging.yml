@@ -1,0 +1,50 @@
+# 对已部署 Staging 网关执行 Live + UAT（需配置仓库 Secret）
+name: enterprise-suite-live-staging
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Staging gateway base URL"
+        required: true
+        default: "https://staging.example.com"
+      phase:
+        description: "phase0 | phase1 | phase2 | all"
+        required: false
+        default: "all"
+
+concurrency:
+  group: enterprise-suite-live-staging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-uat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Live + UAT gate against staging
+        env:
+          ENTERPRISE_SUITE_LIVE_URL: ${{ inputs.base_url }}
+          ENTERPRISE_SUITE_PHASE: ${{ inputs.phase }}
+          ENTERPRISE_SUITE_API_KEY: ${{ secrets.ENTERPRISE_SUITE_API_KEY }}
+          ENTERPRISE_SUITE_TENANT_ID: ${{ secrets.ENTERPRISE_SUITE_TENANT_ID }}
+          ENTERPRISE_SUITE_JSON_OUT: enterprise-suite-live-staging.json
+        run: make enterprise-suite-live-gate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: enterprise-suite-live-staging
+          path: enterprise-suite-live-staging.json
+          retention-days: 30

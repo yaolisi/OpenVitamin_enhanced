@@ -8,6 +8,7 @@
     "tags": ["demo", "rag", "multi-agent"],
     "estimated_minutes": 8,
     "scene": "内网 PoC / 多 Agent 并行调研",
+    "enterprise_scene": "research_parallel",
     "playbook_url": "/tutorials/demo-playbook-02-parallel-research.md"
   },
   "builtin_skill_catalog": ["builtin_web.search", "builtin_kb.query"],

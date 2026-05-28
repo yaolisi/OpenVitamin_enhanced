@@ -3821,6 +3821,59 @@ export async function getEnterpriseCapabilities(): Promise<EnterpriseCapabilitie
   return response.json()
 }
 
+export interface SuiteBenchmarkItem {
+  id: string
+  phase: string
+  priority: string
+  label: string
+  eval_mode: string
+  status: string
+  message?: string
+}
+
+export interface SuiteBenchmarkReport {
+  report_type: string
+  overall_auto_gate_pass: boolean
+  live_base_url?: string | null
+  live_gate_pass?: boolean | null
+  phases: Array<{
+    phase: string
+    auto_p0_pass: number
+    auto_p0_total: number
+    auto_p0_pass_rate: number
+    gate_pass: boolean
+    live_p0_pass?: number
+    live_p0_total?: number
+    live_p0_pass_rate?: number
+    live_gate_pass?: boolean
+  }>
+  competitive_benchmark: Array<{
+    id: string
+    label: string
+    perilla_score: number
+    gap_vs_mature_commercial: number
+    reference_scores: Record<string, number>
+  }>
+  competitive_summary: { avg_gap_vs_mature_commercial: number; interpretation?: string }
+  checklist_items: SuiteBenchmarkItem[]
+  live_checklist_items?: SuiteBenchmarkItem[]
+  uat_live_checklist_items?: SuiteBenchmarkItem[]
+  uat_live_gate_pass?: boolean | null
+}
+
+export async function getEnterpriseSuiteBenchmark(
+  phase = 'all',
+  options?: { includeLive?: boolean },
+): Promise<SuiteBenchmarkReport> {
+  const usp = new URLSearchParams()
+  if (phase) usp.set('phase', phase)
+  if (options?.includeLive) usp.set('include_live', 'true')
+  const q = usp.toString() ? `?${usp.toString()}` : ''
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/enterprise/suite-benchmark${q}`, { method: 'GET' })
+  if (!response.ok) throw new Error(`API error: ${response.statusText}`)
+  return response.json()
+}
+
 /** GET /api/v1/enterprise/compliance/reports/workflow/... — 合规留痕 JSON */
 export async function downloadWorkflowComplianceReport(
   workflowId: string,

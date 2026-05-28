@@ -1,3 +1,6 @@
+# Enterprise suite benchmark CI artifact
+enterprise-suite-benchmark.json
+
 # Backend - Python
 __pycache__/
 *.py[cod]

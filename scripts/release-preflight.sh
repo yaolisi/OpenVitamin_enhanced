@@ -14,6 +14,11 @@ fi
 
 bash scripts/production-preflight.sh
 
+echo "[release-preflight] enterprise suite static benchmark gate (phase0)"
+make enterprise-suite-gate
+echo "[release-preflight] enterprise suite static benchmark gate (phase0-2)"
+make enterprise-suite-gate-all
+
 echo "[release-preflight] frontend i18n hardcoded scan"
 bash scripts/check-frontend-i18n-hardcoded.sh
 
